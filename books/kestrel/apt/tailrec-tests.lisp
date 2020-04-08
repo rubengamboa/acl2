@@ -1,6 +1,6 @@
-; APT Tail Recursion Transformation -- Tests
+; APT (Automated Program Transformations) Library
 ;
-; Copyright (C) 2018 Kestrel Institute (http://www.kestrel.edu)
+; Copyright (C) 2020 Kestrel Institute (http://www.kestrel.edu)
 ;
 ; License: A 3-clause BSD license. See the LICENSE file distributed with ACL2.
 ;
@@ -10,8 +10,12 @@
 
 (in-package "ACL2")
 
-(include-book "kestrel/utilities/testing" :dir :system)
 (include-book "tailrec")
+
+(include-book "std/testing/assert-bang" :dir :system)
+(include-book "std/testing/eval" :dir :system)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (set-verify-guards-eagerness 2)
 
@@ -497,6 +501,41 @@
 
 (must-succeed*
 
+ (test-title "Test the :WRAPPER option.")
+
+ ;; least upper bound in lattice consisting of NIL as bottom, T as top,
+ ;; and all the other values between NIL and T and incomparable to each other:
+ (defun lub (x y)
+   (cond ((null x) y)
+         ((null y) x)
+         ((equal x y) x)
+         (t t)))
+
+ ;; target function:
+ (defun f (x) (if (atom x) nil (lub (car x) (f (cdr x)))))
+
+ ;; not T or NIL:
+ (must-fail (tailrec f :wrapper "none"))
+
+ ;; default:
+ (must-succeed*
+  (tailrec f)
+  (assert! (function-namep 'f{1}-wrapper (w state))))
+
+ ;; generate:
+ (must-succeed*
+  (tailrec f :wrapper t)
+  (assert! (function-namep 'f{1}-wrapper (w state))))
+
+ ;; do not generate:
+ (must-succeed*
+  (tailrec f :wrapper nil)
+  (assert! (not (function-namep 'f{1}-wrapper (w state))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(must-succeed*
+
  (test-title "Test the :WRAPPER-NAME option.")
 
  ;; least upper bound in lattice consisting of NIL as bottom, T as top,
@@ -819,7 +858,7 @@
 
  ;; not an applicability condition name:
  (must-fail
-  (tailrec f :hints (:not-an-app-cond (("Goal" :in-theory (enable len))))))
+  (tailrec f :hints (:not-an-appcond (("Goal" :in-theory (enable len))))))
 
  ;; duplicate applicability condition names:
  (must-fail

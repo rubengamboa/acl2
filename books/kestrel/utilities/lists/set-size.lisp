@@ -1,6 +1,6 @@
 ; Size of Set Represented As List
 ;
-; Copyright (C) 2018 Kestrel Institute (http://www.kestrel.edu)
+; Copyright (C) 2019 Kestrel Institute (http://www.kestrel.edu)
 ;
 ; License: A 3-clause BSD license. See the LICENSE file distributed with ACL2.
 ;
@@ -11,7 +11,7 @@
 (in-package "ACL2")
 
 (include-book "std/lists/list-defuns" :dir :system)
-(include-book "kestrel/utilities/xdoc/constructors" :dir :system)
+(include-book "xdoc/constructors" :dir :system)
 
 (local (include-book "std/lists/top" :dir :system))
 
@@ -21,8 +21,8 @@
   :parents (list-utilities lists)
   :short "Size of a set represented as a list."
   :long
-  (xdoc::topapp
-   (xdoc::code
+  (xdoc::topstring
+   (xdoc::codeblock
     "General Forms:"
     "(set-size x)"
     "(set-size x :test 'eql)   ; same as above (eql as equality test)"
@@ -125,7 +125,7 @@
   :parents (set-size-theorems)
   :short "Lemmas useful to prove some of the theorems about @(tsee set-size)."
   :long
-  (xdoc::topapp
+  (xdoc::topstring
    (xdoc::p
     "The lemma @('len-when-no-duplicatesp-and-subsetp')
      is used to prove the theorem @('set-size-when-subsetp'), and

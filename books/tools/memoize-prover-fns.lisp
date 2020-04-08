@@ -116,6 +116,7 @@
                           all-vars1-lst
                           ffnnamep-mod-mbe-lst
                           remove-guard-holders
+                          remove-guard-holders-weak
                           remove-guard-holders1
                           remove-guard-holders1-lst
                           normalize
@@ -206,3 +207,5 @@
  modifying the @(tsee f-put-global) call in the aforementioned book,
  @('tools/memoize-prover-fns.lisp'), for your own set of prover
  functions.</p>")
+
+(defpointer memoize-prover-fns memoized-prover-fns)

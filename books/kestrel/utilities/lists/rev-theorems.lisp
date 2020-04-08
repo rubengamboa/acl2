@@ -10,7 +10,7 @@
 
 (in-package "ACL2")
 
-(include-book "kestrel/utilities/xdoc/constructors" :dir :system)
+(include-book "xdoc/constructors" :dir :system)
 (include-book "std/lists/rev" :dir :system)
 (include-book "std/util/defrule" :dir :system)
 
@@ -20,7 +20,7 @@
   :parents (list-utilities rev)
   :short "Some theorems about the library function @(tsee rev)."
   :long
-  (xdoc::topp
+  (xdoc::topstring-p
    "The theorems @('car-of-rev-rewrite-car-of-last')
     and @('car-of-last-rewrite-car-of-rev')
     are disabled by default.

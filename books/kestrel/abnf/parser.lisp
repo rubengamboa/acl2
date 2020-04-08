@@ -1,6 +1,6 @@
-; ABNF Library -- Parser
+; ABNF (Augmented Backus-Naur Form) Library
 ;
-; Copyright (C) 2018 Kestrel Institute (http://www.kestrel.edu)
+; Copyright (C) 2019 Kestrel Institute (http://www.kestrel.edu)
 ;
 ; License: A 3-clause BSD license. See the LICENSE file distributed with ACL2.
 ;
@@ -27,23 +27,23 @@
   :parents (abnf)
   :short "A verified executable parser of ABNF grammars."
   :long
-  "<p>
-   It may be possible to derive this parser from @(tsee parse-grammar*)
-   (or a variant of it that resolves the ambiguity discussed there)
-   via transformational refinements,
-   but here we write an implementation directly and we prove its correctness.
-   </p>
-   <p>
-   The implementation and verification techniques employed for this parser
-   seem more general than the parser.
-   They should be applicable to parsers of other languages specified in ABNF,
-   e.g. to HTTP parsers.
-   It may also be possible to build a parser generator
-   that turns ABNF grammars
-   (satisfying certain restrictions, as with typical parser generators)
-   into verified executable parsers,
-   i.e. executable parsers accompanied by proofs of correctness.
-   </p>"
+  (xdoc::topstring
+   (xdoc::p
+    "It may be possible to derive this parser from @(tsee parse-grammar*)
+     (or a variant of it that resolves the ambiguity discussed there)
+     via transformational refinements,
+     but here we write an implementation directly
+     and we prove its correctness.")
+   (xdoc::p
+    "The implementation and verification techniques employed for this parser
+     seem more general than the parser.
+     They should be applicable to parsers of other languages specified in ABNF,
+     e.g. to HTTP parsers.
+     It may also be possible to build a parser generator
+     that turns ABNF grammars
+     (satisfying certain restrictions, as with typical parser generators)
+     into verified executable parsers,
+     i.e. executable parsers accompanied by proofs of correctness."))
   :order-subtopics t)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -56,304 +56,277 @@
 
   :long
 
-  "<p>
-   This is a recursive-descent, backtracking parser.
-   There is a parsing function for every rule,
-   and parsing functions for certain groups, options, and repetitions.
-   There are also parameterized parsing functions for
-   terminals (natural numbers) matching
-   exact values, ranges, and (case-insensitively) characters.
-   </p>
+  (xdoc::topstring
 
-   <h3>Inputs and Outputs</h3>
+   (xdoc::p
+    "This is a recursive-descent, backtracking parser.
+     There is a parsing function for every rule,
+     and parsing functions for certain groups, options, and repetitions.
+     There are also parameterized parsing functions for
+     terminals (natural numbers) matching
+     exact values, ranges, and (case-insensitively) characters.")
 
-   <p>
-   Each of these parsing functions
-   takes as input a list of natural numbers (i.e. terminals),
-   and returns as outputs
-   (i) an indication of success or failure,
-   (ii) the tree or list of trees
-   obtained from parsing a prefix of the input
-   (or @('nil') if parsing fails),
-   and (iii) the remaining suffix of the input that must still be parsed.
-   The indication of success or failure is
-   either @('nil') to indicate success,
-   or a <see topic='@(url msg)'>message</see> to describe the failure.
-   This is consistent with the <i>@(see Seq)</i> macros,
-   with which these parsing functions are implemented.
-   </p>
+   (xdoc::h3 "Inputs and Outputs")
 
-   <p>
-   The @(tsee parse-grammar) top-level function
-   takes as input a list of natural numbers
-   and returns as output just a tree, or @('nil') to indicate failure;
-   this function consumes all the input, failing if there is unparsed input.
-   The @(tsee parse-grammar-from-file) function
-   takes as input a file name and calls @(tsee parse-grammar) on its content,
-   returning a tree or @('nil').
-   </p>
+   (xdoc::p
+    "Each of these parsing functions
+     takes as input a list of natural numbers (i.e. terminals),
+     and returns as outputs
+     (i) an indication of success or failure,
+     (ii) the tree or list of trees
+     obtained from parsing a prefix of the input
+     (or @('nil') if parsing fails),
+     and (iii) the remaining suffix of the input that must still be parsed.
+     The indication of success or failure is
+     either @('nil') to indicate success,
+     or a "
+    (xdoc::seetopic "msg" "message")
+    " to describe the failure.
+     This is consistent with the <i>@(see Seq)</i> macros,
+     with which these parsing functions are implemented.")
 
-   <p>
-   Each parsing function definition is accompanied by a theorem stating that
-   the function fixes its input list of natural numbers.
-   The proof of each such theorem uses, as rewrite rules,
-   the theorems for the parsing functions called by
-   the parsing function whose theorem is being proved.
-   </p>
+   (xdoc::p
+    "The @(tsee parse-grammar) top-level function
+     takes as input a list of natural numbers
+     and returns as output just a tree, or @('nil') to indicate failure;
+     this function consumes all the input, failing if there is unparsed input.
+     The @(tsee parse-grammar-from-file) function
+     takes as input a file name and calls @(tsee parse-grammar) on its content,
+     returning a tree or @('nil').")
 
-   <h3>Disambiguation and Look-Ahead</h3>
+   (xdoc::p
+    "Each parsing function definition is accompanied by a theorem stating that
+     the function fixes its input list of natural numbers.
+     The proof of each such theorem uses, as rewrite rules,
+     the theorems for the parsing functions called by
+     the parsing function whose theorem is being proved.")
 
-   <p>
-   As explained in the documentation of @(tsee parse-grammar*),
-   the grammar of the ABNF concrete syntax [RFC:4] is ambiguous.
-   The rule @('rulelist') allows strings `@('c-nl WSP')'
-   either to be split into an ending @('c-nl') under a @('rule')
-   and a starting @('WSP') under an immediately following @('(*c-wsp c-nl)'),
-   or to be made into a @('c-wsp')
-   in the ending part of @('elements') under the @('rule').
-   The same kind of choice applies when,
-   instead of a @('rule') immediately followed by a @('(*c-wsp c-nl)'),
-   there are two subsequent @('(*c-wsp c-nl)')s:
-   the string `@('c-nl WSP')' can be
-   either split between the two @('(*c-wsp c-nl)')s
-   or put all under the first one.
-   Indeed, expanding @('elements') in the definiens of @('rule')
-   gives @('... *c-wsp c-nl'),
-   which ends in the same way as the group @('(*c-wsp c-nl)'):
-   this is why the ambiguity applies equally to
-   a @('rule') immediately followed by a @('(*c-wsp c-nl)')
-   and to a @('(*c-wsp c-nl)') immediately followed by a @('(*c-wsp c-nl)').
-   </p>
+   (xdoc::h3 "Disambiguation and Look-Ahead")
 
-   <p>
-   Aside from the @('rulelist') rule,
-   the rest of the grammar is LL(*):
-   </p>
+   (xdoc::p
+    "As explained in the documentation of @(tsee parse-grammar*),
+     the grammar of the ABNF concrete syntax [RFC:4] is ambiguous.
+     The rule @('rulelist') allows strings `@('c-nl WSP')'
+     either to be split into an ending @('c-nl') under a @('rule')
+     and a starting @('WSP') under an immediately following @('(*c-wsp c-nl)'),
+     or to be made into a @('c-wsp')
+     in the ending part of @('elements') under the @('rule').
+     The same kind of choice applies when,
+     instead of a @('rule') immediately followed by a @('(*c-wsp c-nl)'),
+     there are two subsequent @('(*c-wsp c-nl)')s:
+     the string `@('c-nl WSP')' can be
+     either split between the two @('(*c-wsp c-nl)')s
+     or put all under the first one.
+     Indeed, expanding @('elements') in the definiens of @('rule')
+     gives @('... *c-wsp c-nl'),
+     which ends in the same way as the group @('(*c-wsp c-nl)'):
+     this is why the ambiguity applies equally to
+     a @('rule') immediately followed by a @('(*c-wsp c-nl)')
+     and to a @('(*c-wsp c-nl)')
+     immediately followed by a @('(*c-wsp c-nl)').")
 
-   <ul>
+   (xdoc::p
+    "Aside from the @('rulelist') rule,
+     the rest of the grammar is LL(*):")
 
-     <li>
-     In the @('repeat') rule,
-     a look-ahead of an unbounded number of @('DIGIT')s
-     is needed to determine the alternative
-     (the second alternative if @('\"*\"') is found after the @('DIGIT')s,
-     otherwise the first alternative).
-     </li>
+   (xdoc::ul
 
-     <li>
-     In the @('concatenation') rule,
-     a look-ahead of an unbounded number of @('c-wsp')s
-     is needed to determine where a @('concatenation') ends
-     (it does if no @('repetition') is found after the @('c-wsp')s,
-     otherwise the @('concatenation') continues with the found @('repetition')).
-     </li>
+    (xdoc::li
+     "In the @('repeat') rule,
+      a look-ahead of an unbounded number of @('DIGIT')s
+      is needed to determine the alternative
+      (the second alternative if @('\"*\"') is found after the @('DIGIT')s,
+      otherwise the first alternative).")
 
-   </ul>
+    (xdoc::li
+     "In the @('concatenation') rule,
+      a look-ahead of an unbounded number of @('c-wsp')s
+      is needed to determine where a @('concatenation') ends
+      (it does if no @('repetition') is found after the @('c-wsp')s,
+      otherwise the @('concatenation')
+      continues with the found @('repetition'))."))
 
-   <p>
-   Aside from the @('rulelist'), @('repeat'), and @('concatenation') rules,
-   the rest of the grammar is LL(2):
-   </p>
+   (xdoc::p
+    "Aside from the @('rulelist'), @('repeat'), and @('concatenation') rules,
+     the rest of the grammar is LL(2):")
 
-   <ul>
+   (xdoc::ul
 
-     <li>
-     In the @('defined-as') rule,
-     a look-ahead of two symbols
-     is needed to distinguish @('\"=\"') and @('\"=/\"').
-     </li>
+    (xdoc::li
+     "In the @('defined-as') rule,
+      a look-ahead of two symbols
+      is needed to distinguish @('\"=\"') and @('\"=/\"').")
 
-     <li>
-     In the @('element') rule,
-     a look-ahead of two symbols
-     is needed to distinguish @('num-val') and @('char-val')
-     (the two symbols are @('\"%\"') and the one after).
-     </li>
+    (xdoc::li
+     "In the @('element') rule,
+      a look-ahead of two symbols
+      is needed to distinguish @('num-val') and @('char-val')
+      (the two symbols are @('\"%\"') and the one after).")
 
-     <li>
-     In the @('char-val') rule,
-     a look-ahead of two symbols is needed
-     to distinguish @('case-insensitive-string') and @('case-sensitive-string')
-     (the two symbols are @('\"%\"') and the one after).
-     </li>
+    (xdoc::li
+     "In the @('char-val') rule,
+      a look-ahead of two symbols is needed
+      to distinguish @('case-insensitive-string') and @('case-sensitive-string')
+      (the two symbols are @('\"%\"') and the one after)."))
 
-   </ul>
+   (xdoc::p
+    "In each of the three rules listed above,
+     the two choices have the first character in common.
+     Thus, it may seem that these rules are actually LL(1),
+     by first parsing the first character in common
+     and then deciding how to proceed based on the next character.
+     However, each character pair like @('\"=/\"') and @('\"%s\"')
+     is parsed in one shot via one call to @(tsee parse-ichars)
+     which produces a single leaf tree
+     with the list of those two character codes,
+     not via two calls to @(tsee parse-ichar)
+     which would produce two leaf trees
+     each with a singleton list of one character code.
+     If the rules were formulated as concatenations of single-character strings
+     (e.g. @('\"=\" \"/\"') and @('\"%\" \"s\"')) instead,
+     these rules would be LL(1).")
 
-   <p>
-   In each of the three rules listed above,
-   the two choices have the first character in common.
-   Thus, it may seem that these rules are actually LL(1),
-   by first parsing the first character in common
-   and then deciding how to proceed based on the next character.
-   However, each character pair like @('\"=/\"') and @('\"%s\"')
-   is parsed in one shot via one call to @(tsee parse-ichars)
-   which produces a single leaf tree with the list of those two character codes,
-   not via two calls to @(tsee parse-ichar)
-   which would produce two leaf trees
-   each with a singleton list of one character code.
-   If the rules were formulated as concatenations of single-character strings
-   (e.g. @('\"=\" \"/\"') and @('\"%\" \"s\"')) instead,
-   these rules would be LL(1).
-   </p>
+   (xdoc::p
+    "Aside from the
+     @('rulelist'),
+     @('repeat'),
+     @('concatenation'),
+     @('defined-as'),
+     @('element'), and
+     @('char-val') rules,
+     the rest of the grammar is LL(1).")
 
-   <p>
-   Aside from the
-   @('rulelist'),
-   @('repeat'),
-   @('concatenation'),
-   @('defined-as'),
-   @('element'), and
-   @('char-val') rules,
-   the rest of the grammar is LL(1).
-   </p>
+   (xdoc::p
+    "The parser resolves the @('rulelist') ambiguity
+     by keeping strings `@('c-nl WSP')' as @('c-wsp')s
+     under @('rule') or
+     under the first @('(*c-wsp c-nl)') of two subsequent @('(*c-wsp c-nl)')s,
+     instead of splitting them into a @('c-nl')
+     to end the @('rule') or
+     to end the first @('(*c-wsp c-nl)') of two subsequent @('(*c-wsp c-nl)')s,
+     and a @('WSP') to start the subsequent @('(*c-wsp c-nl)').
+     The decision point is when a @('c-nl') is encountered
+     while parsing the ending @('*c-wsp') of @('elements')
+     or while parsing the @('*c-wsp') of a @('(*c-wsp c-nl)'):
+     should the @('*c-wsp') be considered finished
+     and the @('c-nl') used to end the @('rule') or @('(*c-wsp c-nl)'),
+     or should the parser attempt to extend the @('*c-wsp')
+     with an extra @('c-wsp'), if the @('c-nl') is followed by a @('WSP')?
+     By having @(tsee parse-*cwsp) always try the extra @('c-wsp'),
+     we never split strings `@('c-nl WSP')'.
+     Thus, @(tsee parse-*cwsp) tries to parse as many @('c-wsp')s as possible,
+     like all the other @('parse-*...') parsing functions.
+     If the @('c-nl') is not followed by a @('WSP'),
+     the parsing of the extra @('c-wsp') fails
+     and the only possibility left is to finish the @('*c-wsp')
+     and use the @('c-nl') to end the @('rule') or the @('(*c-wsp c-nl)');
+     there is no ambiguity in this case.")
 
-   <p>
-   The parser resolves the @('rulelist') ambiguity
-   by keeping strings `@('c-nl WSP')' as @('c-wsp')s
-   under @('rule') or
-   under the first @('(*c-wsp c-nl)') of two subsequent @('(*c-wsp c-nl)')s,
-   instead of splitting them into a @('c-nl')
-   to end the @('rule') or
-   to end the first @('(*c-wsp c-nl)') of two subsequent @('(*c-wsp c-nl)')s,
-   and a @('WSP') to start the subsequent @('(*c-wsp c-nl)').
-   The decision point is when a @('c-nl') is encountered
-   while parsing the ending @('*c-wsp') of @('elements')
-   or while parsing the @('*c-wsp') of a @('(*c-wsp c-nl)'):
-   should the @('*c-wsp') be considered finished
-   and the @('c-nl') used to end the @('rule') or @('(*c-wsp c-nl)'),
-   or should the parser attempt to extend the @('*c-wsp')
-   with an extra @('c-wsp'), if the @('c-nl') is followed by a @('WSP')?
-   By having @(tsee parse-*cwsp) always try the extra @('c-wsp'),
-   we never split strings `@('c-nl WSP')'.
-   Thus, @(tsee parse-*cwsp) tries to parse as many @('c-wsp')s as possible,
-   like all the other @('parse-*...') parsing functions.
-   If the @('c-nl') is not followed by a @('WSP'),
-   the parsing of the extra @('c-wsp') fails
-   and the only possibility left is to finish the @('*c-wsp')
-   and use the @('c-nl') to end the @('rule') or the @('(*c-wsp c-nl)');
-   there is no ambiguity in this case.
-   </p>
+   (xdoc::p
+    "The look-ahead for the LL(*), LL(2), and LL(1) rules
+     is handled via backtracking.
+     The amount of backtracking
+     is expected to be small in reasonable grammars.")
 
-   <p>
-   The look-ahead for the LL(*), LL(2), and LL(1) rules
-   is handled via backtracking.
-   The amount of backtracking is expected to be small in reasonable grammars.
-   </p>
+   (xdoc::h3 "Termination")
 
-   <h3>Termination</h3>
+   (xdoc::p
+    "The termination of the singly recursive parsing functions
+     (e.g. @(tsee parse-*bit))
+     is proved by showing that the size of the input decreases.")
 
-   <p>
-   The termination of the singly recursive parsing functions
-   (e.g. @(tsee parse-*bit))
-   is proved by showing that the size of the input decreases.
-   </p>
+   (xdoc::p
+    "The termination of the mutually recursive parsing functions
+     (i.e. @(tsee parse-alternation), @(tsee parse-concatenation), etc.)
+     is proved via a lexicographic measure consisting of
+     the size of the input and an ordering of the parsing functions.
+     This is explained in the following paragraphs.")
 
-   <p>
-   The termination of the mutually recursive parsing functions
-   (i.e. @(tsee parse-alternation), @(tsee parse-concatenation), etc.)
-   is proved via a lexicographic measure consisting of
-   the size of the input and an ordering of the parsing functions.
-   This is explained in the following paragraphs.
-   </p>
+   (xdoc::p
+    "Since @(tsee parse-alternation) calls @(tsee parse-concatenation)
+     on the same input,
+     the size of the input alone is not sufficient
+     to show that the mutually recursive parsing functions terminate.
+     But @(tsee parse-concatenation) never
+     (indirectly) calls @(tsee parse-alternation) on the same input:
+     it has to go through @(tsee parse-group) or @(tsee parse-option),
+     which consume a @('\"(\"') or a @('\"[\"')
+     before calling @(tsee parse-alternation) on, therefore, a smaller input.
+     So if we order the parsing functions, by assigning numbers to them,
+     so that @(tsee parse-alternation) has
+     a larger order number than @(tsee parse-concatenation),
+     either the size of the input goes down,
+     or it stays the same but the parsing function order number goes down.
+     In other words, the lexicographic measure goes down.")
 
-   <p>
-   Since @(tsee parse-alternation) calls @(tsee parse-concatenation)
-   on the same input,
-   the size of the input alone is not sufficient
-   to show that the mutually recursive parsing functions terminate.
-   But @(tsee parse-concatenation) never
-   (indirectly) calls @(tsee parse-alternation) on the same input:
-   it has to go through @(tsee parse-group) or @(tsee parse-option),
-   which consume a @('\"(\"') or a @('\"[\"')
-   before calling @(tsee parse-alternation) on, therefore, a smaller input.
-   So if we order the parsing functions, by assigning numbers to them,
-   so that @(tsee parse-alternation) has
-   a larger order number than @(tsee parse-concatenation),
-   either the size of the input goes down,
-   or it stays the same but the parsing function order number goes down.
-   In other words, the lexicographic measure goes down.
-   </p>
+   (xdoc::p
+    "To establish the relative ordering of the parsing functions,
+     we look at which ones (may) call which other ones on the same input:
+     the former must be (assigned) larger (order numbers) than the latter.
+     Thus, we have the following ordering constraints:")
 
-   <p>
-   To establish the relative ordering of the parsing functions,
-   we look at which ones (may) call which other ones on the same input:
-   the former must be (assigned) larger (order numbers) than the latter.
-   Thus, we have the following ordering constraints:
-   </p>
+   (xdoc::ul
 
-   <ul>
+    (xdoc::li
+     "@(tsee parse-alternation) must be
+      larger than @(tsee parse-concatenation).")
 
-     <li>
-     @(tsee parse-alternation) must be larger than @(tsee parse-concatenation).
-     </li>
+    (xdoc::li
+     "@(tsee parse-concatenation) must be
+      larger than @(tsee parse-repetition).")
 
-     <li>
-     @(tsee parse-concatenation) must be larger than @(tsee parse-repetition).
-     </li>
+    (xdoc::li
+     "@(tsee parse-repetition) must be larger than @(tsee parse-element).
+      (The former calls the latter on the same input
+      if @(tsee parse-?repeat) does not consume any input.)")
 
-     <li>
-     @(tsee parse-repetition) must be larger than @(tsee parse-element).
-     (The former calls the latter on the same input
-     if @(tsee parse-?repeat) does not consume any input.)
-     </li>
+    (xdoc::li
+     "@(tsee parse-element) must be larger than @(tsee parse-group).")
 
-     <li>
-     @(tsee parse-element) must be larger than @(tsee parse-group).
-     </li>
+    (xdoc::li
+     "@(tsee parse-element) must be larger than @(tsee parse-option).")
 
-     <li>
-     @(tsee parse-element) must be larger than @(tsee parse-option).
-     </li>
+    (xdoc::li
+     "@(tsee parse-alt-rest) must be larger than
+      @(tsee parse-alt-rest-comp).")
 
-     <li>
-     @(tsee parse-alt-rest) must be larger than
-     @(tsee parse-alt-rest-comp).
-     </li>
+    (xdoc::li
+     "@(tsee parse-conc-rest) must be larger than
+      @(tsee parse-conc-rest-comp)."))
 
-     <li>
-     @(tsee parse-conc-rest) must be larger than
-     @(tsee parse-conc-rest-comp).
-     </li>
+   (xdoc::p
+    "These constraints provide a partial order on the parsing function,
+     which we can totalize as follows (from smallest to largest):")
 
-   </ul>
+   (xdoc::ol
+    (xdoc::li "@(tsee parse-conc-rest-comp)")
+    (xdoc::li "@(tsee parse-conc-rest)")
+    (xdoc::li "@(tsee parse-alt-rest-comp)")
+    (xdoc::li "@(tsee parse-alt-rest)")
+    (xdoc::li "@(tsee parse-option)")
+    (xdoc::li "@(tsee parse-group)")
+    (xdoc::li "@(tsee parse-element)")
+    (xdoc::li "@(tsee parse-repetition)")
+    (xdoc::li "@(tsee parse-concatenation)")
+    (xdoc::li "@(tsee parse-alternation)"))
 
-   <p>
-   These constraints provide a partial order on the parsing function,
-   which we can totalize as follows (from smallest to largest):
-   </p>
+   (xdoc::p
+    "Note that when a smaller function calls a larger or equal function,
+     it does so on a smaller input.
+     In particular:
+     @(tsee parse-group) and @(tsee parse-option) call @(tsee parse-alternation)
+     only after consuming a @('\"(\"') or a @('\"[\"');
+     @(tsee parse-alt-rest-comp) calls @(tsee parse-concatenation)
+     only after consuming at least a @('\"\/\"'); and
+     @(tsee parse-conc-rest-comp) calls @(tsee parse-repetition)
+     only after consuming at least one @('c-wsp'), which is never empty.")
 
-   <ol>
-     <li>@(tsee parse-conc-rest-comp)</li>
-     <li>@(tsee parse-conc-rest)</li>
-     <li>@(tsee parse-alt-rest-comp)</li>
-     <li>@(tsee parse-alt-rest)</li>
-     <li>@(tsee parse-option)</li>
-     <li>@(tsee parse-group)</li>
-     <li>@(tsee parse-element)</li>
-     <li>@(tsee parse-repetition)</li>
-     <li>@(tsee parse-concatenation)</li>
-     <li>@(tsee parse-alternation)</li>
-   </ol>
-
-   <p>
-   Note that when a smaller function calls a larger or equal function,
-   it does so on a smaller input.
-   In particular:
-   @(tsee parse-group) and @(tsee parse-option) call @(tsee parse-alternation)
-   only after consuming a @('\"(\"') or a @('\"[\"');
-   @(tsee parse-alt-rest-comp) calls @(tsee parse-concatenation)
-   only after consuming at least a @('\"\/\"'); and
-   @(tsee parse-conc-rest-comp) calls @(tsee parse-repetition)
-   only after consuming at least one @('c-wsp'), which is never empty.
-   </p>
-
-   <p>
-   The theorems about input lengths
-   that accompany the parsing function definitions
-   are used in the termination proofs,
-   both of the singly recursive functions
-   and of the mutually recursive functions.
-   </p>"
+   (xdoc::p
+    "The theorems about input lengths
+     that accompany the parsing function definitions
+     are used in the termination proofs,
+     both of the singly recursive functions
+     and of the mutually recursive functions."))
 
   :order-subtopics t)
 
@@ -361,10 +334,9 @@
   :parents (grammar-parser-implementation)
   :short "Message for grammar parsing errors."
   :long
-  "<p>
-   This message does not carry a lot of information,
-   but it keeps the grammar parser simpler for now.
-   </p>"
+  (xdoc::topstring-p
+   "This message does not carry a lot of information,
+    but it keeps the grammar parser simpler for now.")
   (msg "ABNF Grammar Parser Error.~%")
   ///
 
@@ -380,12 +352,11 @@
   :parents (grammar-parser-implementation)
   :short "Parse any natural number."
   :long
-  "<p>
-   Unlike the other parsing functions,
-   this one does not return a (lists of) tree(s),
-   but it returns the parsed natural number (or @('nil') if parsing fails).
-   This function is the basic building block of the other parsing functions.
-   </p>"
+  (xdoc::topstring-p
+   "Unlike the other parsing functions,
+    this one does not return a (lists of) tree(s),
+    but it returns the parsed natural number (or @('nil') if parsing fails).
+    This function is the basic building block of the other parsing functions.")
   (b* ((input (mbe :logic (nat-list-fix input) :exec input)))
     (if (consp input)
         (mv nil (car input) (cdr input))
@@ -843,7 +814,7 @@
    (rest-input (and (<= (len rest-input) (len input))
                     (implies (not error?)
                              (< (len rest-input) (len input))))
-               :name len-of-parse-vchar-<
+               :name len-of-parse-vchar-linear
                :rule-classes :linear))
 
   (defrule parse-vchar-of-nat-list-fix
@@ -2083,12 +2054,11 @@
   :parents (grammar-parser-implementation)
   :short "Parse a repetition range."
   :long
-  "<p>
-   Since a non-empty sequence of digits matches
-   both @('1*DIGIT')
-   and the start of @('(*DIGIT \"*\" *DIGIT)'),
-   the latter is tried before the former.
-   </p>"
+  (xdoc::topstring-p
+   "Since a non-empty sequence of digits matches
+    both @('1*DIGIT')
+    and the start of @('(*DIGIT \"*\" *DIGIT)'),
+    the latter is tried before the former.")
   (seq-backtrack
    input
    ((tree := (parse-*digit-star-*digit input))
@@ -2230,39 +2200,35 @@
     :parents (grammar-parser-implementation)
     :short "Parse an alternation."
     :long
-    "<p>
-     Ideally the body of this function would be:
-     </p>
-     @({
-       (seq input
-            (tree := (parse-concatenation input))
-            (trees := (parse-alt-rest input))
-            (return (make-tree-nonleaf :rulename? *alternation*
-                                       :branches (list (list tree) trees))))
-     })
-     <p>
-     But that would defeat the termination proof,
-     which would include a failed subgoal saying that,
-     when @(tsee parse-concatenation) succeeds,
-     the length of its remaining input
-     is less than or equal to
-     the length of its initial input.
-     This is the case for @(tsee parse-concatenation),
-     but it can only be proved after the function has been admitted.
-     In the termination proof, it is like an uninterpreted function.
-     </p>
-     <p>
-     So we add the condition on the lengths mentioned above
-     as a redundant check.
-     To do that, we cannot use @('seq'),
-     which prevents us from referring to different versions of the input.
-     </p>
-     <p>
-     The linear rules below are used in the guard verification proof.
-     </p>
-     @(def parse-alternation)
-     @(def len-of-parse-alternation-linear-1)
-     @(def len-of-parse-alternation-linear-2)"
+    (xdoc::topstring
+     (xdoc::p
+      "Ideally the body of this function would be:")
+     (xdoc::codeblock
+      "(seq input"
+      "     (tree := (parse-concatenation input))"
+      "     (trees := (parse-alt-rest input))"
+      "     (return (make-tree-nonleaf :rulename? *alternation*"
+      "                                :branches (list (list tree) trees))))")
+     (xdoc::p
+      "But that would defeat the termination proof,
+       which would include a failed subgoal saying that,
+       when @(tsee parse-concatenation) succeeds,
+       the length of its remaining input
+       is less than or equal to
+       the length of its initial input.
+       This is the case for @(tsee parse-concatenation),
+       but it can only be proved after the function has been admitted.
+       In the termination proof, it is like an uninterpreted function.")
+     (xdoc::p
+      "So we add the condition on the lengths mentioned above
+       as a redundant check.
+       To do that, we cannot use @('seq'),
+       which prevents us from referring to different versions of the input.")
+     (xdoc::p
+      "The linear rules below are used in the guard verification proof.")
+     (xdoc::@def "parse-alternation")
+     (xdoc::@def "len-of-parse-alternation-linear-1")
+     (xdoc::@def "len-of-parse-alternation-linear-2"))
     (b* (((mv error? tree input1) (parse-concatenation input))
          ((when error?) (mv error? nil input1))
          ((unless (mbt (< (len input1) (len input)))) (mv "" nil nil))
@@ -2284,39 +2250,35 @@
     :parents (grammar-parser-implementation)
     :short "Parse a concatenation."
     :long
-    "<p>
-     Ideally the body of this function would be:
-     </p>
-     @({
-       (seq input
-            (tree := (parse-repetition input))
-            (trees := (parse-conc-rest input))
-            (return (make-tree-nonleaf :rulename? *concatenation*
-                                       :branches (list (list tree) trees))))
-     })
-     <p>
-     But that would defeat the termination proof,
-     which would include a failed subgoal saying that,
-     when @(tsee parse-repetition) succeeds,
-     the length of its remaining input
-     is less than or equal to
-     the length of its initial input.
-     This is the case for @(tsee parse-repetition),
-     but it can only be proved after the function has been admitted.
-     In the termination proof, it is like an uninterpreted function.
-     </p>
-     <p>
-     So we add the condition on the lengths mentioned above
-     as a redundant check.
-     To do that, we cannot use @('seq'),
-     which prevents us from referring to different versions of the input.
-     </p>
-     <p>
-     The linear rules below are used in the guard verification proof.
-     </p>
-     @(def parse-concatenation)
-     @(def len-of-parse-concatenation-linear-1)
-     @(def len-of-parse-concatenation-linear-2)"
+    (xdoc::topstring
+     (xdoc::p
+      "Ideally the body of this function would be:")
+     (xdoc::codeblock
+      "(seq input"
+      "     (tree := (parse-repetition input))"
+      "     (trees := (parse-conc-rest input))"
+      "     (return (make-tree-nonleaf :rulename? *concatenation*"
+      "                                :branches (list (list tree) trees))))")
+     (xdoc::p
+      "But that would defeat the termination proof,
+       which would include a failed subgoal saying that,
+       when @(tsee parse-repetition) succeeds,
+       the length of its remaining input
+       is less than or equal to
+       the length of its initial input.
+       This is the case for @(tsee parse-repetition),
+       but it can only be proved after the function has been admitted.
+       In the termination proof, it is like an uninterpreted function.")
+     (xdoc::p
+      "So we add the condition on the lengths mentioned above
+       as a redundant check.
+       To do that, we cannot use @('seq'),
+       which prevents us from referring to different versions of the input.")
+     (xdoc::p
+      "The linear rules below are used in the guard verification proof.")
+     (xdoc::@def "parse-concatenation")
+     (xdoc::@def "len-of-parse-concatenation-linear-1")
+     (xdoc::@def "len-of-parse-concatenation-linear-2"))
     (b* (((mv error? tree input1) (parse-repetition input))
          ((when error?) (mv error? nil input1))
          ((unless (mbt (< (len input1) (len input)))) (mv "" nil nil))
@@ -2338,12 +2300,12 @@
     :parents (grammar-parser-implementation)
     :short "Parse a repetition."
     :long
-    "<p>
-     The linear rules below are used in the guard verification proof.
-     </p>
-     @(def parse-repetition)
-     @(def len-of-parse-repetition-linear-1)
-     @(def len-of-parse-repetition-linear-2)"
+    (xdoc::topstring
+     (xdoc::p
+      "The linear rules below are used in the guard verification proof.")
+     (xdoc::@def "parse-repetition")
+     (xdoc::@def "len-of-parse-repetition-linear-1")
+     (xdoc::@def "len-of-parse-repetition-linear-2"))
     (seq input
          (tree-repeat := (parse-?repeat input))
          (tree-element := (parse-element input))
@@ -2362,12 +2324,12 @@
     :parents (grammar-parser-implementation)
     :short "Parse an element."
     :long
-    "<p>
-     The linear rules below are used in the guard verification proof.
-     </p>
-     @(def parse-element)
-     @(def len-of-parse-element-linear-1)
-     @(def len-of-parse-element-linear-2)"
+    (xdoc::topstring
+     (xdoc::p
+      "The linear rules below are used in the guard verification proof.")
+     (xdoc::@def "parse-element")
+     (xdoc::@def "len-of-parse-element-linear-1")
+     (xdoc::@def "len-of-parse-element-linear-2"))
     (seq-backtrack input
                    ((tree := (parse-rulename input))
                     (return (make-tree-nonleaf :rulename? *element*
@@ -2399,12 +2361,12 @@
     :parents (grammar-parser-implementation)
     :short "Parse a group."
     :long
-    "<p>
-     The linear rules below are used in the guard verification proof.
-     </p>
-     @(def parse-group)
-     @(def len-of-parse-group-linear-1)
-     @(def len-of-parse-group-linear-2)"
+    (xdoc::topstring
+     (xdoc::p
+      "The linear rules below are used in the guard verification proof.")
+     (xdoc::@def "parse-group")
+     (xdoc::@def "len-of-parse-group-linear-1")
+     (xdoc::@def "len-of-parse-group-linear-2"))
     (seq input
          (tree-open-round := (parse-ichar #\( input))
          (trees-open-pad := (parse-*cwsp input))
@@ -2429,12 +2391,12 @@
     :parents (grammar-parser-implementation)
     :short "Parse an option."
     :long
-    "<p>
-     The linear rules below are used in the guard verification proof.
-     </p>
-     @(def parse-option)
-     @(def len-of-parse-option-linear-1)
-     @(def len-of-parse-option-linear-2)"
+    (xdoc::topstring
+     (xdoc::p
+      "The linear rules below are used in the guard verification proof.")
+     (xdoc::@def "parse-option")
+     (xdoc::@def "len-of-parse-option-linear-1")
+     (xdoc::@def "len-of-parse-option-linear-2"))
     (seq input
          (tree-open-square := (parse-ichar #\[ input))
          (trees-open-pad := (parse-*cwsp input))
@@ -2458,42 +2420,39 @@
     :short "Parse a repetition @('*(*c-wsp \"/\" *c-wsp concatenation)'),
             which is the rest of the definiens of @('alternation')."
     :long
-    "<p>
-     Ideally the body of this function would be:
-     </p>
-     @({
-       (seq-backtrack
-        input
-        ((tree := (parse-alt-rest-comp input))
-         (trees := (parse-alt-rest input))
-         (return (cons tree trees)))
-        ((return-raw (mv nil nil (nat-list-fix input)))))
-     })
-     <p>
-     But that would defeat the termination proof,
-     which would include a failed subgoal saying that,
-     when @(tsee parse-alt-rest-comp) succeeds,
-     the length of its remaining input
-     is strictly less than
-     the length of its initial input.
-     This is the case for @(tsee parse-alt-rest-comp),
-     but it can only be proved after the function has been admitted.
-     In the termination proof, it is like an uninterpreted function.
-     </p>
-     <p>
-     So we add the condition on the lengths mentioned above
-     as a redundant check.
-     To do that, we cannot use @('seq-backtrack'),
-     which prevents us from referring to different versions of the input.
-     In order to maintain the invariant that
-     @(tsee parse-alt-rest) never fails,
-     we return no error if the condition is not satisfied (which never happens).
-     </p>
-     <p>
-     The linear rule below is used in the guard verification proof.
-     </p>
-     @(def parse-alt-rest)
-     @(def len-of-parse-alt-rest-linear-1)"
+    (xdoc::topstring
+     (xdoc::p
+      "Ideally the body of this function would be:")
+     (xdoc::codeblock
+      "(seq-backtrack"
+      "  input"
+      "  ((tree := (parse-alt-rest-comp input))"
+      "   (trees := (parse-alt-rest input))"
+      "   (return (cons tree trees)))"
+      "  ((return-raw (mv nil nil (nat-list-fix input)))))")
+     (xdoc::p
+      "But that would defeat the termination proof,
+       which would include a failed subgoal saying that,
+       when @(tsee parse-alt-rest-comp) succeeds,
+       the length of its remaining input
+       is strictly less than
+       the length of its initial input.
+       This is the case for @(tsee parse-alt-rest-comp),
+       but it can only be proved after the function has been admitted.
+       In the termination proof, it is like an uninterpreted function.")
+     (xdoc::p
+      "So we add the condition on the lengths mentioned above
+       as a redundant check.
+       To do that, we cannot use @('seq-backtrack'),
+       which prevents us from referring to different versions of the input.
+       In order to maintain the invariant that
+       @(tsee parse-alt-rest) never fails,
+       we return no error if the condition is not satisfied
+       (which never happens).")
+     (xdoc::p
+      "The linear rule below is used in the guard verification proof.")
+     (xdoc::@def "parse-alt-rest")
+     (xdoc::@def "len-of-parse-alt-rest-linear-1"))
     (b* (((mv error? tree input1)
           (parse-alt-rest-comp input))
          ((when error?) (mv nil nil (nat-list-fix input)))
@@ -2514,12 +2473,12 @@
             which is a component of
             the rest of the definiens of @('alternation')."
     :long
-    "<p>
-     The linear rules below are used in the guard verification proof.
-     </p>
-     @(def parse-alt-rest-comp)
-     @(def len-of-parse-alt-rest-comp-linear-1)
-     @(def len-of-parse-alt-rest-comp-linear-2)"
+    (xdoc::topstring
+     (xdoc::p
+      "The linear rules below are used in the guard verification proof.")
+     (xdoc::@def "parse-alt-rest-comp")
+     (xdoc::@def "len-of-parse-alt-rest-comp-linear-1")
+     (xdoc::@def "len-of-parse-alt-rest-comp-linear-2"))
     (seq input
          (trees1 := (parse-*cwsp input))
          (tree-slash := (parse-ichar #\/ input))
@@ -2541,42 +2500,39 @@
     :short "Parse a repetition @('*(1*c-wsp repetition)'),
             which is the rest of the definiens of @('concatenation')."
     :long
-    "<p>
-     Ideally the body of this function would be:
-     </p>
-     @({
-       (seq-backtrack
-        input
-        ((tree := (parse-conc-rest-comp input))
-         (trees := (parse-conc-rest input))
-         (return (cons tree trees)))
-        ((return-raw (mv nil nil (nat-list-fix input)))))
-     })
-     <p>
-     But that would defeat the termination proof,
-     which would include a failed subgoal saying that,
-     when @(tsee parse-conc-rest-comp) succeeds,
-     the length of its remaining input
-     is strictly less than
-     the length of its initial input.
-     This is the case for @(tsee parse-conc-rest-comp),
-     but it can only be proved after the function has been admitted.
-     In the termination proof, it is like an uninterpreted function.
-     </p>
-     <p>
-     So we add the condition on the lengths mentioned above
-     as a redundant check.
-     To do that, we cannot use @('seq-backtrack'),
-     which prevents us from referring to different versions of the input.
-     In order to maintain the invariant that
-     @(tsee parse-conc-rest) never fails,
-     we return no error if the condition is not satisfied (which never happens).
-     </p>
-     <p>
-     The linear rule below is used in the guard verification proof.
-     </p>
-     @(def parse-conc-rest)
-     @(def len-of-parse-conc-rest-linear-1)"
+    (xdoc::topstring
+     (xdoc::p
+      "Ideally the body of this function would be:")
+     (xdoc::codeblock
+      "(seq-backtrack"
+      "  input"
+      "  ((tree := (parse-conc-rest-comp input))"
+      "   (trees := (parse-conc-rest input))"
+      "   (return (cons tree trees)))"
+      "  ((return-raw (mv nil nil (nat-list-fix input)))))")
+     (xdoc::p
+      "But that would defeat the termination proof,
+       which would include a failed subgoal saying that,
+       when @(tsee parse-conc-rest-comp) succeeds,
+       the length of its remaining input
+       is strictly less than
+       the length of its initial input.
+       This is the case for @(tsee parse-conc-rest-comp),
+       but it can only be proved after the function has been admitted.
+       In the termination proof, it is like an uninterpreted function.")
+     (xdoc::p
+      "So we add the condition on the lengths mentioned above
+       as a redundant check.
+       To do that, we cannot use @('seq-backtrack'),
+       which prevents us from referring to different versions of the input.
+       In order to maintain the invariant that
+       @(tsee parse-conc-rest) never fails,
+       we return no error if the condition is not satisfied
+       (which never happens).")
+     (xdoc::p
+      "The linear rule below is used in the guard verification proof.")
+     (xdoc::@def "parse-conc-rest")
+     (xdoc::@def "len-of-parse-conc-rest-linear-1"))
     (b* (((mv error? tree input1)
           (parse-conc-rest-comp input))
          ((when error?) (mv nil nil (nat-list-fix input)))
@@ -2597,12 +2553,12 @@
             which is a component of
             the rest of the definiens of @('concatenation')."
     :long
-    "<p>
-     The linear rules below are used in the guard verification proof.
-     </p>
-     @(def parse-conc-rest-comp)
-     @(def len-of-parse-conc-rest-comp-linear-1)
-     @(def len-of-parse-conc-rest-comp-linear-2)"
+    (xdoc::topstring
+     (xdoc::p
+      "The linear rules below are used in the guard verification proof.")
+     (xdoc::@def "parse-conc-rest-comp")
+     (xdoc::@def "len-of-parse-conc-rest-comp-linear-1")
+     (xdoc::@def "len-of-parse-conc-rest-comp-linear-2"))
     (seq input
          (trees := (parse-1*cwsp input))
          (tree := (parse-repetition input))
@@ -2823,10 +2779,9 @@
   :parents (grammar-parser-implementation)
   :short "Parse the group @('(\"=\" / \"=/\")')."
   :long
-  "<p>
-   Since @('\"=\"') is a prefix of @('\"=/\"'),
-   the latter is tried before the former.
-   </p>"
+  (xdoc::topstring-p
+   "Since @('\"=\"') is a prefix of @('\"=/\"'),
+    the latter is tried before the former.")
   (seq-backtrack
    input
    ((tree := (parse-ichars #\= #\/ input))
@@ -3022,14 +2977,13 @@
   :parents (grammar-parser-implementation)
   :short "Parse a sequence of natural numbers into an ABNF grammar."
   :long
-  "<p>
-   This function parses the natural numbers into a list of rules,
-   returning the corresponding parse tree,
-   or @('nil') if parsing fails.
-   This function also checks that
-   there are no leftover natural numbers when parsing ends,
-   returning @('nil') if this check fails.
-   </p>"
+  (xdoc::topstring-p
+   "This function parses the natural numbers into a list of rules,
+    returning the corresponding parse tree,
+    or @('nil') if parsing fails.
+    This function also checks that
+    there are no leftover natural numbers when parsing ends,
+    returning @('nil') if this check fails.")
   (b* (((mv error? tree? rest) (parse-rulelist nats))
        ((when error?) nil)
        ((when rest) nil))
@@ -3047,43 +3001,40 @@
   :parents (grammar-parser-implementation)
   :short "Parse a file into an ABNF grammar."
   :long
-  "<p>
-   The ABNF language consists of sequences of ASCII codes,
-   as shown by theorem
-   <see topic='@(url *all-concrete-syntax-rules*)'
-   >@('ascii-only-*all-concrete-syntax-rules*')</see>.
-   ASCII codes are octets (i.e. 8-bit bytes).
-   Thus, instead of parsing sequences of natural numbers,
-   we can parse sequences of characters (which are isomorphic to octets),
-   by converting the characters to the corresponding octets.
-   The characters can be read from a file.
-   </p>
-   <p>
-   This function parses the characters from a file into a grammar.
-   If parsing fails, @('nil') is returned.
-   If reading the characters from the file fails, @('nil') is returned.
-   </p>
-   <p>
-   Thus, a language definition in ABNF can be put into a file
-   (e.g. copied and pasted from an RFC)
-   and parsed with this function.
-   Note that in ABNF lines are terminated by a carriage return and line feed,
-   so the file must follow that convention.
-   On Unix systems (e.g. Linux and macOS),
-   this can be accomplished by writing the file in Emacs,
-   setting the buffer's end-of-line to carriage return and line feed
-   by calling @('set-buffer-file-coding-system') with @('dos'),
-   and saving the file.
-   If the file is put under a version control system,
-   it should be forced to be treated as a binary file,
-   to avoid turning carriage returns and line feeds into just line feeds
-   across Windows and Unix platforms.
-   </p>
-   <p>
-   If parsing succeeds, it returns a correct parse tree
-   for the contents of the file as a list of ABNF rules,
-   according to the concrete syntax rules.
-   </p>"
+  (xdoc::topstring
+   (xdoc::p
+    "The ABNF language consists of sequences of ASCII codes,
+     as shown by theorem "
+    (xdoc::seetopic "*all-concrete-syntax-rules*"
+                    "@('ascii-only-*all-concrete-syntax-rules*')")
+    ". ASCII codes are octets (i.e. 8-bit bytes).
+     Thus, instead of parsing sequences of natural numbers,
+     we can parse sequences of characters (which are isomorphic to octets),
+     by converting the characters to the corresponding octets.
+     The characters can be read from a file.")
+   (xdoc::p
+    "This function parses the characters from a file into a grammar.
+     If parsing fails, @('nil') is returned.
+     If reading the characters from the file fails, @('nil') is returned.")
+   (xdoc::p
+    "Thus, a language definition in ABNF can be put into a file
+     (e.g. copied and pasted from an RFC)
+     and parsed with this function.
+     Note that in ABNF lines are terminated by a carriage return and line feed,
+     so the file must follow that convention.
+     On Unix systems (e.g. Linux and macOS),
+     this can be accomplished by writing the file in Emacs,
+     setting the buffer's end-of-line to carriage return and line feed
+     by calling @('set-buffer-file-coding-system') with @('dos'),
+     and saving the file.
+     If the file is put under a version control system,
+     it should be forced to be treated as a binary file,
+     to avoid turning carriage returns and line feeds into just line feeds
+     across Windows and Unix platforms.")
+   (xdoc::p
+    "If parsing succeeds, it returns a correct parse tree
+     for the contents of the file as a list of ABNF rules,
+     according to the concrete syntax rules."))
   (b* (((mv chars state) (read-file-characters filename state))
        ((unless (character-listp chars))
         (mv (hard-error 'abnf "ABNF Grammar File Reading Error." nil)
@@ -3102,32 +3053,30 @@
   :parents (grammar-parser)
   :short "Correctness theorems for the parser of ABNF grammars."
   :long
-  "<p>
-   The correctness of the parser consists of two parts:
-   </p>
-   <ul>
-     <li>
-     Soundness:
-     if @(tsee parse-grammar) succeeds,
-     it returns a parse tree for the input rooted at @('rulelist'):
-     @(def parse-treep-of-parse-grammar)
-     That is, the parser recognizes only grammars (i.e. lists of rules).
-     </li>
-     <li>
-     Completeness:
-     for every terminated tree rooted at @('rulelist')
-     that satisfies the
-     <see topic='@(url grammar-parser-disambiguating-restrictions)'
-     >disambiguating restrictions</see>,
-     @(tsee parse-grammar) succeeds on the string at the leaves of the tree
-     and returns that tree:
-     @(def parse-grammar-when-tree-match)
-     That is, the parser recognizes all grammars (i.e. lists of rules)
-     whose trees satisfy the
-     <see topic='@(url grammar-parser-disambiguating-restrictions)'
-     >disambiguating restrictions</see>.
-     </li>
-   </ul>"
+  (xdoc::topstring
+   (xdoc::p
+    "The correctness of the parser consists of two parts:")
+   (xdoc::ul
+    (xdoc::li
+     "Soundness:
+      if @(tsee parse-grammar) succeeds,
+      it returns a parse tree for the input rooted at @('rulelist'):
+      @(def parse-treep-of-parse-grammar)
+      That is, the parser recognizes only grammars (i.e. lists of rules).")
+    (xdoc::li
+     "Completeness:
+      for every terminated tree rooted at @('rulelist')
+      that satisfies the "
+     (xdoc::seetopic "grammar-parser-disambiguating-restrictions"
+                     "disambiguating restrictions")
+     ", @(tsee parse-grammar) succeeds on the string at the leaves of the tree
+      and returns that tree:
+      @(def parse-grammar-when-tree-match)
+      That is, the parser recognizes all grammars (i.e. lists of rules)
+      whose trees satisfy the "
+     (xdoc::seetopic "grammar-parser-disambiguating-restrictions"
+                     "disambiguating restrictions")
+     ".")))
   :order-subtopics t)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -3136,29 +3085,25 @@
   :parents (grammar-parser-correctness)
   :short "Soundness theorems for the parser of ABNF grammars."
   :long
-  "<p>
-   If @(tsee parse-grammar) succeeds,
-   it returns a parse tree for the input rooted at @('rulelist'):
-   @(def parse-treep-of-parse-grammar)
-   </p>
-   <p>
-   This is proved via two sets of theorems
-   for the parsing functions out of which @(tsee parse-grammar) is built:
-   </p>
-   <ul>
-     <li>
-     Input decomposition:
-     if parsing succeeds,
-     the string at the leaves of the returned tree(s)
-     consists of the consumed natural numbers in the input.
-     </li>
-     <li>
-     Tree matching:
-     if parsing succeeds,
-     the returned tree(s) match(es) the syntactic entity
-     that the parsing function is meant to parse.
-     </li>
-   </ul>"
+  (xdoc::topstring
+   (xdoc::p
+    "If @(tsee parse-grammar) succeeds,
+     it returns a parse tree for the input rooted at @('rulelist'):")
+   (xdoc::@def "parse-treep-of-parse-grammar")
+   (xdoc::p
+    "This is proved via two sets of theorems
+     for the parsing functions out of which @(tsee parse-grammar) is built:")
+   (xdoc::ul
+    (xdoc::li
+     "Input decomposition:
+      if parsing succeeds,
+      the string at the leaves of the returned tree(s)
+      consists of the consumed natural numbers in the input.")
+    (xdoc::li
+     "Tree matching:
+      if parsing succeeds,
+      the returned tree(s) match(es) the syntactic entity
+      that the parsing function is meant to parse.")))
   :order-subtopics t)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -3167,33 +3112,31 @@
   :parents (grammar-parser-soundness)
   :short "Input decomposition theorems for the parser of ABNF grammars."
   :long
-  "<p>
-   If parsing succeeds,
-   the string at the leaves of the returned tree(s)
-   consists of the consumed natural numbers in the input.
-   That is,
-   @(tsee append)ing the string at the leaves with the remaining input
-   yields the original input.
-   More precisely, it yields the original input
-   fixed according to @(tsee nat-list-fix),
-   because the parsing functions fix their input;
-   an alternative formulation is to avoid @(tsee nat-list-fix)
-   but include the hypothesis that the input satisfies @(tsee nat-listp).
-   </p>
-   <p>
-   The input decomposition theorem of @(tsee parse-any)
-   does not involve trees but makes an analogous statement:
-   concatenating the returned natural number with the remaining input
-   yields the original input.
-   </p>
-   <p>
-   The input decomposition proof of each parsing function uses,
-   as rewrite rules,
-   the input decomposition theorems of the parsing functions called by
-   the parsing function whose theorem is being proved.
-   The proofs also use the definition of @(tsee tree->string),
-   which we enable just before these theorems and disable just after.
-   </p>"
+  (xdoc::topstring
+   (xdoc::p
+    "If parsing succeeds,
+     the string at the leaves of the returned tree(s)
+     consists of the consumed natural numbers in the input.
+     That is,
+     @(tsee append)ing the string at the leaves with the remaining input
+     yields the original input.
+     More precisely, it yields the original input
+     fixed according to @(tsee nat-list-fix),
+     because the parsing functions fix their input;
+     an alternative formulation is to avoid @(tsee nat-list-fix)
+     but include the hypothesis that the input satisfies @(tsee nat-listp).")
+   (xdoc::p
+    "The input decomposition theorem of @(tsee parse-any)
+     does not involve trees but makes an analogous statement:
+     concatenating the returned natural number with the remaining input
+     yields the original input.")
+   (xdoc::p
+    "The input decomposition proof of each parsing function uses,
+     as rewrite rules,
+     the input decomposition theorems of the parsing functions called by
+     the parsing function whose theorem is being proved.
+     The proofs also use the definition of @(tsee tree->string),
+     which we enable just before these theorems and disable just after."))
   :order-subtopics t)
 
 ; disabled just after the input decomposition theorems:
@@ -4039,128 +3982,121 @@
 
   :long
 
-  "<p>
-   If parsing succeeds,
-   the returned tree(s) match(es) the syntactic entities being parsed.
-   For instance, if @(tsee parse-alpha) succeeds,
-   the returned tree matches @('ALPHA').
-   </p>
+  (xdoc::topstring
 
-   <p>
-   The tree matching proof of each parsing function uses, as rewrite rules,
-   the tree matching theorems of the parsing functions called by
-   the parsing function whose theorem is being proved.
-   </p>
+   (xdoc::p
+    "If parsing succeeds,
+     the returned tree(s) match(es) the syntactic entities being parsed.
+     For instance, if @(tsee parse-alpha) succeeds,
+     the returned tree matches @('ALPHA').")
 
-   <p>
-   The tree matching theorems use hypotheses of the form
-   @('(equal element ...)') or @('(equal repetition ...)'),
-   where @('element') and @('repetition') are variables
-   that appear in the theorems' conclusions
-   as the second arguments of
-   @(tsee tree-match-element-p) and @(tsee tree-list-match-repetition-p),
-   and where @('...') are constant terms
-   that evaluate to certain elements and repetitions.
-   The reason for not substituting these hypotheses in the conclusions
-   is so that these theorems can be used as rewrite rules
-   when proving the tree matching theorems for the calling parsing functions.
-   Consider, for example,
-   how the tree matching theorem @(tsee tree-match-of-parse-alpha)
-   is used in the proof of @(tsee tree-match-of-parse-alpha/digit/dash):
-   the goal
-   </p>
+   (xdoc::p
+    "The tree matching proof of each parsing function uses, as rewrite rules,
+     the tree matching theorems of the parsing functions called by
+     the parsing function whose theorem is being proved.")
 
-   @({
-     (tree-match-element-p
-        ... (!_ (/_ *alpha*) (/_ *digit*) (/_ \"-\")) ...)
-   })
+   (xdoc::p
+    "The tree matching theorems use hypotheses of the form
+     @('(equal element ...)') or @('(equal repetition ...)'),
+     where @('element') and @('repetition') are variables
+     that appear in the theorems' conclusions
+     as the second arguments of
+     @(tsee tree-match-element-p) and @(tsee tree-list-match-repetition-p),
+     and where @('...') are constant terms
+     that evaluate to certain elements and repetitions.
+     The reason for not substituting these hypotheses in the conclusions
+     is so that these theorems can be used as rewrite rules
+     when proving the tree matching theorems for the calling parsing functions.
+     Consider, for example,
+     how the tree matching theorem @(tsee tree-match-of-parse-alpha)
+     is used in the proof of @(tsee tree-match-of-parse-alpha/digit/dash):
+     the goal")
 
-   <p>
-   simplifies (via the executable counterpart rules) to
-   </p>
+   (xdoc::codeblock
+    "(tree-match-element-p"
+    "   ... (!_ (/_ *alpha*) (/_ *digit*) (/_ \"-\")) ...)")
 
-   @({
-     (tree-match-element-p
-        ... '(:group (((:repetition (:repeat 1 (:finite 1))
-                       (:rulename (:rulename \"alpha\"))))
-                      ((:repetition (:repeat 1 (:finite 1))
-                       (:rulename (:rulename \"digit\"))))
-                      ((:repetition (:repeat 1 (:finite 1))
-                       (:char-val (:insensitive \"-\")))))) ...)
-   })
+   (xdoc::p
+    "simplifies (via the executable counterpart rules) to")
 
-   <p>
-   and then reduces to, among others, the subgoal
-   </p>
+   (xdoc::codeblock
+    "(tree-match-element-p"
+    "   ... '(:group (((:repetition (:repeat 1 (:finite 1))"
+    "                  (:rulename (:rulename \"alpha\"))))"
+    "                ((:repetition (:repeat 1 (:finite 1))"
+    "                  (:rulename (:rulename \"digit\"))))"
+    "                 ((:repetition (:repeat 1 (:finite 1))"
+    "                  (:char-val (:insensitive \"-\")))))) ...)")
 
-   @({
-     (tree-match-element-p
-        ... '(:rulename (:rulename \"alpha\")) ...)
-   })
+   (xdoc::p
+    "and then reduces to, among others, the subgoal")
 
-   <p>
-   which would not match
-   @('(tree-match-element-p ... (element-rulename *alpha*) ...)')
-   if that were the conclusion of @(tsee tree-match-of-parse-alpha).
-   We could substitute the fully evaluated quoted constants
-   into the conclusions of the tree matching theorems
-   (e.g. @(''(:rulename (:rulename \"alpha\"))')
-   in @(tsee tree-match-of-parse-alpha)),
-   but this would be slightly more inconvenient and less readable,
-   especially when the elements are not simple rule elements.
-   </p>
+   (xdoc::codeblock
+    "(tree-match-element-p"
+    "   ... '(:rulename (:rulename \"alpha\")) ...)")
 
-   <p>
-   In the tree matching theorems for the mutually recursive parsing functions
-   (i.e. @(tsee parse-alternation), @(tsee parse-concatenation), etc.),
-   the extra variables @('element') and @('repetition')
-   in the @('(equal element ...)') and @('(equal repetition ...)') hypotheses
-   would lead to an unprovable induction structure
-   because the variables @('element') and @('repetition')
-   are the same in the induction hypotheses and conclusions,
-   but are equated to different constant terms.
-   Thus, we first prove by induction versions of the theorems
-   with the equalities substituted in the conclusions
-   (i.e., the @('tree-match-...-lemma') and @('tree-list-match-...-lemma')
-   theorems),
-   and then we prove the desired theorems, with the equality hypotheses.
-   The latter are used as rewrite rules in the tree matching proofs
-   for the parsing functions that call the mutually recursive parsing functions.
-   </p>
+   (xdoc::p
+    "which would not match
+     @('(tree-match-element-p ... (element-rulename *alpha*) ...)')
+     if that were the conclusion of @(tsee tree-match-of-parse-alpha).
+     We could substitute the fully evaluated quoted constants
+     into the conclusions of the tree matching theorems
+     (e.g. @(''(:rulename (:rulename \"alpha\"))')
+     in @(tsee tree-match-of-parse-alpha)),
+     but this would be slightly more inconvenient and less readable,
+     especially when the elements are not simple rule elements.")
 
-   <p>
-   The tree matching proofs also use the definitions of
-   @(tsee tree->string),
-   @(tsee tree-match-element-p),
-   @(tsee tree-list-match-repetition-p),
-   @(tsee tree-list-match-element-p),
-   and @(tsee numrep-match-repeat-range-p).
-   We enable these definitions just before the tree matching theorems
-   and we disable them just after.
-   Since in some theorems
-   @(tsee tree-match-element-p) does not get expanded in places where it should
-   (presumably due to ACL2's heuristics for expanding recursive functions),
-   we use explicit @(':expand') hints in those theorems;
-   the potential looping due to the mutually recursive grammar rules
-   (for @('alternation'), @('concatenation'), etc.) does not happen,
-   presumably thanks to the firing of the tree matching rewrite rules
-   as soon as they apply.
-   There is no direct use of the definitions of
-   @(tsee tree-list-list-match-alternation-p) and
-   @(tsee tree-list-list-match-concatenation-p)
-   because the alternations and concatenations in these theorems
-   always have an explicit list structure and thus rewrite rules like
-   @(tsee tree-list-list-match-alternation-p-of-cons-alternation) suffice.
-   </p>
+   (xdoc::p
+    "In the tree matching theorems for the mutually recursive parsing functions
+     (i.e. @(tsee parse-alternation), @(tsee parse-concatenation), etc.),
+     the extra variables @('element') and @('repetition')
+     in the @('(equal element ...)') and @('(equal repetition ...)') hypotheses
+     would lead to an unprovable induction structure
+     because the variables @('element') and @('repetition')
+     are the same in the induction hypotheses and conclusions,
+     but are equated to different constant terms.
+     Thus, we first prove by induction versions of the theorems
+     with the equalities substituted in the conclusions
+     (i.e., the @('tree-match-...-lemma') and @('tree-list-match-...-lemma')
+     theorems),
+     and then we prove the desired theorems, with the equality hypotheses.
+     The latter are used as rewrite rules in the tree matching proofs
+     for the parsing functions that call
+     the mutually recursive parsing functions.")
 
-   <p>
-   For some parsing functions that parse repetitions,
-   the tree matching theorems say that the returned trees match
-   not only the repetitions (via @(tsee tree-list-match-repetition-p)),
-   but also the repeated elements (via @(tsee tree-list-match-element-p)).
-   This is because subgoals involving @(tsee tree-list-match-element-p)
-   arise in the tree matching theorems of the callers of such parsing functions.
-   </p>"
+   (xdoc::p
+    "The tree matching proofs also use the definitions of
+     @(tsee tree->string),
+     @(tsee tree-match-element-p),
+     @(tsee tree-list-match-repetition-p),
+     @(tsee tree-list-match-element-p),
+     and @(tsee numrep-match-repeat-range-p).
+     We enable these definitions just before the tree matching theorems
+     and we disable them just after.
+     Since in some theorems
+     @(tsee tree-match-element-p) does not get expanded
+     in places where it should
+     (presumably due to ACL2's heuristics for expanding recursive functions),
+     we use explicit @(':expand') hints in those theorems;
+     the potential looping due to the mutually recursive grammar rules
+     (for @('alternation'), @('concatenation'), etc.) does not happen,
+     presumably thanks to the firing of the tree matching rewrite rules
+     as soon as they apply.
+     There is no direct use of the definitions of
+     @(tsee tree-list-list-match-alternation-p) and
+     @(tsee tree-list-list-match-concatenation-p)
+     because the alternations and concatenations in these theorems
+     always have an explicit list structure and thus rewrite rules like
+     @(tsee tree-list-list-match-alternation-p-of-cons-alternation) suffice.")
+
+   (xdoc::p
+    "For some parsing functions that parse repetitions,
+     the tree matching theorems say that the returned trees match
+     not only the repetitions (via @(tsee tree-list-match-repetition-p)),
+     but also the repeated elements (via @(tsee tree-list-match-element-p)).
+     This is because subgoals involving @(tsee tree-list-match-element-p)
+     arise in the tree matching theorems
+     of the callers of such parsing functions."))
 
   :order-subtopics t)
 
@@ -5189,17 +5125,17 @@
   :parents (grammar-parser-soundness)
   :short "Top-level soundness theorem of the parser of ABNF grammars."
   :long
-  "<p>
-   If @(tsee parse-grammar) succeeds,
-   it returns a parse tree for the input rooted at @('rulelist').
-   This is proved from
-   the input decomposition theorem and tree matching theorem for @('rulelist'),
-   and the fact that @(tsee parse-grammar) fails if there is extra input.
-   </p>
-   <p>
-   An alternative formulation is to avoid @(tsee nat-list-fix)
-   but include the hypothesis that the input satisfies @(tsee nat-listp).
-   </p>"
+  (xdoc::topstring
+   (xdoc::p
+    "If @(tsee parse-grammar) succeeds,
+     it returns a parse tree for the input rooted at @('rulelist').
+     This is proved from
+     the input decomposition theorem
+     and tree matching theorem for @('rulelist'),
+     and the fact that @(tsee parse-grammar) fails if there is extra input.")
+   (xdoc::p
+    "An alternative formulation is to avoid @(tsee nat-list-fix)
+     but include the hypothesis that the input satisfies @(tsee nat-listp)."))
   (let ((tree? (parse-grammar nats)))
     (implies tree?
              (parse-treep tree?
@@ -5217,29 +5153,28 @@
   :short "Restrictions on parse trees that correspond to
           how the parser of ABNF grammars resolves the @('rulelist') ambiguity."
   :long
-  "<p>
-   As explained in the documentation of the
-   <see topic='@(url grammar-parser-implementation)'>grammar parser
-   implementation</see>,
-   the @('rulelist') ambiguity is naturally resolved
-   by having @(tsee parse-*cwsp) parse as many @('c-wsp')s as possible,
-   like the other @('parse-*...') parsing functions.
-   This means that the parser generates only parse trees
-   whose @('(*c-wsp c-nl)') subtrees of @('rulelist') trees
-   do not start with @('WSP')s,
-   because such @('WSP')s always go
-   under the immediately preceding @('rule') or @('(*c-wsp c-nl)')
-   during parsing;
-   except that if the @('rulelist') starts with a @('(*c-wsp c-nl)'),
-   that subtree may start with @('WSP'),
-   since there is no preceding @('rule') or @('(*c-wsp c-nl)').
-   </p>
-   <p>
-   The following predicates capture these restrictions.
-   They characterize the parse trees generated by the parser.
-   The completeness of the parser is, necessarily,
-   proved relatively to these restrictions.
-   </p>"
+  (xdoc::topstring
+   (xdoc::p
+    "As explained in the documentation of the "
+    (xdoc::seetopic "grammar-parser-implementation"
+                    "grammar parser implementation")
+    ", the @('rulelist') ambiguity is naturally resolved
+     by having @(tsee parse-*cwsp) parse as many @('c-wsp')s as possible,
+     like the other @('parse-*...') parsing functions.
+     This means that the parser generates only parse trees
+     whose @('(*c-wsp c-nl)') subtrees of @('rulelist') trees
+     do not start with @('WSP')s,
+     because such @('WSP')s always go
+     under the immediately preceding @('rule') or @('(*c-wsp c-nl)')
+     during parsing;
+     except that if the @('rulelist') starts with a @('(*c-wsp c-nl)'),
+     that subtree may start with @('WSP'),
+     since there is no preceding @('rule') or @('(*c-wsp c-nl)').")
+   (xdoc::p
+    "The following predicates capture these restrictions.
+     They characterize the parse trees generated by the parser.
+     The completeness of the parser is, necessarily,
+     proved relatively to these restrictions."))
   :order-subtopics t)
 
 (define tree-cwsp-restriction-p ((tree treep))
@@ -5253,11 +5188,10 @@
           of the (non-starting) @('(*c-wsp c-nl)') trees
           generated by the parser."
   :long
-  "<p>
-   In order for a @('(*c-wsp c-nl)') tree not to start with @('WSP'),
-   the first @('c-wsp') subtree (if any) of the @('*c-wsp') repetition
-   must not match the @('WSP') alternative of the @('c-wsp') rule.
-   </p>"
+  (xdoc::topstring-p
+   "In order for a @('(*c-wsp c-nl)') tree not to start with @('WSP'),
+    the first @('c-wsp') subtree (if any) of the @('*c-wsp') repetition
+    must not match the @('WSP') alternative of the @('c-wsp') rule.")
   (not (tree-match-element-p (car (car (tree-nonleaf->branches tree)))
                              (element-rulename *wsp*)
                              *all-concrete-syntax-rules*))
@@ -5278,12 +5212,11 @@
   :short "Restrictions on the (non-starting) @('(*c-wsp c-nl)') trees
           generated by the parser."
   :long
-  "<p>
-   In order for a @('(*c-wsp c-nl)') tree not to start with @('WSP'),
-   either its @('*c-wsp') repetition must be empty
-   or its first @('c-wsp') subtree must satisfy
-   the restriction captured by @(tsee tree-cwsp-restriction-p).
-   </p>"
+  (xdoc::topstring-p
+   "In order for a @('(*c-wsp c-nl)') tree not to start with @('WSP'),
+    either its @('*c-wsp') repetition must be empty
+    or its first @('c-wsp') subtree must satisfy
+    the restriction captured by @(tsee tree-cwsp-restriction-p).")
   (or (null (car (tree-nonleaf->branches tree)))
       (tree-cwsp-restriction-p (car (car (tree-nonleaf->branches tree)))))
   :guard-hints (("Goal"
@@ -5304,12 +5237,11 @@
   :short "Restrictions on the (non-starting) @('( rule / (*c-wsp c-nl) )') trees
           generated by the parser."
   :long
-  "<p>
-   This lifts the restriction captured by @(tsee tree-*cwsp-cnl-restriction-p)
-   from @('(*c-wsp c-nl)') to @('( rule / (*c-wsp c-nl) )').
-   If the alternative is @('rule'), no restriction applies;
-   otherwise, @(tsee tree-*cwsp-cnl-restriction-p) applies.
-   </p>"
+  (xdoc::topstring-p
+   "This lifts the restriction captured by @(tsee tree-*cwsp-cnl-restriction-p)
+    from @('(*c-wsp c-nl)') to @('( rule / (*c-wsp c-nl) )').
+    If the alternative is @('rule'), no restriction applies;
+    otherwise, @(tsee tree-*cwsp-cnl-restriction-p) applies.")
   (or (tree-match-element-p (car (car (tree-nonleaf->branches tree)))
                             (element-rulename *rule*)
                             *all-concrete-syntax-rules*)
@@ -5333,11 +5265,10 @@
           generated by the parser,
           after the starting @('( rule / (*c-wsp c-nl) )')."
   :long
-  "<p>
-   This lifts the restriction
-   captured by @(tsee tree-rule-/-*cwsp-cnl-restriction-p)
-   from @('( rule / (*c-wsp c-nl) )') to @('*( rule / (*c-wsp c-nl) )').
-   </p>"
+  (xdoc::topstring-p
+   "This lifts the restriction
+    captured by @(tsee tree-rule-/-*cwsp-cnl-restriction-p)
+    from @('( rule / (*c-wsp c-nl) )') to @('*( rule / (*c-wsp c-nl) )').")
   :elementp-of-nil t
   :guard-hints (("Goal" :in-theory (enable tree-list-match-repetition-p
                                            numrep-match-repeat-range-p))))
@@ -5351,12 +5282,11 @@
   :parents (grammar-parser-disambiguating-restrictions)
   :short "Restrictions on the @('rulelist') trees generated by the parser."
   :long
-  "<p>
-   This lifts the restriction
-   captured by @(tsee tree-list-*-rule-/-*cwsp-cnl-restriction-p)
-   from @('*( rule / (*c-wsp c-nl) )') to @('rulelist').
-   The restriction only applies to the subtrees after the first one.
-   </p>"
+  (xdoc::topstring-p
+   "This lifts the restriction
+    captured by @(tsee tree-list-*-rule-/-*cwsp-cnl-restriction-p)
+    from @('*( rule / (*c-wsp c-nl) )') to @('rulelist').
+    The restriction only applies to the subtrees after the first one.")
   (b* ((subtrees (car (tree-nonleaf->branches tree))))
     (or (not (consp subtrees))
         (tree-list-*-rule-/-*cwsp-cnl-restriction-p (cdr subtrees))))
@@ -5375,23 +5305,22 @@
   :short "Parsing failure propagation theorems
           for the parser of ABNF grammars."
   :long
-  "<p>
-   If certain parsing functions fail,
-   other parsing functions fail as well,
-   because the former parse prefixes of the latter.
-   In other words, parsing failures ``propagate''.
-   </p>
-   <p>
-   The parsing failure propagation theorems below state this kind of facts.
-   These theorems are used as rewrite rules in the
-   <see topic='@(url grammar-parser-completeness)'>completeness theorems</see>
-   and in the
-   <see topic='@(url grammar-parser-disambiguation)'>disambiguation
-   theorems</see>.
-   The parsing failure propagation theorems are disabled by default;
-   they are enabled in the completeness and disambiguation theorems
-   that use them.
-   </p>"
+  (xdoc::topstring
+   (xdoc::p
+    "If certain parsing functions fail,
+     other parsing functions fail as well,
+     because the former parse prefixes of the latter.
+     In other words, parsing failures ``propagate''.")
+   (xdoc::p
+    "The parsing failure propagation theorems below state this kind of facts.
+     These theorems are used as rewrite rules in the "
+    (xdoc::seetopic "grammar-parser-completeness" "completeness theorems")
+    " and in the "
+    (xdoc::seetopic "grammar-parser-disambiguation"
+                    "disambiguation theorems")
+    ". The parsing failure propagation theorems are disabled by default;
+     they are enabled in the completeness and disambiguation theorems
+     that use them."))
   :order-subtopics t)
 
 (defruled fail-dot-1*bit-when-fail-dot
@@ -5494,105 +5423,102 @@
   :parents (grammar-parser-completeness grammar-parser-disambiguation)
 
   :short "Parsing constraint theorems for the parser of ABNF grammars."
+
   :long
 
-  "<p>
-   If a parsing function succeeds,
-   the parsed input must satisfy certain constraints.
-   For example, if @(tsee parse-alpha) succeeds,
-   the input must be non-empty and start with (the ASCII code of) a letter.
-   As another example, if @(tsee parse-comment) succeeds,
-   the input must be non-empty and start with (the ASCII code of) a semicolon.
-   </p>
+  (xdoc::topstring
 
-   <p>
-   The parsing constraint theorems below capture constraints of this kind.
-   </p>
+   (xdoc::p
+    "If a parsing function succeeds,
+     the parsed input must satisfy certain constraints.
+     For example, if @(tsee parse-alpha) succeeds,
+     the input must be non-empty and start with (the ASCII code of) a letter.
+     As another example, if @(tsee parse-comment) succeeds,
+     the input must be non-empty
+     and start with (the ASCII code of) a semicolon.")
 
-   <h3>Usage</h3>
+   (xdoc::p
+    "The parsing constraint theorems below capture constraints of this kind.")
 
-   <p>
-   These theorems are used, together with the
-   <see topic='@(url grammar-parser-constraints-from-tree-matching)'>tree
-   matching constraint theorems</see>,
-   to prove the
-   <see topic='@(url grammar-parser-disambiguation)'>disambiguation
-   theorems</see>,
-   which in turn are used to prove the
-   <see topic='@(url grammar-parser-completeness)'>completeness
-   theorems</see>.
-   </p>
+   (xdoc::h3 "Usage")
 
-   <p>
-   The parsing constraint theorems have no rule classes.
-   They are used in the proofs of the disambiguation theorems
-   via @(':use') hints.
-   </p>
+   (xdoc::p
+    "These theorems are used, together with the "
+    (xdoc::seetopic "grammar-parser-constraints-from-tree-matching"
+                    "tree matching constraint theorems")
+    ", to prove the "
+    (xdoc::seetopic "grammar-parser-disambiguation"
+                    "disambiguation theorems")
+    ",  which in turn are used to prove the "
+    (xdoc::seetopic "grammar-parser-completeness"
+                    "completeness theorems")
+    ".")
 
-   <h3>Scope</h3>
+   (xdoc::p
+    "The parsing constraint theorems have no rule classes.
+     They are used in the proofs of the disambiguation theorems
+     via @(':use') hints.")
 
-   <p>
-   There are parsing constraint theorems only for some of the parsing functions:
-   just the ones used to prove the disambiguation theorems.
-   Furthermore, each parsing constraint theorem only states necessary,
-   but generally not sufficient,
-   conditions for the success of the corresponding parsing function:
-   it states only the constraints used to prove the disambiguation theorems.
-   </p>
+   (xdoc::h3 "Scope")
 
-   <p>
-   Most parsing constraint theorems state constraints
-   just on the first natural number of the input (the @(tsee car)),
-   because most of the grammar is LL(1);
-   these constraints correspond to `first sets'
-   in LL(1) parsing theory.
-   A few parsing constraint theorems state additional constraints
-   on the second natural number of the input (the @(tsee cadr)),
-   as needed for the LL(2) portions of the grammar.
-   </p>
+   (xdoc::p
+    "There are parsing constraint theorems
+     only for some of the parsing functions:
+     just the ones used to prove the disambiguation theorems.
+     Furthermore, each parsing constraint theorem only states necessary,
+     but generally not sufficient,
+     conditions for the success of the corresponding parsing function:
+     it states only the constraints used to prove the disambiguation theorems.")
 
-   <h3>Proof Methods</h3>
+   (xdoc::p
+    "Most parsing constraint theorems state constraints
+     just on the first natural number of the input (the @(tsee car)),
+     because most of the grammar is LL(1);
+     these constraints correspond to `first sets'
+     in LL(1) parsing theory.
+     A few parsing constraint theorems state additional constraints
+     on the second natural number of the input (the @(tsee cadr)),
+     as needed for the LL(2) portions of the grammar.")
 
-   <p>
-   The proof of each parsing constraint theorem
-   uses the definition of the corresponding parsing function,
-   e.g. @(tsee constraints-from-parse-alpha) uses
-   the definition of @(tsee parse-alpha).
-   In @(tsee constraints-from-parse-repetition),
-   @(tsee parse-repetition) does not get expanded even if it is enabled
-   (presumably due to ACL2's heuristics for expanding recursive functions);
-   thus, we use an explcit @(':expand') hint in that theorem.
-   </p>
+   (xdoc::h3 "Proof Methods")
 
-   <p>
-   When a parsing function calls another parsing function
-   that has a parsing constraint theorem,
-   this theorem is used (via a @(':use') hint)
-   in the proof of the caller's parsing constraint theorem,
-   e.g. @(tsee constraints-from-parse-in-range) is used
-   in the proof of @(tsee constraints-from-parse-alpha)
-   twice, once for each call of @(tsee parse-in-range) in @(tsee parse-alpha).
-   If instead the called parsing function
-   does not have a parsing constraint theorem,
-   the definition of the called parsing function is enabled
-   in the proof of the parsing constraint theorem of the caller,
-   e.g. the proof of @(tsee constraints-from-parse-wsp/vchar)
-   enables the definition of @(tsee parse-vchar).
-   </p>
+   (xdoc::p
+    "The proof of each parsing constraint theorem
+     uses the definition of the corresponding parsing function,
+     e.g. @(tsee constraints-from-parse-alpha) uses
+     the definition of @(tsee parse-alpha).
+     In @(tsee constraints-from-parse-repetition),
+     @(tsee parse-repetition) does not get expanded even if it is enabled
+     (presumably due to ACL2's heuristics for expanding recursive functions);
+     thus, we use an explcit @(':expand') hint in that theorem.")
 
-   <p>
-   Since @(tsee constraints-from-parse-ichar)
-   and @(tsee constraints-from-parse-ichars)
-   state constraints with @(tsee nat-match-insensitive-char-p),
-   and since those two theorems are used in the proofs
-   of many other parsing constraint theorems,
-   the proofs of the latter theorems
-   use the definition @(tsee nat-match-insensitive-char-p).
-   To avoid enabling it explicitly in many theorems,
-   we enable @(tsee nat-match-insensitive-char-p)
-   just before the parsing constraint theorems
-   and we disable it just after.
-   </p>"
+   (xdoc::p
+    "When a parsing function calls another parsing function
+     that has a parsing constraint theorem,
+     this theorem is used (via a @(':use') hint)
+     in the proof of the caller's parsing constraint theorem,
+     e.g. @(tsee constraints-from-parse-in-range) is used
+     in the proof of @(tsee constraints-from-parse-alpha)
+     twice, once for each call of @(tsee parse-in-range) in @(tsee parse-alpha).
+     If instead the called parsing function
+     does not have a parsing constraint theorem,
+     the definition of the called parsing function is enabled
+     in the proof of the parsing constraint theorem of the caller,
+     e.g. the proof of @(tsee constraints-from-parse-wsp/vchar)
+     enables the definition of @(tsee parse-vchar).")
+
+   (xdoc::p
+    "Since @(tsee constraints-from-parse-ichar)
+     and @(tsee constraints-from-parse-ichars)
+     state constraints with @(tsee nat-match-insensitive-char-p),
+     and since those two theorems are used in the proofs
+     of many other parsing constraint theorems,
+     the proofs of the latter theorems
+     use the definition @(tsee nat-match-insensitive-char-p).
+     To avoid enabling it explicitly in many theorems,
+     we enable @(tsee nat-match-insensitive-char-p)
+     just before the parsing constraint theorems
+     and we disable it just after."))
 
   :order-subtopics t)
 
@@ -5941,202 +5867,193 @@
 
   :long
 
-  "<p>
-   If a (list of) terminated tree(s) matches a syntactic entity,
-   the string at the leaves of the tree(s) must satisfy certain constraints.
-   For example, if a terminated tree matches @('CRLF'),
-   the string at the leaves of the tree
-   must be non-empty and start with a carriage return.
-   </p>
+  (xdoc::topstring
 
-   <p>
-   The tree matching constraint theorems below capture constraints of this kind.
-   While these theorems are not directly related to the parser,
-   they are motivated by the parser (see below).
-   </p>
+   (xdoc::p
+    "If a (list of) terminated tree(s) matches a syntactic entity,
+     the string at the leaves of the tree(s) must satisfy certain constraints.
+     For example, if a terminated tree matches @('CRLF'),
+     the string at the leaves of the tree
+     must be non-empty and start with a carriage return.")
 
-   <h3>Usage</h3>
+   (xdoc::p
+    "The tree matching constraint theorems below
+     capture constraints of this kind.
+     While these theorems are not directly related to the parser,
+     they are motivated by the parser (see below).")
 
-   <p>
-   These theorems are used, together with the
-   <see topic='@(url grammar-parser-constraints-from-parsing)'>parsing
-   constraint theorems</see>,
-   to prove the
-   <see topic='@(url grammar-parser-disambiguation)'>disambiguation
-   theorems</see>,
-   which in turn are used to prove the
-   <see topic='@(url grammar-parser-completeness)'>completeness
-   theorems</see>.
-   </p>
+   (xdoc::h3 "Usage")
 
-   <p>
-   The tree matching constraint theorems have no rule classes.
-   They are used in the proofs of the disambiguation theorems
-   via @(':use') hints.
-   </p>
+   (xdoc::p
+    "These theorems are used, together with the "
+    (xdoc::seetopic "grammar-parser-constraints-from-parsing"
+                    "parsing constraint theorems")
+    ", to prove the "
+    (xdoc::seetopic "grammar-parser-disambiguation"
+                    "disambiguation theorems")
+    ", which in turn are used to prove the "
+    (xdoc::seetopic "grammar-parser-completeness"
+                    "completeness theorems")
+    ".")
 
-   <p>
-   Some tree matching constraint theorems are used
-   to incrementally prove other tree matching constraint theorems (see below),
-   also via @(':use') hints.
-   </p>
+   (xdoc::p
+    "The tree matching constraint theorems have no rule classes.
+     They are used in the proofs of the disambiguation theorems
+     via @(':use') hints.")
 
-   <h3>Scope</h3>
+   (xdoc::p
+    "Some tree matching constraint theorems are used
+     to incrementally prove other tree matching constraint theorems (see below),
+     also via @(':use') hints.")
 
-   <p>
-   There are tree matching constraint theorems only for some syntactic entities:
-   just the ones used to prove the disambiguation theorems,
-   and to incrementally prove other tree matching constraint theorems.
-   Furthermore, each tree matching constraint theorem only states necessary,
-   but generally not sufficient,
-   conditions for the matching of the corresponding syntactic entity:
-   it states only the constraints used to prove the disambiguation theorems
-   (and, incrementally, other tree matching constraint theorems).
-   </p>
+   (xdoc::h3 "Scope")
 
-   <p>
-   Most tree matching constraint theorems state constraints
-   just on the first natural number of the string at the leaves of the tree(s)
-   (the @(tsee car)),
-   because most of the grammar is LL(1).
-   A few tree matching constraint theorems state additional constraints
-   on the second natural number of the string at the leaves of the tree(s)
-   (the @(tsee cadr)),
-   as needed for the LL(2) portions of the grammar.
-   Since the tree matching constraint theorem
-   @(tsee constraints-from-tree-match-ichars)
-   would have to state constraints
-   either on the first natural number or on the first and second natural numbers
-   depending on the instantiation of @('charstring'),
-   for simplicity this theorem states constraints
-   on the whole string at the leaves of the tree.
-   </p>
+   (xdoc::p
+    "There are tree matching constraint theorems
+     only for some syntactic entities:
+     just the ones used to prove the disambiguation theorems,
+     and to incrementally prove other tree matching constraint theorems.
+     Furthermore, each tree matching constraint theorem only states necessary,
+     but generally not sufficient,
+     conditions for the matching of the corresponding syntactic entity:
+     it states only the constraints used to prove the disambiguation theorems
+     (and, incrementally, other tree matching constraint theorems).")
 
-   <h3>Hypotheses on the Tree(s)</h3>
+   (xdoc::p
+    "Most tree matching constraint theorems state constraints
+     just on the first natural number of the string at the leaves of the tree(s)
+     (the @(tsee car)),
+     because most of the grammar is LL(1).
+     A few tree matching constraint theorems state additional constraints
+     on the second natural number of the string at the leaves of the tree(s)
+     (the @(tsee cadr)),
+     as needed for the LL(2) portions of the grammar.
+     Since the tree matching constraint theorem
+     @(tsee constraints-from-tree-match-ichars)
+     would have to state constraints
+     either on the first natural number
+     or on the first and second natural numbers
+     depending on the instantiation of @('charstring'),
+     for simplicity this theorem states constraints
+     on the whole string at the leaves of the tree.")
 
-   <p>
-   Most tree matching constraint theorems include
-   hypotheses saying that the trees are terminated.
-   This ensures that the strings at the leaves of the trees
-   consist of natural numbers and not rule names,
-   since the constraints are stated on natural numbers.
-   </p>
+   (xdoc::h3 "Hypotheses on the Tree(s)")
 
-   <p>
-   A few tree matching constraint theorems do not need these hypotheses
-   because the corresponding syntactic entities can only be matched
-   by trees whose (starting) leaves are natural numbers.
-   For instance, in @(tsee constraints-from-tree-match-dot-etc.),
-   the group @('(\".\" ...)') can only be matched
-   by a tree whose first leaf is a natural number,
-   upon which the theorem states the constraint.
-   </p>
+   (xdoc::p
+    "Most tree matching constraint theorems include
+     hypotheses saying that the trees are terminated.
+     This ensures that the strings at the leaves of the trees
+     consist of natural numbers and not rule names,
+     since the constraints are stated on natural numbers.")
 
-   <h3>Hypotheses on the String at the Leaves of the Tree(s)</h3>
+   (xdoc::p
+    "A few tree matching constraint theorems do not need these hypotheses
+     because the corresponding syntactic entities can only be matched
+     by trees whose (starting) leaves are natural numbers.
+     For instance, in @(tsee constraints-from-tree-match-dot-etc.),
+     the group @('(\".\" ...)') can only be matched
+     by a tree whose first leaf is a natural number,
+     upon which the theorem states the constraint.")
 
-   <p>
-   The tree matching constraint theorems
-   whose names end with @('-when-nonempty')
-   include hypotheses saying that the string at the leaves is not empty.
-   This is because the corresponding syntactic entities may be matched
-   by a tree with an empty string at the leaves
-   or by an empty list of trees.
-   For example,
-   in @(tsee constraints-from-tree-match-bin-val-rest-when-nonempty),
-   the matching tree may have no subtrees,
-   since the syntactic entity in question
-   is an option @('[ 1*(\".\" 1*BIT) / (\"-\" 1*BIT) ]').
-   As another example,
-   in @(tsee constraints-from-tree-list-match-*digit-when-nonempty),
-   the matching list of trees may be empty.
-   </p>
+   (xdoc::h3 "Hypotheses on the String at the Leaves of the Tree(s)")
 
-   <h3>Proof Methods</h3>
+   (xdoc::p
+    "The tree matching constraint theorems
+     whose names end with @('-when-nonempty')
+     include hypotheses saying that the string at the leaves is not empty.
+     This is because the corresponding syntactic entities may be matched
+     by a tree with an empty string at the leaves
+     or by an empty list of trees.
+     For example,
+     in @(tsee constraints-from-tree-match-bin-val-rest-when-nonempty),
+     the matching tree may have no subtrees,
+     since the syntactic entity in question
+     is an option @('[ 1*(\".\" 1*BIT) / (\"-\" 1*BIT) ]').
+     As another example,
+     in @(tsee constraints-from-tree-list-match-*digit-when-nonempty),
+     the matching list of trees may be empty.")
 
-   <p>
-   The proof of each tree matching constraint theorem
-   expands @(tsee tree-match-element-p) or @(tsee tree-list-match-repetition-p)
-   (depending on whether the theorem applies to
-   a single tree or to a list of trees).
-   But most theorems need explicit @(':expand') hints for that:
-   just enabling the functions does not suffice
-   (presumably due to ACL2's heuristics for expanding recursive functions).
-   </p>
+   (xdoc::h3 "Proof Methods")
 
-   <p>
-   Since many repetitions consist of one element,
-   the rewrite rule @(tsee tree-list-match-repetition-p-of-1-repetition)
-   is used in many proofs.
-   It is enabled just before the tree matching constraint theorems
-   and disabled just after.
-   </p>
+   (xdoc::p
+    "The proof of each tree matching constraint theorem
+     expands @(tsee tree-match-element-p)
+     or @(tsee tree-list-match-repetition-p)
+     (depending on whether the theorem applies to
+     a single tree or to a list of trees).
+     But most theorems need explicit @(':expand') hints for that:
+     just enabling the functions does not suffice
+     (presumably due to ACL2's heuristics for expanding recursive functions).")
 
-   <p>
-   Except for
-   @(tsee constraints-from-tree-match-dot-etc.) and
-   @(tsee constraints-from-tree-match-dash-etc.),
-   the alternations and concatenations of the syntactic entities being matched
-   have an explicit list structure,
-   and so the proof automatically uses rewrite rules like
-   @(tsee tree-list-list-match-alternation-p-of-cons-alternation).
-   In contrast,
-   for @(tsee constraints-from-tree-match-dot-etc.) and
-   for @(tsee constraints-from-tree-match-dash-etc.),
-   we expand
-   @(tsee tree-list-list-match-alternation-p) and
-   @(tsee tree-list-list-match-concatenation-p)
-   via explicit @(':expand') hints,
-   because just enabling these two functions does not suffice
-   (presumably due to ACL2's heuristics for expanding recursive functions).
-   </p>
+   (xdoc::p
+    "Since many repetitions consist of one element,
+     the rewrite rule @(tsee tree-list-match-repetition-p-of-1-repetition)
+     is used in many proofs.
+     It is enabled just before the tree matching constraint theorems
+     and disabled just after.")
 
-   <p>
-   The expansions described above reduce
-   the matching of the (list of) tree(s) with syntactic entities
-   in the hypothesis,
-   to the matching of subtrees with syntactic sub-entities.
-   Tree matching constraint theorems for these subtrees
-   are used in the proofs for the containing trees, via @(':use') hints.
-   For example, the proof of @(tsee constraints-from-tree-match-alpha)
-   uses @(tsee constraints-from-tree-match-ichars) twice,
-   once for each alternative of @('ALPHA') that the subtree may match.
-   </p>
+   (xdoc::p
+    "Except for
+     @(tsee constraints-from-tree-match-dot-etc.) and
+     @(tsee constraints-from-tree-match-dash-etc.),
+     the alternations and concatenations of the syntactic entities being matched
+     have an explicit list structure,
+     and so the proof automatically uses rewrite rules like
+     @(tsee tree-list-list-match-alternation-p-of-cons-alternation).
+     In contrast,
+     for @(tsee constraints-from-tree-match-dot-etc.) and
+     for @(tsee constraints-from-tree-match-dash-etc.),
+     we expand
+     @(tsee tree-list-list-match-alternation-p) and
+     @(tsee tree-list-list-match-concatenation-p)
+     via explicit @(':expand') hints,
+     because just enabling these two functions does not suffice
+     (presumably due to ACL2's heuristics for expanding recursive functions).")
 
-   <p>
-   As the matching of the tree(s) in the hypotheses of the theorems
-   is reduced, in the proofs, to the matching of subtrees as just explained,
-   we also need
-   to reduce the tree strings to subtree strings and
-   to reduce the terminated tree hypotheses to terminated subtree hypotheses,
-   so that the tree matching constraint theorems for the subtrees apply.
-   We accomplish the latter reductions by expanding the definitions of
-   @(tsee tree->string),
-   @(tsee tree-list->string),
-   @(tsee tree-list-list->string), and
-   @(tsee tree-terminatedp).
-   We enable them just before the tree matching constraint theorems
-   and we disable them just after.
-   Enabled rules for
-   @(tsee tree-list-terminatedp) and @(tsee tree-list-list-terminatedp)
-   suffice, so we do not need to enable these two functions.
-   </p>
+   (xdoc::p
+    "The expansions described above reduce
+     the matching of the (list of) tree(s) with syntactic entities
+     in the hypothesis,
+     to the matching of subtrees with syntactic sub-entities.
+     Tree matching constraint theorems for these subtrees
+     are used in the proofs for the containing trees, via @(':use') hints.
+     For example, the proof of @(tsee constraints-from-tree-match-alpha)
+     uses @(tsee constraints-from-tree-match-ichars) twice,
+     once for each alternative of @('ALPHA') that the subtree may match.")
 
-   <p>
-   Since @(tsee constraints-from-tree-match-ichars)
-   states constraints with @(tsee nats-match-insensitive-chars-p),
-   and since that theorem is used in the proofs
-   of several other tree matching constraint theorems,
-   the proofs of the latter theorems
-   use the definition of @(tsee nat-match-insensitive-char-p),
-   which we enable just before the tree matching constraint theorems
-   and we disable just after.
-   The rewrite rules
-   @('nats-match-sensitive-chars-p-when-atom-chars') and
-   @('nats-match-sensitive-chars-p-when-cons-chars')
-   reduce @(tsee nats-match-insensitive-chars-p)
-   to @(tsee nat-match-insensitive-char-p)
-   because the @('chars') argument is constant.
-   </p>"
+   (xdoc::p
+    "As the matching of the tree(s) in the hypotheses of the theorems
+     is reduced, in the proofs, to the matching of subtrees as just explained,
+     we also need
+     to reduce the tree strings to subtree strings and
+     to reduce the terminated tree hypotheses to terminated subtree hypotheses,
+     so that the tree matching constraint theorems for the subtrees apply.
+     We accomplish the latter reductions by expanding the definitions of
+     @(tsee tree->string),
+     @(tsee tree-list->string),
+     @(tsee tree-list-list->string), and
+     @(tsee tree-terminatedp).
+     We enable them just before the tree matching constraint theorems
+     and we disable them just after.
+     Enabled rules for
+     @(tsee tree-list-terminatedp) and @(tsee tree-list-list-terminatedp)
+     suffice, so we do not need to enable these two functions.")
+
+   (xdoc::p
+    "Since @(tsee constraints-from-tree-match-ichars)
+     states constraints with @(tsee nats-match-insensitive-chars-p),
+     and since that theorem is used in the proofs
+     of several other tree matching constraint theorems,
+     the proofs of the latter theorems
+     use the definition of @(tsee nat-match-insensitive-char-p),
+     which we enable just before the tree matching constraint theorems
+     and we disable just after.
+     The rewrite rules
+     @('nats-match-sensitive-chars-p-when-atom-chars') and
+     @('nats-match-sensitive-chars-p-when-cons-chars')
+     reduce @(tsee nats-match-insensitive-chars-p)
+     to @(tsee nat-match-insensitive-char-p)
+     because the @('chars') argument is constant."))
 
   :order-subtopics t)
 
@@ -7104,458 +7021,440 @@
 
   :long
 
-  "<p>
-   If a (list of) terminated tree(s) matches a syntactic entity,
-   attempting to parse the string at the leaves of the tree(s)
-   with a parsing function for a different syntactic entity fails, in general.
-   For example, if a terminated tree matches @('HTAB'),
-   @(tsee parse-sp) fails on the string at the leaves of the tree:
-   this is stated by the disambiguation theorem @(tsee fail-sp-when-match-htab).
-   </p>
+  (xdoc::topstring
 
-   <p>
-   The disambiguation theorems below state this kind of facts.
-   Essentially, these theorems say that certain syntactic entities
-   are incompatible with certain parsing functions;
-   they are used to show that the parser can disambiguate its input
-   (hence the name of these theorems).
-   </p>
+   (xdoc::p
+    "If a (list of) terminated tree(s) matches a syntactic entity,
+     attempting to parse the string at the leaves of the tree(s)
+     with a parsing function for a different syntactic entity fails, in general.
+     For example, if a terminated tree matches @('HTAB'),
+     @(tsee parse-sp) fails on the string at the leaves of the tree:
+     this is stated by the disambiguation theorem
+     @(tsee fail-sp-when-match-htab).")
 
-   <h3>Usage</h3>
+   (xdoc::p
+    "The disambiguation theorems below state this kind of facts.
+     Essentially, these theorems say that certain syntactic entities
+     are incompatible with certain parsing functions;
+     they are used to show that the parser can disambiguate its input
+     (hence the name of these theorems).")
 
-   <p>
-   The disambiguation theorems are used to prove the
-   <see topic='@(url grammar-parser-completeness)'>completeness
-   theorems</see>.
-   </p>
+   (xdoc::h3 "Usage")
 
-   <p>
-   The disambiguation theorems are rewrite rules that are disabled by default.
-   They are explicitly enabled in the individual completeness theorems.
-   </p>
+   (xdoc::p
+    "The disambiguation theorems are used to prove the "
+    (xdoc::seetopic "grammar-parser-completeness"
+                    "completeness theorems")
+    ".")
 
-   <p>
-   Some disambiguation theorems are used
-   to incrementally prove other disambiguation theorems (see below),
-   also via explicit enabling.
-   </p>
+   (xdoc::p
+    "The disambiguation theorems are rewrite rules that are disabled by default.
+     They are explicitly enabled in the individual completeness theorems.")
 
-   <h3>Scope</h3>
+   (xdoc::p
+    "Some disambiguation theorems are used
+     to incrementally prove other disambiguation theorems (see below),
+     also via explicit enabling.")
 
-   <p>
-   There are disambiguation theorems
-   only for some combinations of syntactic entities and parsing functions:
-   just the ones used to prove the completeness theorems,
-   and to incrementally prove other disambiguation theorems.
-   </p>
+   (xdoc::h3 "Scope")
 
-   <p>
-   Given the potentially ``quadratic'' number
-   of disambiguation theorems
-   (i.e. for all syntactic entities combined with all parsing functions),
-   some disambiguation theorems group together
-   multiple tree matching hypotheses or multiple parsing failure conclusions.
-   For example, @(tsee fail-bit/digit/hexdig/dot/dash-when-match-slash)
-   asserts the failure of multiple parsing functions
-   for the given tree matching hypothesis:
-   this theorem replaces five potential theorems
-   (one for each parsing function mentioned there).
-   As another example, @(tsee fail-cwsp-when-match-alt/conc/rep)
-   asserts the failure of a given parsing function
-   for multiple syntactic entities matched by the tree:
-   this theorem replaces three potential theorems
-   (one for each syntactic entity mentioned there).
-   More grouping (and thus reduction in the number of disambiguation theorems)
-   is possible,
-   but we also try to keep the disambiguation theorems' names
-   sufficiently descriptive while not excessively long.
-   </p>
+   (xdoc::p
+    "There are disambiguation theorems
+     only for some combinations of syntactic entities and parsing functions:
+     just the ones used to prove the completeness theorems,
+     and to incrementally prove other disambiguation theorems.")
 
-   <h3>Formulation</h3>
+   (xdoc::p
+    "Given the potentially ``quadratic'' number
+     of disambiguation theorems
+     (i.e. for all syntactic entities combined with all parsing functions),
+     some disambiguation theorems group together
+     multiple tree matching hypotheses or multiple parsing failure conclusions.
+     For example, @(tsee fail-bit/digit/hexdig/dot/dash-when-match-slash)
+     asserts the failure of multiple parsing functions
+     for the given tree matching hypothesis:
+     this theorem replaces five potential theorems
+     (one for each parsing function mentioned there).
+     As another example, @(tsee fail-cwsp-when-match-alt/conc/rep)
+     asserts the failure of a given parsing function
+     for multiple syntactic entities matched by the tree:
+     this theorem replaces three potential theorems
+     (one for each syntactic entity mentioned there).
+     More grouping (and thus reduction in the number of disambiguation theorems)
+     is possible,
+     but we also try to keep the disambiguation theorems' names
+     sufficiently descriptive while not excessively long.")
 
-   <p>
-   The formulation of the disambiguation theorems is derived from
-   the subgoals that arise in the completeness proofs
-   (and in the incrementally proved disambiguation proofs):
-   the disambiguation theorems serve to prove those subgoals.
-   The disambiguation theorems were developed
-   in the process of proving the completeness theorems,
-   based on failed subgoals in the latter.
-   </p>
+   (xdoc::h3 "Formulation")
 
-   <p>
-   In particular,
-   the ``asymmetric'' use of trees and parsing functions
-   to show incompatibility
-   (as opposed to showing incompatibility
-   between parsing functions or between trees)
-   reflects the structure of the subgoals in the completeness theorems;
-   see the documentation of the completeness theorems for details.
-   </p>
+   (xdoc::p
+    "The formulation of the disambiguation theorems is derived from
+     the subgoals that arise in the completeness proofs
+     (and in the incrementally proved disambiguation proofs):
+     the disambiguation theorems serve to prove those subgoals.
+     The disambiguation theorems were developed
+     in the process of proving the completeness theorems,
+     based on failed subgoals in the latter.")
 
-   <p>
-   The formulation of each disambiguation theorem also involves
-   some remaining input
-   that is @(tsee append)ed after the string at the leaves of the tree(s).
-   That is, each disambiguation theorem says something of this form:
-   if a (list of) terminated tree(s) matches certain syntactic entities
-   and possibly satisfies certain
-   <see topic='@(url grammar-parser-disambiguating-restrictions)'
-   >disambiguating restrictions</see>,
-   then running certain parsing functions on the @(tsee append) of
-   (i) the string at the leaves of the tree and
-   (ii) some remaining input
-   possibly satisfing certain hypotheses explained below,
-   fails.
-   This is similar to the way in which
-   the completeness theorems are formulated.
-   </p>
+   (xdoc::p
+    "In particular,
+     the ``asymmetric'' use of trees and parsing functions
+     to show incompatibility
+     (as opposed to showing incompatibility
+     between parsing functions or between trees)
+     reflects the structure of the subgoals in the completeness theorems;
+     see the documentation of the completeness theorems for details.")
 
-   <p>
-   Most disambiguation theorems involve a single (list of) tree(s).
-   Four of them (i.e.
-   @(tsee fail-alpha/digit/dash-when-match-*cwsp-close-round/square),
-   @(tsee fail-bit/digit/hexdig/dot/dash-when-match-*cwsp-close-round/square),
-   @(tsee fail-alt-rest-comp-when-match-*cwsp-close-round/square), and
-   @(tsee fail-conc-rest-comp-when-match-*cwsp-close-round/square))
-   involve a list of trees matching @('*c-wsp')
-   and a tree matching @('\")\"') or @('\"]\"');
-   the parsing function in their conclusion
-   is applied to the @(tsee append) of
-   (i) the string at the leaves of the list of trees,
-   (ii) the string at the leaves of the tree, and
-   (iii) some remaining input.
-   These four theorems are used
-   in the completeness proofs of the mutually recursive parsing functions,
-   precisely in the induction step lemmas
-   for @(tsee parse-group) and @(tsee parse-option).
-   In those lemmas, the tree matching hypothesis reduces to, among others,
-   the fact that a list of subtrees matches @('*c-wsp')
-   and that the subtree just after that list matches @('\")\"') or @('\"]\"'):
-   the four disambiguation theorems apply to that (list of) subtree(s).
-   Note that @('*c-wsp \")\"') and @('*c-wsp \"]\"') are the ending parts
-   of the definientia of @('group') and @('option').
-   </p>
+   (xdoc::p
+    "The formulation of each disambiguation theorem also involves
+     some remaining input
+     that is @(tsee append)ed after the string at the leaves of the tree(s).
+     That is, each disambiguation theorem says something of this form:
+     if a (list of) terminated tree(s) matches certain syntactic entities
+     and possibly satisfies certain "
+    (xdoc::seetopic "grammar-parser-disambiguating-restrictions"
+                    "disambiguating restrictions")
+    ", then running certain parsing functions on the @(tsee append) of
+     (i) the string at the leaves of the tree and
+     (ii) some remaining input
+     possibly satisfing certain hypotheses explained below,
+     fails.
+     This is similar to the way in which
+     the completeness theorems are formulated.")
 
-   <h3>Hypotheses on the Remaining Input</h3>
+   (xdoc::p
+    "Most disambiguation theorems involve a single (list of) tree(s).
+     Four of them (i.e.
+     @(tsee fail-alpha/digit/dash-when-match-*cwsp-close-round/square),
+     @(tsee fail-bit/digit/hexdig/dot/dash-when-match-*cwsp-close-round/square),
+     @(tsee fail-alt-rest-comp-when-match-*cwsp-close-round/square), and
+     @(tsee fail-conc-rest-comp-when-match-*cwsp-close-round/square))
+     involve a list of trees matching @('*c-wsp')
+     and a tree matching @('\")\"') or @('\"]\"');
+     the parsing function in their conclusion
+     is applied to the @(tsee append) of
+     (i) the string at the leaves of the list of trees,
+     (ii) the string at the leaves of the tree, and
+     (iii) some remaining input.
+     These four theorems are used
+     in the completeness proofs of the mutually recursive parsing functions,
+     precisely in the induction step lemmas
+     for @(tsee parse-group) and @(tsee parse-option).
+     In those lemmas, the tree matching hypothesis reduces to, among others,
+     the fact that a list of subtrees matches @('*c-wsp')
+     and that the subtree just after that list matches @('\")\"') or @('\"]\"'):
+     the four disambiguation theorems apply to that (list of) subtree(s).
+     Note that @('*c-wsp \")\"') and @('*c-wsp \"]\"') are the ending parts
+     of the definientia of @('group') and @('option').")
 
-   <p>
-   In all the disambiguation theorems,
-   the remaining input (following the string at the leaves of the tree(s))
-   is denoted by the variable @('rest-input').
-   The hypotheses on the remaining input, when present,
-   are that certain parsing functions fail on the remaining input.
-   </p>
+   (xdoc::h3 "Hypotheses on the Remaining Input")
 
-   <p>
-   In most cases, the hypotheses on the remaining input are present
-   when the (list of) tree(s) may have an empty string at the leaves.
-   When that string is empty,
-   the incompatibility between the tree(s) and the parsing functions
-   does not apply.
-   Thus, each of these theorems includes the hypothesis
-   that the parsing function fails on the remaining input,
-   to ensure that the conclusion holds in this case.
-   For example, in @(tsee fail-bit-when-match-*cwsp),
-   if the list of trees is empty,
-   the incompatibility between (the first tree of the list matching) @('c-wsp')
-   and the parsing function @(tsee parse-bit) does not apply;
-   but the hypothesis that @(tsee parse-bit) fails on @('rest-input')
-   maintains the truth of the theorem in case the list of trees is empty.
-   In general, for each of these disambiguation theorems,
-   the hypothesis asserts the failure on the remaining input
-   of the same parsing function that the theorem shows to be
-   incompatible with the syntactic entity matched by the tree(s).
-   </p>
+   (xdoc::p
+    "In all the disambiguation theorems,
+     the remaining input (following the string at the leaves of the tree(s))
+     is denoted by the variable @('rest-input').
+     The hypotheses on the remaining input, when present,
+     are that certain parsing functions fail on the remaining input.")
 
-   <p>
-   The hypotheses just mentioned could be weakened
-   to require the parsing failure on the remaining input
-   only if the string at the leaves of the tree(s) is in fact empty;
-   however, the stronger hypotheses keep the theorems simpler
-   without precluding the eventual proof of the top-level completeness theorem.
-   Another possibility is to have, instead, hypotheses stating that
-   the string at the leaves of the tree(s) are not empty;
-   however, the current formulation seems more readily usable
-   in the proofs of completeness,
-   obviating a case split based on whether the string is empty or not.
-   </p>
+   (xdoc::p
+    "In most cases, the hypotheses on the remaining input are present
+     when the (list of) tree(s) may have an empty string at the leaves.
+     When that string is empty,
+     the incompatibility between the tree(s) and the parsing functions
+     does not apply.
+     Thus, each of these theorems includes the hypothesis
+     that the parsing function fails on the remaining input,
+     to ensure that the conclusion holds in this case.
+     For example, in @(tsee fail-bit-when-match-*cwsp),
+     if the list of trees is empty,
+     the incompatibility
+     between (the first tree of the list matching) @('c-wsp')
+     and the parsing function @(tsee parse-bit) does not apply;
+     but the hypothesis that @(tsee parse-bit) fails on @('rest-input')
+     maintains the truth of the theorem in case the list of trees is empty.
+     In general, for each of these disambiguation theorems,
+     the hypothesis asserts the failure on the remaining input
+     of the same parsing function that the theorem shows to be
+     incompatible with the syntactic entity matched by the tree(s).")
 
-   <p>
-   The disambiguation theorem
-   @(tsee fail-equal-slash-when-match-equal-and-rest-fail-slash)
-   has the hypothesis that @(tsee parse-ichar) with argument @('#\\/')
-   fails on the remaining input.
-   Without this hypothesis,
-   @(tsee parse-ichars) with arguments @('#\\=') and @('#\\/') could succeed:
-   after parsing the @('\"=\"') in the string at the leaves of the tree,
-   it could parse a @('\"/\"') in the remaining input,
-   obtaining a @('\"=/\"').
-   </p>
+   (xdoc::p
+    "The hypotheses just mentioned could be weakened
+     to require the parsing failure on the remaining input
+     only if the string at the leaves of the tree(s) is in fact empty;
+     however, the stronger hypotheses keep the theorems simpler
+     without precluding the eventual proof of
+    the top-level completeness theorem.
+     Another possibility is to have, instead, hypotheses stating that
+     the string at the leaves of the tree(s) are not empty;
+     however, the current formulation seems more readily usable
+     in the proofs of completeness,
+     obviating a case split based on whether the string is empty or not.")
 
-   <p>
-   The disambiguation theorem @(tsee fail-*digit-star-*digit-when-match-1*digit)
-   has the hypotheses that
-   both @(tsee parse-ichar) with argument @('#\\*')
-   and @(tsee parse-digit)
-   fail on the remaining input.
-   Without the first hypothesis,
-   @(tsee parse-*digit-star-*digit) could succeed:
-   after parsing the @('DIGIT')s from the string at the leaves of the trees,
-   it could parse a @('\"*\"') from the remaining input,
-   and then zero or more @('DIGIT')s,
-   obtaining a @('(*DIGIT \"*\" *DIGIT)').
-   Without the second hypothesis,
-   @(tsee parse-*digit-star-*digit) could also succeed:
-   after parsing the @('DIGIT')s from the string at the leaves of the trees,
-   it could parse additional @('DIGIT')s from the remaining input,
-   then a @('\"*\"'),
-   and then zero or more @('DIGIT')s,
-   obtaining a @('(*DIGIT \"*\" *DIGIT)').
-   The second hypothesis is stronger than needed,
-   because the presence of a @('DIGIT') at the start of the remaining input
-   does not imply the success of @(tsee parse-*digit-star-*digit);
-   however, the stronger hypothesis keeps the theorems simpler
-   without precluding the eventual proof of the top-level completeness theorem.
-   </p>
+   (xdoc::p
+    "The disambiguation theorem
+     @(tsee fail-equal-slash-when-match-equal-and-rest-fail-slash)
+     has the hypothesis that @(tsee parse-ichar) with argument @('#\\/')
+     fails on the remaining input.
+     Without this hypothesis,
+     @(tsee parse-ichars) with arguments @('#\\=') and @('#\\/') could succeed:
+     after parsing the @('\"=\"') in the string at the leaves of the tree,
+     it could parse a @('\"/\"') in the remaining input,
+     obtaining a @('\"=/\"').")
 
-   <p>
-   The disambiguation theorem @(tsee fail-cwsp-when-match-cnl)
-   has the hypothesis that @(tsee parse-wsp) fails on the remaining input.
-   Without this hypothesis, @(tsee parse-cwsp) could succeed:
-   after parsing the @('c-nl') from the string at the leaves of the tree,
-   it could parse a @('WSP') from the remaining input,
-   obtaining a @('c-wsp').
-   </p>
+   (xdoc::p
+    "The disambiguation theorem
+     @(tsee fail-*digit-star-*digit-when-match-1*digit)
+     has the hypotheses that
+     both @(tsee parse-ichar) with argument @('#\\*')
+     and @(tsee parse-digit)
+     fail on the remaining input.
+     Without the first hypothesis,
+     @(tsee parse-*digit-star-*digit) could succeed:
+     after parsing the @('DIGIT')s from the string at the leaves of the trees,
+     it could parse a @('\"*\"') from the remaining input,
+     and then zero or more @('DIGIT')s,
+     obtaining a @('(*DIGIT \"*\" *DIGIT)').
+     Without the second hypothesis,
+     @(tsee parse-*digit-star-*digit) could also succeed:
+     after parsing the @('DIGIT')s from the string at the leaves of the trees,
+     it could parse additional @('DIGIT')s from the remaining input,
+     then a @('\"*\"'),
+     and then zero or more @('DIGIT')s,
+     obtaining a @('(*DIGIT \"*\" *DIGIT)').
+     The second hypothesis is stronger than needed,
+     because the presence of a @('DIGIT') at the start of the remaining input
+     does not imply the success of @(tsee parse-*digit-star-*digit);
+     however, the stronger hypothesis keeps the theorems simpler
+     without precluding the eventual proof of
+     the top-level completeness theorem.")
 
-   <p>
-   The disambiguation theorems
-   @(tsee fail-alt-rest-comp-when-match-cnl) and
-   @(tsee fail-conc-rest-comp-when-match-cnl)
-   also have the hypothesis that @(tsee parse-wsp) fails on the remaining input.
-   Without this hypothesis,
-   @(tsee parse-alt-rest-comp) or
-   @(tsee parse-conc-rest-comp)
-   could succeed:
-   after parsing the @('c-nl') from the string at the leaves of the tree,
-   it could parse a @('WSP') from the remaining input,
-   forming the first @('c-wsp')
-   of a @('(*c-wsp \"/\" *c-wsp concatenation)')
-   or of a @('*(1*c-wsp repetition)'),
-   and then proceed to parse more, eventually obtaining
-   a @('(*c-wsp \"/\" *c-wsp concatenation)') or @('*(1*c-wsp repetition)').
-   The hypothesis is stronger than needed,
-   because the presence of a @('WSP') at the start of the remaining input
-   does not imply the success of
-   @(tsee parse-alt-rest-comp) or
-   @(tsee parse-conc-rest-comp);
-   however, the stronger hypothesis keeps the theorems simpler
-   without precluding the eventual proof of the top-level completeness theorem.
-   </p>
+   (xdoc::p
+    "The disambiguation theorem @(tsee fail-cwsp-when-match-cnl)
+     has the hypothesis that @(tsee parse-wsp) fails on the remaining input.
+     Without this hypothesis, @(tsee parse-cwsp) could succeed:
+     after parsing the @('c-nl') from the string at the leaves of the tree,
+     it could parse a @('WSP') from the remaining input,
+     obtaining a @('c-wsp').")
 
-   <p>
-   The disambiguation theorem @(tsee fail-conc-rest-comp-when-match-*cwsp)
-   has the hypotheses that both @(tsee parse-repetition) and @(tsee parse-cwsp)
-   fail on the remaining input.
-   Without the first hypothesis,
-   @(tsee parse-conc-rest-comp) could succeed:
-   after parsing the @('*c-wsp') from the string at the leaves of the trees,
-   assuming that there is at least one tree,
-   it could parse a @('repetition') from the remaining input,
-   obtaining a @('(1*c-wsp repetition)').
-   Without the second hypothesis,
-   @(tsee parse-conc-rest-comp) could also succeed:
-   after parsing the @('*c-wsp') from the string at the leaves of the trees,
-   it could parse a @('c-wsp') from the remaining input,
-   and then a @('repetition'),
-   obtaining a @('(1*c-wsp repetition)').
-   </p>
+   (xdoc::p
+    "The disambiguation theorems
+     @(tsee fail-alt-rest-comp-when-match-cnl) and
+     @(tsee fail-conc-rest-comp-when-match-cnl)
+     also have the hypothesis that @(tsee parse-wsp) fails
+     on the remaining input.
+     Without this hypothesis,
+     @(tsee parse-alt-rest-comp) or
+     @(tsee parse-conc-rest-comp)
+     could succeed:
+     after parsing the @('c-nl') from the string at the leaves of the tree,
+     it could parse a @('WSP') from the remaining input,
+     forming the first @('c-wsp')
+     of a @('(*c-wsp \"/\" *c-wsp concatenation)')
+     or of a @('*(1*c-wsp repetition)'),
+     and then proceed to parse more, eventually obtaining
+     a @('(*c-wsp \"/\" *c-wsp concatenation)') or @('*(1*c-wsp repetition)').
+     The hypothesis is stronger than needed,
+     because the presence of a @('WSP') at the start of the remaining input
+     does not imply the success of
+     @(tsee parse-alt-rest-comp) or
+     @(tsee parse-conc-rest-comp);
+     however, the stronger hypothesis keeps the theorems simpler
+     without precluding the eventual proof of
+     the top-level completeness theorem.")
 
-   <h3>Hypotheses on the Tree(s)</h3>
+   (xdoc::p
+    "The disambiguation theorem @(tsee fail-conc-rest-comp-when-match-*cwsp)
+     has the hypotheses that
+     both @(tsee parse-repetition) and @(tsee parse-cwsp)
+     fail on the remaining input.
+     Without the first hypothesis,
+     @(tsee parse-conc-rest-comp) could succeed:
+     after parsing the @('*c-wsp') from the string at the leaves of the trees,
+     assuming that there is at least one tree,
+     it could parse a @('repetition') from the remaining input,
+     obtaining a @('(1*c-wsp repetition)').
+     Without the second hypothesis,
+     @(tsee parse-conc-rest-comp) could also succeed:
+     after parsing the @('*c-wsp') from the string at the leaves of the trees,
+     it could parse a @('c-wsp') from the remaining input,
+     and then a @('repetition'),
+     obtaining a @('(1*c-wsp repetition)').")
 
-   <p>
-   Many disambiguation theorems include
-   hypotheses saying that the trees are terminated.
-   This ensures that the strings at the leaves of the trees
-   consist of natural numbers and not rule names,
-   since the incompatibilities with the parsing functions
-   are in terms of natural numbers.
-   Some disambiguation theorems do not need these hypotheses
-   because the syntactic entities can only be matched
-   by trees whose (starting) leaves are natural numbers.
-   For instance, in @(tsee fail-dot-when-match-dash-etc.),
-   the group @('(\"-\" ...)') can only be matched by a tree
-   whose first leaf is a natural number,
-   upon which the incompatibility with the parsing function applies.
-   </p>
+   (xdoc::h3 "Hypotheses on the Tree(s)")
 
-   <p>
-   A few disambiguation theorems include hypotheses
-   that the tree(s) satisfy the
-   <see topic='@(url grammar-parser-disambiguating-restrictions)'
-   >disambiguating restrictions</see>.
-   These theorems say that @(tsee parse-wsp) fails
-   on the strings at the leaves of trees
-   that satisfy the disambiguating restrictions.
-   Since the restrictions say that these trees cannot start with @('WSP'),
-   as the syntactic entities matched by the trees
-   would otherwise allow that,
-   these hypotheses are essential to the truth of these theorems.
-   </p>
+   (xdoc::p
+    "Many disambiguation theorems include
+     hypotheses saying that the trees are terminated.
+     This ensures that the strings at the leaves of the trees
+     consist of natural numbers and not rule names,
+     since the incompatibilities with the parsing functions
+     are in terms of natural numbers.
+     Some disambiguation theorems do not need these hypotheses
+     because the syntactic entities can only be matched
+     by trees whose (starting) leaves are natural numbers.
+     For instance, in @(tsee fail-dot-when-match-dash-etc.),
+     the group @('(\"-\" ...)') can only be matched by a tree
+     whose first leaf is a natural number,
+     upon which the incompatibility with the parsing function applies.")
 
-   <h3>Proof Methods</h3>
+   (xdoc::p
+    "A few disambiguation theorems include hypotheses
+     that the tree(s) satisfy the "
+    (xdoc::seetopic "grammar-parser-disambiguating-restrictions"
+                    "disambiguating restrictions")
+    ". These theorems say that @(tsee parse-wsp) fails
+     on the strings at the leaves of trees
+     that satisfy the disambiguating restrictions.
+     Since the restrictions say that these trees cannot start with @('WSP'),
+     as the syntactic entities matched by the trees
+     would otherwise allow that,
+     these hypotheses are essential to the truth of these theorems.")
 
-   <p>
-   Most disambiguation theorems are proved by using, via @(':use') hints,
-   parsing constraint theorems and tree matching constraint theorems
-   that explicate incompatible constraints
-   between the parsing functions
-   and the syntactic entities matched by the trees.
-   For example, in @(tsee fail-sp-when-match-htab),
-   the fact that the tree matches @('HTAB') induces the constraint that
-   the first natural number of the string at the leaves of the tree is 9,
-   but the fact that @(tsee parse-sp) succeeds induces the constraint that
-   the first natural number of the string at the leaves of the tree is 32.
-   </p>
+   (xdoc::h3 "Proof Methods")
 
-   <p>
-   The disambiguation theorems
-   @(tsee fail-case-insensitive-string-when-match-case-sensitive-string) and
-   @(tsee fail-char-val-when-match-num/prose-val)
-   have a @(':cases') hint on whether
-   the string at the leaves of the tree has a second natural number or not.
-   Without this hint, the proof fails.
-   Perhaps this case split is related to the fact that
-   these disambiguation theorems are proved via constraints that involve
-   not only the first but also the second natural number in the string,
-   for LL(2) parts of the grammar.
-   </p>
+   (xdoc::p
+    "Most disambiguation theorems are proved by using, via @(':use') hints,
+     parsing constraint theorems and tree matching constraint theorems
+     that explicate incompatible constraints
+     between the parsing functions
+     and the syntactic entities matched by the trees.
+     For example, in @(tsee fail-sp-when-match-htab),
+     the fact that the tree matches @('HTAB') induces the constraint that
+     the first natural number of the string at the leaves of the tree is 9,
+     but the fact that @(tsee parse-sp) succeeds induces the constraint that
+     the first natural number of the string at the leaves of the tree is 32.")
 
-   <p>
-   The proofs of some disambiguation theorems use other disambiguation theorems.
-   The former enable the latter explcitly, to use them as rewrite rules.
-   As explained earlier, some disambiguation theorems group together
-   multiple tree matching hypotheses or multiple parsing conclusions,
-   to reduce the potentially quadratic number of theorems.
-   This means that,
-   when some of these disambiguation theorems are used in the proofs of others,
-   only ``parts'' of the former are actually used.
-   </p>
+   (xdoc::p
+    "The disambiguation theorems
+     @(tsee fail-case-insensitive-string-when-match-case-sensitive-string) and
+     @(tsee fail-char-val-when-match-num/prose-val)
+     have a @(':cases') hint on whether
+     the string at the leaves of the tree has a second natural number or not.
+     Without this hint, the proof fails.
+     Perhaps this case split is related to the fact that
+     these disambiguation theorems are proved via constraints that involve
+     not only the first but also the second natural number in the string,
+     for LL(2) parts of the grammar.")
 
-   <p>
-   A disambiguation theorem about a list of trees matching a repetition,
-   such that another disambiguation theorem exists
-   about a tree matching the element of that repetition
-   and about the same parsing function,
-   is proved just by enabling the latter disambiguation theorem
-   and @(tsee tree-list-match-repetition-p),
-   without any parsing constraint theorems
-   and tree matching constraint theorems.
-   For example, @(tsee fail-bit-when-match-*cwsp) is proved just by enabling
-   @(tsee fail-bit/digit/hexdig/dot/dash-when-match-cwsp)
-   (of which only the @(tsee parse-bit) failure is used here) and
-   @(tsee tree-list-match-repetition-p).
-   </p>
+   (xdoc::p
+    "The proofs of some disambiguation theorems
+     use other disambiguation theorems.
+     The former enable the latter explcitly, to use them as rewrite rules.
+     As explained earlier, some disambiguation theorems group together
+     multiple tree matching hypotheses or multiple parsing conclusions,
+     to reduce the potentially quadratic number of theorems.
+     This means that,
+     when some of these disambiguation theorems
+     are used in the proofs of others,
+     only ``parts'' of the former are actually used.")
 
-   <p>
-   Some disambiguation theorems are proved by
-   expanding the tree matching hypotheses
-   and the parsing function calls in the conclusions,
-   and enabling disambiguation theorems so that they apply to
-   the resulting subtree matching facts and called parsing functions;
-   we also enable
-   predicates like @(tsee tree-terminatedp) and recursive companions and
-   functions like @(tsee tree->string) and recursive companions,
-   so that they apply to the subtrees resulting from the matching expansion.
-   For example,
-   @(tsee fail-alpha/digit/dash-when-match-alt-rest-comp) is proved by
-   reducing the tree matching hypothesis to
-   a list of subtrees matching @('*c-wsp') and a tree matching @('\"/\"').
-   Then @(tsee fail-alpha/digit/dash-when-match-cwsp)
-   is used for the case in which the list of subtrees is not empty,
-   while @(tsee fail-alpha/digit/dash-when-match-slash-/-close-round/square)
-   (the @('slash') part)
-   is used for the case in which the list of subtree is empty.
-   </p>
+   (xdoc::p
+    "A disambiguation theorem about a list of trees matching a repetition,
+     such that another disambiguation theorem exists
+     about a tree matching the element of that repetition
+     and about the same parsing function,
+     is proved just by enabling the latter disambiguation theorem
+     and @(tsee tree-list-match-repetition-p),
+     without any parsing constraint theorems
+     and tree matching constraint theorems.
+     For example, @(tsee fail-bit-when-match-*cwsp) is proved just by enabling
+     @(tsee fail-bit/digit/hexdig/dot/dash-when-match-cwsp)
+     (of which only the @(tsee parse-bit) failure is used here) and
+     @(tsee tree-list-match-repetition-p).")
 
-   <p>
-   The proofs of some disambiguation theorems use certain completeness theorems.
-   In some cases, this is related to LL(*) parts of the grammar:
-   the completeness theorems serve to go ``past''
-   the unbounded look-ahead,
-   before reaching the point where the constraints
-   from (sub)tree matching and (called) parsing functions are incompatible.
-   For example, @(tsee fail-conc-rest-comp-when-match-alt-rest-comp)
-   shows the incompatibility
-   between @('(*c-wsp \"/\" *c-wsp concatenation)')
-   and @('(1*c-wsp repetition)'):
-   the completeness theorem @(tsee parse-1*cwsp-when-tree-list-match)
-   is used to go past the unbounded @('1*c-wsp')
-   that could start @('(*c-wsp \"/\" *c-wsp concatenation)')
-   to show that @('repetition') is incompatible with @('\"/\"').
-   As another example, @(tsee fail-*digit-star-*digit-when-match-1*digit)
-   shows the incompatibility
-   between @('(*DIGIT \"*\" *DIGIT)') and @('1*DIGIT'):
-   the completeness theorem @(tsee parse-*digit-when-tree-list-match)
-   is used to go past the unbounded @('*DIGIT')
-   that could start @('1*DIGIT')
-   to show that @('\"*\"') is incompatible with
-   the assumptions on the remaining input.
-   </p>
+   (xdoc::p
+    "Some disambiguation theorems are proved by
+     expanding the tree matching hypotheses
+     and the parsing function calls in the conclusions,
+     and enabling disambiguation theorems so that they apply to
+     the resulting subtree matching facts and called parsing functions;
+     we also enable
+     predicates like @(tsee tree-terminatedp) and recursive companions and
+     functions like @(tsee tree->string) and recursive companions,
+     so that they apply to the subtrees resulting from the matching expansion.
+     For example,
+     @(tsee fail-alpha/digit/dash-when-match-alt-rest-comp) is proved by
+     reducing the tree matching hypothesis to
+     a list of subtrees matching @('*c-wsp') and a tree matching @('\"/\"').
+     Then @(tsee fail-alpha/digit/dash-when-match-cwsp)
+     is used for the case in which the list of subtrees is not empty,
+     while @(tsee fail-alpha/digit/dash-when-match-slash-/-close-round/square)
+     (the @('slash') part)
+     is used for the case in which the list of subtree is empty.")
 
-   <p>
-   In other disambiguation theorems,
-   the use of completeness theorems
-   is not related to LL(*) parts of the grammar,
-   but is suggested by subgoals involving trees
-   and parsing functions called by the ones in the theorems' conclusions.
-   For example, in @(tsee fail-cwsp-when-match-cnl),
-   the expansion of @(tsee parse-cwsp) and @(tsee parse-cnl-wsp)
-   produces a call to @(tsee parse-cnl)
-   on the string at the leaves of the tree
-   that the theorem hypothesizes to match @('c-nl'):
-   thus, @(tsee parse-cnl-when-tree-match) applies here.
-   </p>
+   (xdoc::p
+    "The proofs of some disambiguation theorems
+     use certain completeness theorems.
+     In some cases, this is related to LL(*) parts of the grammar:
+     the completeness theorems serve to go ``past''
+     the unbounded look-ahead,
+     before reaching the point where the constraints
+     from (sub)tree matching and (called) parsing functions are incompatible.
+     For example, @(tsee fail-conc-rest-comp-when-match-alt-rest-comp)
+     shows the incompatibility
+     between @('(*c-wsp \"/\" *c-wsp concatenation)')
+     and @('(1*c-wsp repetition)'):
+     the completeness theorem @(tsee parse-1*cwsp-when-tree-list-match)
+     is used to go past the unbounded @('1*c-wsp')
+     that could start @('(*c-wsp \"/\" *c-wsp concatenation)')
+     to show that @('repetition') is incompatible with @('\"/\"').
+     As another example, @(tsee fail-*digit-star-*digit-when-match-1*digit)
+     shows the incompatibility
+     between @('(*DIGIT \"*\" *DIGIT)') and @('1*DIGIT'):
+     the completeness theorem @(tsee parse-*digit-when-tree-list-match)
+     is used to go past the unbounded @('*DIGIT')
+     that could start @('1*DIGIT')
+     to show that @('\"*\"') is incompatible with
+     the assumptions on the remaining input.")
 
-   <p>
-   When a disambiguation theorem uses a completeness theorem,
-   the former appears in the file just after the latter,
-   with a comment referring to the completeness theorem used.
-   However, the disambiguation theorem is
-   under the manual topic about disambiguation theorems,
-   not under the manual topic about completeness theorems.
-   </p>
+   (xdoc::p
+    "In other disambiguation theorems,
+     the use of completeness theorems
+     is not related to LL(*) parts of the grammar,
+     but is suggested by subgoals involving trees
+     and parsing functions called by the ones in the theorems' conclusions.
+     For example, in @(tsee fail-cwsp-when-match-cnl),
+     the expansion of @(tsee parse-cwsp) and @(tsee parse-cnl-wsp)
+     produces a call to @(tsee parse-cnl)
+     on the string at the leaves of the tree
+     that the theorem hypothesizes to match @('c-nl'):
+     thus, @(tsee parse-cnl-when-tree-match) applies here.")
 
-   <p>
-   The disambiguation theorem @(tsee fail-conc-rest-comp-when-match-*cwsp)
-   uses, as a rewrite rule,
-   the <see topic='@(url grammar-parser-parsing-failure-propagation)'>parsing
-   failure propagation theorem</see>
-   @(tsee fail-conc-rest-comp-when-fail-cwsp).
-   </p>
+   (xdoc::p
+    "When a disambiguation theorem uses a completeness theorem,
+     the former appears in the file just after the latter,
+     with a comment referring to the completeness theorem used.
+     However, the disambiguation theorem is
+     under the manual topic about disambiguation theorems,
+     not under the manual topic about completeness theorems.")
 
-   <p>
-   In some theorems, just enabling some functions does not suffice
-   to expand them in all the places where they need to be expanded
-   (presumably due to ACL2's heuristics for expanding recursive functions).
-   Thus, we use @(':expand') hints in those cases.
-   </p>
+   (xdoc::p
+    "The disambiguation theorem @(tsee fail-conc-rest-comp-when-match-*cwsp)
+     uses, as a rewrite rule, the "
+    (xdoc::seetopic "grammar-parser-parsing-failure-propagation"
+                    "parsing failure propagation theorem")
+    " @(tsee fail-conc-rest-comp-when-fail-cwsp).")
 
-   <p>
-   Some of the disambiguation theorem proofs
-   do not seem as systematic as desired.
-   Two of them use @(':cases') hints
-   (different from the ones discussed earlier,
-   which are related to LL(2) parts of the grammar),
-   one of them uses an @(':induct') hint,
-   one of them uses a local lemma,
-   some use various rules about @(tsee tree-list-match-repetition-p),
-   and some expand many definitions.
-   It may be possible to make these proofs more systematic,
-   by introducing and using
-   some additional ``intermediate '' disambiguation theorems
-   and some additional rules about the ABNF semantics.
-   </p>"
+   (xdoc::p
+    "In some theorems, just enabling some functions does not suffice
+     to expand them in all the places where they need to be expanded
+     (presumably due to ACL2's heuristics for expanding recursive functions).
+     Thus, we use @(':expand') hints in those cases.")
+
+   (xdoc::p
+    "Some of the disambiguation theorem proofs
+     do not seem as systematic as desired.
+     Two of them use @(':cases') hints
+     (different from the ones discussed earlier,
+     which are related to LL(2) parts of the grammar),
+     one of them uses an @(':induct') hint,
+     one of them uses a local lemma,
+     some use various rules about @(tsee tree-list-match-repetition-p),
+     and some expand many definitions.
+     It may be possible to make these proofs more systematic,
+     by introducing and using
+     some additional ``intermediate '' disambiguation theorems
+     and some additional rules about the ABNF semantics."))
 
   :order-subtopics t)
 
@@ -9059,717 +8958,695 @@
 
   :long
 
-  "<p>
-   For every terminated tree rooted at @('rulelist')
-   that satisfies the
-   <see topic='@(url grammar-parser-disambiguating-restrictions)'
-   >disambiguating restrictions</see>,
-   @(tsee parse-grammar) succeeds on the string at the leaves of the tree
-   and returns that tree:
-   @(def parse-grammar-when-tree-match)
-   </p>
+  (xdoc::topstring
 
-   <p>
-   This is proved by proving the following,
-   for each parsing function out of which @(tsee parse-grammar) is built:
-   if a (list of) terminated tree(s) matches a certain syntactic entity
-   and possibly satisfies certain
-   <see topic='@(url grammar-parser-disambiguating-restrictions)'
-   >disambiguating restrictions</see>,
-   then running the parsing function on the @(tsee append) of
-   (i) the string at the leaves of the tree(s) and
-   (ii) some remaining input
-   possibly satisfying certain hypotheses explained below,
-   succeeds and yields that (list of) tree(s) and that remaining input.
-   More precisely, the parsing function yields
-   the (list of) tree(s) fixed with @(tsee tree-fix) or @(tsee tree-list-fix)
-   and the remaining input fixed with @(tsee nat-list-fix);
-   an alternative formulation is to avoid these fixing functions
-   but include the hypotheses
-   that the (list of) tree(s) satisfies @(tsee treep) or @(tsee tree-listp)
-   and that the remaining input satisfies @(tsee nat-listp).
-   </p>
+   (xdoc::p
+    "For every terminated tree rooted at @('rulelist')
+     that satisfies the "
+    (xdoc::seetopic "grammar-parser-disambiguating-restrictions"
+                    "disambiguating restrictions")
+    ", @(tsee parse-grammar) succeeds on the string at the leaves of the tree
+     and returns that tree:
+     @(def parse-grammar-when-tree-match)")
 
-   <p>
-   For example, the completeness theorem @(tsee parse-alpha-when-tree-match)
-   says that running @(tsee parse-alpha) on the @(tsee append) of
-   (i) the leaves of a terminated tree that matches @('ALPHA'), and
-   (ii) some remaining input,
-   succeeds and yields
-   (the fixing of) that tree and (the fixing of) that remaining input.
-   Since @('ALPHA') is not involved in the
-   <see topic='@(url grammar-parser-disambiguating-restrictions)'>disambiguating
-   restrictions</see>,
-   @(tsee parse-alpha-when-tree-match) has no hypothesis
-   related to those disambiguating restrictions.
-   This theorem also has no hypothesis on the remaining input,
-   as explained below.
-   </p>
+   (xdoc::p
+    "This is proved by proving the following,
+     for each parsing function out of which @(tsee parse-grammar) is built:
+     if a (list of) terminated tree(s) matches a certain syntactic entity
+     and possibly satisfies certain "
+    (xdoc::seetopic "grammar-parser-disambiguating-restrictions"
+                    "disambiguating restrictions")
+    ", then running the parsing function on the @(tsee append) of
+     (i) the string at the leaves of the tree(s) and
+     (ii) some remaining input
+     possibly satisfying certain hypotheses explained below,
+     succeeds and yields that (list of) tree(s) and that remaining input.
+     More precisely, the parsing function yields
+     the (list of) tree(s) fixed with @(tsee tree-fix) or @(tsee tree-list-fix)
+     and the remaining input fixed with @(tsee nat-list-fix);
+     an alternative formulation is to avoid these fixing functions
+     but include the hypotheses
+     that the (list of) tree(s) satisfies @(tsee treep) or @(tsee tree-listp)
+     and that the remaining input satisfies @(tsee nat-listp).")
 
-   <p>
-   The completeness theorem of @(tsee parse-any)
-   does not involve trees but makes an analogous statement:
-   running @(tsee parse-any) on
-   the @(tsee cons) of a natural number and some remaining natural numbers,
-   returns (the fixing of) that natural number and
-   (the fixing of) the remaining natural numbers.
-   </p>
+   (xdoc::p
+    "For example, the completeness theorem @(tsee parse-alpha-when-tree-match)
+     says that running @(tsee parse-alpha) on the @(tsee append) of
+     (i) the leaves of a terminated tree that matches @('ALPHA'), and
+     (ii) some remaining input,
+     succeeds and yields
+     (the fixing of) that tree and (the fixing of) that remaining input.
+     Since @('ALPHA') is not involved in the "
+    (xdoc::seetopic "grammar-parser-disambiguating-restrictions"
+                    "disambiguating restrictions")
+    ", @(tsee parse-alpha-when-tree-match) has no hypothesis
+     related to those disambiguating restrictions.
+     This theorem also has no hypothesis on the remaining input,
+     as explained below.")
 
-   <h3>Hypotheses on the Remaining Input</h3>
+   (xdoc::p
+    "The completeness theorem of @(tsee parse-any)
+     does not involve trees but makes an analogous statement:
+     running @(tsee parse-any) on
+     the @(tsee cons) of a natural number and some remaining natural numbers,
+     returns (the fixing of) that natural number and
+     (the fixing of) the remaining natural numbers.")
 
-   <p>
-   In all the completeness theorems,
-   the remaining input (following the string at the leaves of the tree(s))
-   is denoted by the variable @('rest-input').
-   The hypotheses on the remaining input, when present,
-   are that certain parsing functions fail on the remaining input.
-   </p>
+   (xdoc::h3 "Hypotheses on the Remaining Input")
 
-   <p>
-   If a parsing function ignores the remaining input,
-   the corresponding completeness theorem
-   has no hypotheses on the remaining input.
-   This is the case for parsing functions that,
-   like @(tsee parse-alpha) mentioned above,
-   parse a fixed number of natural numbers from the input.
-   This is also the case for
-   parsing functions that parse a fixed number of natural numbers
-   after parsing a variable number of natural numbers:
-   for example, @(tsee parse-prose-val) always parses the closing angle bracket
-   (which is a single character)
-   after parsing a variable number of characters
-   after parsing the opening angle bracket.
-   </p>
+   (xdoc::p
+    "In all the completeness theorems,
+     the remaining input (following the string at the leaves of the tree(s))
+     is denoted by the variable @('rest-input').
+     The hypotheses on the remaining input, when present,
+     are that certain parsing functions fail on the remaining input.")
 
-   <p>
-   In contrast,
-   if a parsing function ``examines'' (part of) the remaining input,
-   the corresponding completeness theorem has hypotheses on the remaining input.
-   If a parsing function examines part of the remaining input,
-   but that part of the remaining input is absent from the returned tree(s)
-   (by hypothesis of the function's completeness theorem),
-   it means that the function attempts but fails
-   to parse further into the remaining input,
-   backtracking and returning a (list of) tree(s)
-   only for the input that precedes the remaining input.
-   Thus, the completeness theorem for the function
-   must include hypotheses stating or implying such parsing failures.
-   Without these hypotheses,
-   parsing further into the remaining input might succeed,
-   extending the tree(s) and rendering the theorem untrue.
-   Some concrete examples are given below.
-   </p>
+   (xdoc::p
+    "If a parsing function ignores the remaining input,
+     the corresponding completeness theorem
+     has no hypotheses on the remaining input.
+     This is the case for parsing functions that,
+     like @(tsee parse-alpha) mentioned above,
+     parse a fixed number of natural numbers from the input.
+     This is also the case for
+     parsing functions that parse a fixed number of natural numbers
+     after parsing a variable number of natural numbers:
+     for example,
+     @(tsee parse-prose-val) always parses the closing angle bracket
+     (which is a single character)
+     after parsing a variable number of characters
+     after parsing the opening angle bracket.")
 
-   <p>
-   A parsing function for
-   a repetition of zero or more instances of some syntactic entity
-   always examines the remaining input to decide when to stop.
-   The function's completeness theorem has a hypothesis on the remaining input
-   stating or implying that
-   parsing another instance of the syntactic entity fails.
-   For example, @(tsee parse-*bit) stops when @(tsee parse-bit) fails;
-   this parsing failure occurs in the remaining input.
-   The completeness theorem @(tsee parse-*bit-when-tree-list-match)
-   has the hypothesis that @(tsee parse-bit) fails on the remaining input.
-   Without this hypothesis, the theorem would not hold because,
-   if another @('BIT') could be parsed from the remaining input,
-   then @(tsee parse-*bit) would return (at least) an additional tree
-   beyond the list of trees hypothesized in the theorem.
-   </p>
+   (xdoc::p
+    "In contrast,
+     if a parsing function ``examines'' (part of) the remaining input,
+     the corresponding completeness theorem
+     has hypotheses on the remaining input.
+     If a parsing function examines part of the remaining input,
+     but that part of the remaining input is absent from the returned tree(s)
+     (by hypothesis of the function's completeness theorem),
+     it means that the function attempts but fails
+     to parse further into the remaining input,
+     backtracking and returning a (list of) tree(s)
+     only for the input that precedes the remaining input.
+     Thus, the completeness theorem for the function
+     must include hypotheses stating or implying such parsing failures.
+     Without these hypotheses,
+     parsing further into the remaining input might succeed,
+     extending the tree(s) and rendering the theorem untrue.
+     Some concrete examples are given below.")
 
-   <p>
-   A parsing function for an optional occurrence of some syntactic entity
-   may examine the remaining input.
-   This happens when parsing the syntactic entity fails,
-   in which case the function returns a tree without leaves,
-   because the optional entity is absent.
-   The function's completeness theorem has a hypothesis on the remaining input
-   stating or implying that parsing the syntactic entity fails.
-   For example, @(tsee parse-?%i) may fail to parse @('\"%i\"');
-   this parsing failure occurs in the remaining input,
-   because the function returns a tree without leaves,
-   reflecting the absence of the syntactic entity.
-   The completeness theorem @(tsee parse-?%i-when-tree-match)
-   has the hypothesis that @(tsee parse-ichars)
-   (with arguments @('#\\%') and @('#\\i'))
-   fails on the remaining input.
-   Without this hypothesis, the theorem would not hold because,
-   if @('\"%i\"') could be parsed from the remaining input
-   but the tree hypothesized by the theorem had no leaves,
-   then @(tsee parse-?%i) would return a tree with leaves instead.
-   </p>
+   (xdoc::p
+    "A parsing function for
+     a repetition of zero or more instances of some syntactic entity
+     always examines the remaining input to decide when to stop.
+     The function's completeness theorem has a hypothesis on the remaining input
+     stating or implying that
+     parsing another instance of the syntactic entity fails.
+     For example, @(tsee parse-*bit) stops when @(tsee parse-bit) fails;
+     this parsing failure occurs in the remaining input.
+     The completeness theorem @(tsee parse-*bit-when-tree-list-match)
+     has the hypothesis that @(tsee parse-bit) fails on the remaining input.
+     Without this hypothesis, the theorem would not hold because,
+     if another @('BIT') could be parsed from the remaining input,
+     then @(tsee parse-*bit) would return (at least) an additional tree
+     beyond the list of trees hypothesized in the theorem.")
 
-   <p>
-   The kind of hypothesis on the remaining input
-   described in the previous paragraph,
-   for the completeness theorems of parsing functions
-   that parse optional entities,
-   is stronger than needed.
-   If the parsing function succeeds in parsing the optional entity,
-   then it does not examine the remaining input, returning a tree with leaves.
-   So the hypothesis on the remaining input could be weakened
-   to require the parsing failure to happen only if the tree has no leaves.
-   However, in syntactically valid ABNF grammars,
-   the stronger hypothesis is always satisfied
-   (e.g. @('[ \"%i\" ]') cannot be followed by @('\"%i\"')),
-   so there is no loss in using the stronger hypothesis;
-   the stronger hypothesis keeps the completeness theorems simpler
-   without precluding the eventual proof of the top-level completeness theorem.
-   </p>
+   (xdoc::p
+    "A parsing function for an optional occurrence of some syntactic entity
+     may examine the remaining input.
+     This happens when parsing the syntactic entity fails,
+     in which case the function returns a tree without leaves,
+     because the optional entity is absent.
+     The function's completeness theorem has a hypothesis on the remaining input
+     stating or implying that parsing the syntactic entity fails.
+     For example, @(tsee parse-?%i) may fail to parse @('\"%i\"');
+     this parsing failure occurs in the remaining input,
+     because the function returns a tree without leaves,
+     reflecting the absence of the syntactic entity.
+     The completeness theorem @(tsee parse-?%i-when-tree-match)
+     has the hypothesis that @(tsee parse-ichars)
+     (with arguments @('#\\%') and @('#\\i'))
+     fails on the remaining input.
+     Without this hypothesis, the theorem would not hold because,
+     if @('\"%i\"') could be parsed from the remaining input
+     but the tree hypothesized by the theorem had no leaves,
+     then @(tsee parse-?%i) would return a tree with leaves instead.")
 
-   <p>
-   If a parsing function calls, or may call, another parsing function
-   as its last action,
-   the former's completeness theorem ``inherits''
-   the hypotheses on the remaining input from the latter's completeness theorem.
-   If the hypotheses were not inherited,
-   the called function may successfully parse some of the remaining input,
-   returning more or different subtrees
-   than hypothesized by the calling function's completeness theorem,
-   rendering the theorem untrue.
-   For example,
-   since @(tsee parse-1*bit) calls @(tsee parse-*bit) as its last action,
-   @(tsee parse-1*bit-when-tree-list-match) inherits from
-   @(tsee parse-*bit-when-tree-list-match)
-   the hypothesis that @(tsee parse-bit) fails on the remaining input;
-   otherwise, @(tsee parse-*bit) could return additional @('BIT') trees
-   and so @(tsee parse-1*bit) could return additional @('BIT') trees as well.
-   As another example,
-   since @(tsee parse-dot-1*bit) calls @(tsee parse-1*bit) as its last action,
-   @(tsee parse-dot-1*bit-when-tree-match) inherits from
-   @(tsee parse-*bit-when-tree-list-match)
-   the hypothesis that @(tsee parse-bit) fails on the remaining input;
-   otherwise, @(tsee parse-1*bit) could return additional @('BIT') trees
-   and so @(tsee parse-dot-1*bit) could return a tree
-   with additional @('BIT') subtrees.
-   As a third example,
-   since @(tsee parse-bin/dec/hex-val) may call @(tsee parse-bin-val)
-   (and @(tsee parse-dec-val) and @(tsee parse-hex-val))
-   as its last action,
-   @(tsee parse-bin/dec/hex-val-when-tree-match) inherits from
-   @(tsee parse-bin-val-when-tree-match)
-   (and @(tsee parse-dec-val-when-tree-match)
-   and @(tsee parse-hex-val-when-tree-match))
-   various parsing failure hypotheses on the remaining input.
-   </p>
+   (xdoc::p
+    "The kind of hypothesis on the remaining input
+     described in the previous paragraph,
+     for the completeness theorems of parsing functions
+     that parse optional entities,
+     is stronger than needed.
+     If the parsing function succeeds in parsing the optional entity,
+     then it does not examine the remaining input, returning a tree with leaves.
+     So the hypothesis on the remaining input could be weakened
+     to require the parsing failure to happen only if the tree has no leaves.
+     However, in syntactically valid ABNF grammars,
+     the stronger hypothesis is always satisfied
+     (e.g. @('[ \"%i\" ]') cannot be followed by @('\"%i\"')),
+     so there is no loss in using the stronger hypothesis;
+     the stronger hypothesis keeps the completeness theorems simpler
+     without precluding the eventual proof
+     of the top-level completeness theorem.")
 
-   <p>
-   As a slight generalization of the situation
-   described in the previous paragraph,
-   a parsing function may call, as its last action,
-   another parsing function that may return a tree without leaves.
-   In this case, the calling parsing function's completeness theorem inherits
-   the hypotheses on the remaining input
-   also from the completeness theorem of
-   the parsing function that it calls just before the last one.
-   For example,
-   @(tsee parse-elements) calls @(tsee parse-*cwsp) as its last action,
-   and thus @(tsee parse-elements-when-tree-match) inherits
-   from @(tsee parse-*cwsp-when-tree-list-match)
-   the hypothesis that @(tsee parse-cwsp) fails on the remaining input,
-   as explained earlier.
-   But since @(tsee parse-*cwsp) may return a tree with no leaves
-   (if no instances of @('c-wsp') follow the @('alternation')),
-   @(tsee parse-elements-when-tree-match) also inherits
-   the hypotheses on the remaining input
-   from @(tsee parse-alternation-when-tree-match).
-   </p>
+   (xdoc::p
+    "If a parsing function calls, or may call, another parsing function
+     as its last action,
+     the former's completeness theorem ``inherits''
+     the hypotheses on the remaining input
+     from the latter's completeness theorem.
+     If the hypotheses were not inherited,
+     the called function may successfully parse some of the remaining input,
+     returning more or different subtrees
+     than hypothesized by the calling function's completeness theorem,
+     rendering the theorem untrue.
+     For example,
+     since @(tsee parse-1*bit) calls @(tsee parse-*bit) as its last action,
+     @(tsee parse-1*bit-when-tree-list-match) inherits from
+     @(tsee parse-*bit-when-tree-list-match)
+     the hypothesis that @(tsee parse-bit) fails on the remaining input;
+     otherwise, @(tsee parse-*bit) could return additional @('BIT') trees
+     and so @(tsee parse-1*bit) could return additional @('BIT') trees as well.
+     As another example,
+     since @(tsee parse-dot-1*bit) calls @(tsee parse-1*bit) as its last action,
+     @(tsee parse-dot-1*bit-when-tree-match) inherits from
+     @(tsee parse-*bit-when-tree-list-match)
+     the hypothesis that @(tsee parse-bit) fails on the remaining input;
+     otherwise, @(tsee parse-1*bit) could return additional @('BIT') trees
+     and so @(tsee parse-dot-1*bit) could return a tree
+     with additional @('BIT') subtrees.
+     As a third example,
+     since @(tsee parse-bin/dec/hex-val) may call @(tsee parse-bin-val)
+     (and @(tsee parse-dec-val) and @(tsee parse-hex-val))
+     as its last action,
+     @(tsee parse-bin/dec/hex-val-when-tree-match) inherits from
+     @(tsee parse-bin-val-when-tree-match)
+     (and @(tsee parse-dec-val-when-tree-match)
+     and @(tsee parse-hex-val-when-tree-match))
+     various parsing failure hypotheses on the remaining input.")
 
-   <p>
-   As illustrated by
-   the @(tsee parse-bin/dec/hex-val-when-tree-match) example above,
-   when a parsing function may call a set of different parsing functions
-   as its last action,
-   the calling function's completeness theorem inherits
-   from the called functions' completeness theorems
-   all the hypotheses on the remaining input.
-   The resulting hypotheses, in the calling function's completeness theorem,
-   are stronger than needed:
-   they could be weakened to require an inherited parsing failure hypothesis
-   only if the subtree(s) correspond(s) to the called function.
-   For example, in @(tsee parse-bin/dec/hex-val-when-tree-match),
-   the failure of @(tsee parse-bit) could be required only if
-   the @('(bin-val / dec-val / hex-val)') tree has a @('bin-val') subtree.
-   However, in syntactically valid ABNF grammars,
-   the stronger hypotheses are always satisfied
-   (e.g. @('dec-val') cannot be followed by @('BIT')),
-   so there is no loss in using the stronger hypotheses;
-   the stronger hypotheses keep the completeness theorems simpler
-   without precluding the eventual proof of the top-level completeness theorem.
-   </p>
+   (xdoc::p
+    "As a slight generalization of the situation
+     described in the previous paragraph,
+     a parsing function may call, as its last action,
+     another parsing function that may return a tree without leaves.
+     In this case, the calling parsing function's completeness theorem inherits
+     the hypotheses on the remaining input
+     also from the completeness theorem of
+     the parsing function that it calls just before the last one.
+     For example,
+     @(tsee parse-elements) calls @(tsee parse-*cwsp) as its last action,
+     and thus @(tsee parse-elements-when-tree-match) inherits
+     from @(tsee parse-*cwsp-when-tree-list-match)
+     the hypothesis that @(tsee parse-cwsp) fails on the remaining input,
+     as explained earlier.
+     But since @(tsee parse-*cwsp) may return a tree with no leaves
+     (if no instances of @('c-wsp') follow the @('alternation')),
+     @(tsee parse-elements-when-tree-match) also inherits
+     the hypotheses on the remaining input
+     from @(tsee parse-alternation-when-tree-match).")
 
-   <p>
-   In the rules in RFC:4, certain repeated and optional syntactic entities
-   ``nest to the right'',
-   e.g. @('1*BIT') nests to the right inside @('1*(\".\" 1*BIT)').
-   When this kind of nesting occurs,
-   the completeness theorem
-   of the parsing function for the outer repetition or option
-   has not only the parsing failure hypotheses on the remaining input
-   relative to the outer repetition or option,
-   but also the parsing failure hypotheses on the remaining input
-   relative to the inner repetition or option.
-   For example, @(tsee parse-1*-dot-1*bit-when-tree-list-match)
-   (and @(tsee parse-*-dot-1*bit-when-tree-list-match))
-   includes not only the failure of @(tsee parse-dot-1*bit)
-   (actually, a stronger hypothesis, as explained below),
-   but also the failure of @(tsee parse-bit).
-   As another example, @(tsee parse-bin-val-rest-when-tree-match)
-   includes the failure of @(tsee parse-bit) for the @('1*BIT') repetition
-   as well as (stronger hypotheses, as explained below, implying)
-   the failure of (both alternatives inside)
-   the @('[ 1*(\".\" 1*BIT) \"/\" (\"-\" 1*BIT) ]') option.
-   </p>
+   (xdoc::p
+    "As illustrated by
+     the @(tsee parse-bin/dec/hex-val-when-tree-match) example above,
+     when a parsing function may call a set of different parsing functions
+     as its last action,
+     the calling function's completeness theorem inherits
+     from the called functions' completeness theorems
+     all the hypotheses on the remaining input.
+     The resulting hypotheses, in the calling function's completeness theorem,
+     are stronger than needed:
+     they could be weakened to require an inherited parsing failure hypothesis
+     only if the subtree(s) correspond(s) to the called function.
+     For example, in @(tsee parse-bin/dec/hex-val-when-tree-match),
+     the failure of @(tsee parse-bit) could be required only if
+     the @('(bin-val / dec-val / hex-val)') tree has a @('bin-val') subtree.
+     However, in syntactically valid ABNF grammars,
+     the stronger hypotheses are always satisfied
+     (e.g. @('dec-val') cannot be followed by @('BIT')),
+     so there is no loss in using the stronger hypotheses;
+     the stronger hypotheses keep the completeness theorems simpler
+     without precluding the eventual proof
+     of the top-level completeness theorem.")
 
-   <p>
-   Besides the cases already mentioned
-   of stronger hypotheses on the remaining input
-   (that keep the theorems simpler while not precluding the top-level proof),
-   there are other cases in which completeness theorems have
-   stronger parsing failure hypotheses than needed.
-   An example, as hinted above,
-   is @(tsee parse-1*-dot-1*bit-when-tree-list-match):
-   instead of having a hypothesis
-   requiring the failure of @(tsee parse-1*-dot-1*bit),
-   the theorem has the stronger hypothesis that
-   @(tsee parse-ichar) with argument @('#\\.') fails.
-   However, in syntactically valid ABNF grammars,
-   the stronger hypotheses are always satisfied
-   (e.g. @('1*(\".\" 1*BIT)') cannot be followed by @('\".\"')
-   unless that is followed by @('BIT')),
-   so there is no loss in using the stronger hypotheses;
-   the stronger hypotheses keep the completeness theorems simpler
-   without precluding the eventual proof of the top-level completeness theorem.
-   </p>
+   (xdoc::p
+    "In the rules in [RFC:4], certain repeated and optional syntactic entities
+     ``nest to the right'',
+     e.g. @('1*BIT') nests to the right inside @('1*(\".\" 1*BIT)').
+     When this kind of nesting occurs,
+     the completeness theorem
+     of the parsing function for the outer repetition or option
+     has not only the parsing failure hypotheses on the remaining input
+     relative to the outer repetition or option,
+     but also the parsing failure hypotheses on the remaining input
+     relative to the inner repetition or option.
+     For example, @(tsee parse-1*-dot-1*bit-when-tree-list-match)
+     (and @(tsee parse-*-dot-1*bit-when-tree-list-match))
+     includes not only the failure of @(tsee parse-dot-1*bit)
+     (actually, a stronger hypothesis, as explained below),
+     but also the failure of @(tsee parse-bit).
+     As another example, @(tsee parse-bin-val-rest-when-tree-match)
+     includes the failure of @(tsee parse-bit) for the @('1*BIT') repetition
+     as well as (stronger hypotheses, as explained below, implying)
+     the failure of (both alternatives inside)
+     the @('[ 1*(\".\" 1*BIT) \"/\" (\"-\" 1*BIT) ]') option.")
 
-   <p>
-   The two alternatives parsed by @(tsee parse-equal-/-equal-slash)
-   are one a prefix of the other.
-   Therefore, @(tsee parse-equal-/-equal-slash-when-tree-match)
-   has the hypothesis that @(tsee parse-ichar) with argument @('#\\/')
-   fails on the remaining input.
-   Without this hypothesis, the tree hypothesized in the theorem
-   could match just @('\"=\"'),
-   but the remaining input could start with @('\"/\"'),
-   in which case @(tsee parse-equal-/-equal-slash)
-   would return a tree matching @('\"=/\"') instead,
-   rendering the theorem untrue.
-   This hypothesis on the remaining input is stronger than needed:
-   it could be weakened to requiring the parsing failure
-   only if the tree matches @('\"=\"').
-   However, in syntactically valid ABNF grammars,
-   the stronger hypothesis is always satisfied
-   (i.e. @('\"=/\"') cannot be followed by @('\"/\"')),
-   so there is no loss in using the stronger hypothesis;
-   the stronger hypothesis keeps this completeness theorem simpler
-   without precluding the eventual proof of the top-level completeness theorem.
-   </p>
+   (xdoc::p
+    "Besides the cases already mentioned
+     of stronger hypotheses on the remaining input
+     (that keep the theorems simpler while not precluding the top-level proof),
+     there are other cases in which completeness theorems have
+     stronger parsing failure hypotheses than needed.
+     An example, as hinted above,
+     is @(tsee parse-1*-dot-1*bit-when-tree-list-match):
+     instead of having a hypothesis
+     requiring the failure of @(tsee parse-1*-dot-1*bit),
+     the theorem has the stronger hypothesis that
+     @(tsee parse-ichar) with argument @('#\\.') fails.
+     However, in syntactically valid ABNF grammars,
+     the stronger hypotheses are always satisfied
+     (e.g. @('1*(\".\" 1*BIT)') cannot be followed by @('\".\"')
+     unless that is followed by @('BIT')),
+     so there is no loss in using the stronger hypotheses;
+     the stronger hypotheses keep the completeness theorems simpler
+     without precluding the eventual proof
+     of the top-level completeness theorem.")
 
-   <p>
-   Since
-   (i) @(tsee parse-rule) calls @(tsee parse-cnl) as its last action,
-   (ii) @(tsee parse-cnl) always returns a tree with leaves, and
-   (iii) @(tsee parse-cnl-when-tree-match) has
-   no hypotheses on the remaining input,
-   it may seem that @(tsee parse-rule-when-tree-match)
-   needs no hypotheses on the remaining input.
-   However, before calling @(tsee parse-cnl),
-   @(tsee parse-rule) calls @(tsee parse-elements),
-   which may parse the ending @('c-nl')
-   and then attempt and fail to parse @('WSP') after @('c-nl')
-   (this is how
-   the <see topic='@(url grammar-parser-implementation)'>grammar parser
-   implementation</see>
-   resolves the @('rulelist') ambiguity).
-   Thus, @(tsee parse-rule) may actually examine part of the remaining input.
-   The needed hypothesis is that @(tsee parse-wsp) fails on the remaining input:
-   if @('WSP') could be parsed from the remaining input,
-   @(tsee parse-rule) would put that with the @('c-nl')
-   under an additional @('c-wsp') instance
-   under @('elements') and under @('rule'),
-   thus returning a different tree than hypothesized in the theorem.
-   </p>
+   (xdoc::p
+    "The two alternatives parsed by @(tsee parse-equal-/-equal-slash)
+     are one a prefix of the other.
+     Therefore, @(tsee parse-equal-/-equal-slash-when-tree-match)
+     has the hypothesis that @(tsee parse-ichar) with argument @('#\\/')
+     fails on the remaining input.
+     Without this hypothesis, the tree hypothesized in the theorem
+     could match just @('\"=\"'),
+     but the remaining input could start with @('\"/\"'),
+     in which case @(tsee parse-equal-/-equal-slash)
+     would return a tree matching @('\"=/\"') instead,
+     rendering the theorem untrue.
+     This hypothesis on the remaining input is stronger than needed:
+     it could be weakened to requiring the parsing failure
+     only if the tree matches @('\"=\"').
+     However, in syntactically valid ABNF grammars,
+     the stronger hypothesis is always satisfied
+     (i.e. @('\"=/\"') cannot be followed by @('\"/\"')),
+     so there is no loss in using the stronger hypothesis;
+     the stronger hypothesis keeps this completeness theorem simpler
+     without precluding the eventual proof
+     of the top-level completeness theorem.")
 
-   <p>
-   An analogous discussion to the one in the previous paragraph
-   applies to @(tsee parse-*cwsp-cnl).
-   Thus, @(tsee parse-*cwsp-cnl-when-tree-match) has the hypothesis that
-   @(tsee parse-wsp) fails on the remaining input.
-   </p>
+   (xdoc::p
+    "Since
+     (i) @(tsee parse-rule) calls @(tsee parse-cnl) as its last action,
+     (ii) @(tsee parse-cnl) always returns a tree with leaves, and
+     (iii) @(tsee parse-cnl-when-tree-match) has
+     no hypotheses on the remaining input,
+     it may seem that @(tsee parse-rule-when-tree-match)
+     needs no hypotheses on the remaining input.
+     However, before calling @(tsee parse-cnl),
+     @(tsee parse-rule) calls @(tsee parse-elements),
+     which may parse the ending @('c-nl')
+     and then attempt and fail to parse @('WSP') after @('c-nl')
+     (this is how the "
+    (xdoc::seetopic "grammar-parser-implementation"
+                    "grammar parser implementation")
+    " resolves the @('rulelist') ambiguity).
+     Thus, @(tsee parse-rule) may actually examine part of the remaining input.
+     The needed hypothesis is that @(tsee parse-wsp)
+     fails on the remaining input:
+     if @('WSP') could be parsed from the remaining input,
+     @(tsee parse-rule) would put that with the @('c-nl')
+     under an additional @('c-wsp') instance
+     under @('elements') and under @('rule'),
+     thus returning a different tree than hypothesized in the theorem.")
 
-   <h3>Hypotheses on the Tree(s)</h3>
+   (xdoc::p
+    "An analogous discussion to the one in the previous paragraph
+     applies to @(tsee parse-*cwsp-cnl).
+     Thus, @(tsee parse-*cwsp-cnl-when-tree-match) has the hypothesis that
+     @(tsee parse-wsp) fails on the remaining input.")
 
-   <p>
-   Most completeness theorems include
-   hypotheses saying that the trees are terminated.
-   This ensures that the strings at the leaves of the trees
-   consist of natural numbers and not rule names,
-   since the parsing functions operate on natural numbers.
-   A few completeness theorems do not need those hypotheses
-   because the corresponding syntactic entities can only be matched
-   by trees whose leaves are natural numbers, e.g.
-   @(tsee parse-exact-when-tree-match),
-   @(tsee parse-ichar-when-tree-match), and
-   @(tsee parse-?%i-when-tree-match).
-   </p>
+   (xdoc::h3 "Hypotheses on the Tree(s)")
 
-   <p>
-   The completeness theorems
-   @(tsee parse-*-rule-/-*cwsp-cnl-when-tree-list-match-and-restriction) and
-   @(tsee parse-rulelist-when-tree-match-and-restriction),
-   as suggested by the ending of their names,
-   have hypotheses saying that the (list of) tree(s) satisfies
-   <see topic='@(url grammar-parser-disambiguating-restrictions)'>the
-   disambiguating restrictions</see>.
-   Without these hypotheses, the theorems would not hold
-   because there would be multiple choices of trees for certain inputs,
-   but the parser only produces one choice for each input.
-   </p>
+   (xdoc::p
+    "Most completeness theorems include
+     hypotheses saying that the trees are terminated.
+     This ensures that the strings at the leaves of the trees
+     consist of natural numbers and not rule names,
+     since the parsing functions operate on natural numbers.
+     A few completeness theorems do not need those hypotheses
+     because the corresponding syntactic entities can only be matched
+     by trees whose leaves are natural numbers, e.g.
+     @(tsee parse-exact-when-tree-match),
+     @(tsee parse-ichar-when-tree-match), and
+     @(tsee parse-?%i-when-tree-match).")
 
-   <h3>Proof Methods</h3>
+   (xdoc::p
+    "The completeness theorems
+     @(tsee parse-*-rule-/-*cwsp-cnl-when-tree-list-match-and-restriction) and
+     @(tsee parse-rulelist-when-tree-match-and-restriction),
+     as suggested by the ending of their names,
+     have hypotheses saying that the (list of) tree(s) satisfies "
+    (xdoc::seetopic "grammar-parser-disambiguating-restrictions"
+                    "the disambiguating restrictions")
+    ". Without these hypotheses, the theorems would not hold
+     because there would be multiple choices of trees for certain inputs,
+     but the parser only produces one choice for each input.")
 
-   <p>
-   The completeness theorems of the more ``basic'' parsing functions
-   @(tsee parse-any),
-   @(tsee parse-exact),
-   @(tsee parse-in-range),
-   @(tsee parse-ichar), and
-   @(tsee parse-ichars)
-   are proved by expanding the necessary definitions.
-   The proofs for @(tsee parse-exact) and @(tsee parse-in-range)
-   use @(tsee parse-any-of-cons) as a rewrite rule,
-   obviating the need to expand @(tsee parse-any).
-   The proofs for @(tsee parse-exact) and @(tsee parse-in-range)
-   also expand some tree-related functions, which seems odd
-   because it should be possible to treat trees as abstract data types;
-   there may be ways to avoid that, perhaps by adding some tree lemmas.
-   </p>
+   (xdoc::h3 "Proof Methods")
 
-   <p>
-   Each of the other completeness theorems is proved, generally speaking,
-   by reducing the tree matching hypothesis
-   to one or more subtree matching facts,
-   reducing the call to the parsing function on the (list of) tree(s)
-   to calls to other parsing functions on (lists of) subtrees,
-   and using the already proved theorems for the called parsing functions
-   to show that the calling parsing function returns the right results.
-   The completeness theorems are used as rewrite rules
-   (implicitly, since they are enabled).
-   The subtree matching facts to which the tree matching hypothesis reduces
-   are used to relieve the hypotheses of these rewrite rules.
-   </p>
+   (xdoc::p
+    "The completeness theorems of the more ``basic'' parsing functions
+     @(tsee parse-any),
+     @(tsee parse-exact),
+     @(tsee parse-in-range),
+     @(tsee parse-ichar), and
+     @(tsee parse-ichars)
+     are proved by expanding the necessary definitions.
+     The proofs for @(tsee parse-exact) and @(tsee parse-in-range)
+     use @(tsee parse-any-of-cons) as a rewrite rule,
+     obviating the need to expand @(tsee parse-any).
+     The proofs for @(tsee parse-exact) and @(tsee parse-in-range)
+     also expand some tree-related functions, which seems odd
+     because it should be possible to treat trees as abstract data types;
+     there may be ways to avoid that, perhaps by adding some tree lemmas.")
 
-   <p>
-   For example, @(tsee parse-cr-when-tree-match) is proved as follows.
-   The hypothesis that the tree matches @('CR') is reduced
-   to the fact that its (only) subtree matches @('%x0D').
-   The call to @(tsee parse-cr) in the conclusion is reduced
-   to a call to @(tsee parse-exact) with argument @('#x0d')
-   on the @(tsee append) of
-   (i) the string at the leaves of the subtree and
-   (ii) the remaining input.
-   The rewrite rule @(tsee parse-exact-when-tree-match) then applies
-   (whose hypothesis is relieved
-   via the aforementioned fact that the subtree matches @('%0D')),
-   rewriting the call to @(tsee parse-exact) to the triple consisting of
-   @('nil') (i.e. success), the subtree, and the remaining input.
-   Therefore, @(tsee parse-cr), by its definition,
-   returns the triple consisting of
-   @('nil') (i.e. success),
-   the @('CR') tree with the @('%x0D') subtree,
-   and the remaining input.
-   Thus, @(tsee parse-cr-when-tree-match) is proved.
-   </p>
+   (xdoc::p
+    "Each of the other completeness theorems is proved, generally speaking,
+     by reducing the tree matching hypothesis
+     to one or more subtree matching facts,
+     reducing the call to the parsing function on the (list of) tree(s)
+     to calls to other parsing functions on (lists of) subtrees,
+     and using the already proved theorems for the called parsing functions
+     to show that the calling parsing function returns the right results.
+     The completeness theorems are used as rewrite rules
+     (implicitly, since they are enabled).
+     The subtree matching facts to which the tree matching hypothesis reduces
+     are used to relieve the hypotheses of these rewrite rules.")
 
-   <p>
-   This reduction approach works also when there are multiple subtrees.
-   For example, @(tsee parse-crlf-when-tree-match) is proved as follows.
-   The hypothesis that the tree matches @('CRLF') is reduced
-   to the first subtree matching @('CR')
-   and the second subtree matching @('LF').
-   The call to @(tsee parse-crlf) is reduced to
-   a call to @(tsee parse-cr)
-   on the string at the leaves of the first subtree
-   and a call to @(tsee parse-lf)
-   on the string at the leaves of the second subtree.
-   Then @(tsee parse-cr-when-tree-match) and @(tsee parse-lf-when-tree-match)
-   apply.
-   </p>
+   (xdoc::p
+    "For example, @(tsee parse-cr-when-tree-match) is proved as follows.
+     The hypothesis that the tree matches @('CR') is reduced
+     to the fact that its (only) subtree matches @('%x0D').
+     The call to @(tsee parse-cr) in the conclusion is reduced
+     to a call to @(tsee parse-exact) with argument @('#x0d')
+     on the @(tsee append) of
+     (i) the string at the leaves of the subtree and
+     (ii) the remaining input.
+     The rewrite rule @(tsee parse-exact-when-tree-match) then applies
+     (whose hypothesis is relieved
+     via the aforementioned fact that the subtree matches @('%0D')),
+     rewriting the call to @(tsee parse-exact) to the triple consisting of
+     @('nil') (i.e. success), the subtree, and the remaining input.
+     Therefore, @(tsee parse-cr), by its definition,
+     returns the triple consisting of
+     @('nil') (i.e. success),
+     the @('CR') tree with the @('%x0D') subtree,
+     and the remaining input.
+     Thus, @(tsee parse-cr-when-tree-match) is proved.")
 
-   <p>
-   Since completeness theorems generally have hypotheses
-   about the trees being terminated,
-   in order to apply completeness theorems as rewrite rules to subtrees
-   (in the reduction approach outlined above),
-   the hypothesis that the trees are terminated
-   must be reduced to facts that subtrees are terminated
-   to relieve the hypotheses of the rewrite rules.
-   Thus,
-   we enable @(tsee tree-terminatedp) just before the completeness theorems
-   and we disable it just after.
-   The existing enabled rewrite rules take care of
-   @(tsee tree-list-terminatedp) and @(tsee tree-list-list-terminatedp).
-   </p>
+   (xdoc::p
+    "This reduction approach works also when there are multiple subtrees.
+     For example, @(tsee parse-crlf-when-tree-match) is proved as follows.
+     The hypothesis that the tree matches @('CRLF') is reduced
+     to the first subtree matching @('CR')
+     and the second subtree matching @('LF').
+     The call to @(tsee parse-crlf) is reduced to
+     a call to @(tsee parse-cr)
+     on the string at the leaves of the first subtree
+     and a call to @(tsee parse-lf)
+     on the string at the leaves of the second subtree.
+     Then @(tsee parse-cr-when-tree-match) and @(tsee parse-lf-when-tree-match)
+     apply.")
 
-   <p>
-   Similarly, when calls to parsing functions on trees
-   are reduced to calls to parsing functions on subtrees,
-   the strings at the leaves of the trees must be reduced to
-   strings at the leaves of the subtrees.
-   Thus, we enable
-   @(tsee tree->string),
-   @(tsee tree-list->string), and
-   @(tsee tree-list-list->string)
-   just before the completeness theorems
-   and we disable them just after.
-   The existing enabled rules about
-   @(tsee tree-list->string) and
-   @(tsee tree-list-list->string)
-   do not suffice:
-   if these two functions are not enabled,
-   the proofs of some completeness theorems fails.
-   </p>
+   (xdoc::p
+    "Since completeness theorems generally have hypotheses
+     about the trees being terminated,
+     in order to apply completeness theorems as rewrite rules to subtrees
+     (in the reduction approach outlined above),
+     the hypothesis that the trees are terminated
+     must be reduced to facts that subtrees are terminated
+     to relieve the hypotheses of the rewrite rules.
+     Thus,
+     we enable @(tsee tree-terminatedp) just before the completeness theorems
+     and we disable it just after.
+     The existing enabled rewrite rules take care of
+     @(tsee tree-list-terminatedp) and @(tsee tree-list-list-terminatedp).")
 
-   <p>
-   The @(tsee tree-match-element-p) hypotheses of the completeness theorems
-   are expanded via explicit @(':expand') hints;
-   just enabling @(tsee tree-match-element-p) does not perform the expansion
-   (presumably due to ACL2's heuristics for expanding recursive functions).
-   Since many repetitions consist of one element,
-   the rewrite rule @(tsee tree-list-match-repetition-p-of-1-repetition)
-   is used in many completeness proofs:
-   we enable it just before the completeness theorems
-   and disabled it just after.
-   There is no direct use of the definitions of
-   @(tsee tree-list-list-match-alternation-p) and
-   @(tsee tree-list-list-match-concatenation-p)
-   because the alternations and concatenations in the completeness theorems
-   always have an explicit list structure and thus rewrite rules like
-   @(tsee tree-list-list-match-alternation-p-of-cons-alternation) suffice.
-   Repetition are handled via the rules
-   @(tsee tree-list-match-repetition-p-of-0+-reps-when-consp) and
-   @(tsee tree-list-match-repetition-p-of-1+-repetitions)
-   where needed, as explained below.
-   </p>
+   (xdoc::p
+    "Similarly, when calls to parsing functions on trees
+     are reduced to calls to parsing functions on subtrees,
+     the strings at the leaves of the trees must be reduced to
+     strings at the leaves of the subtrees.
+     Thus, we enable
+     @(tsee tree->string),
+     @(tsee tree-list->string), and
+     @(tsee tree-list-list->string)
+     just before the completeness theorems
+     and we disable them just after.
+     The existing enabled rules about
+     @(tsee tree-list->string) and
+     @(tsee tree-list-list->string)
+     do not suffice:
+     if these two functions are not enabled,
+     the proofs of some completeness theorems fails.")
 
-   <p>
-   If a parsing function may backtrack,
-   its completeness theorem uses a disambiguation theorem as a rewrite rule,
-   by explicitly enabling it
-   (with just one exception:
-   @(tsee parse-alpha-when-tree-match) uses
-   @(tsee fail-1st-range-when-match-2nd-range) with a @(':use') hint,
-   because the latter does not quite apply as a rewrite rule there).
-   For example,
-   in the proof of the completeness theorem @(tsee parse-wsp-when-tree-match),
-   the hypothesis that the tree matches @('WSP')
-   reduces to two cases for the subtree:
-   either the subtree matches @('SP') or the subtree matches @('HTAB').
-   In the first case, the completeness theorem @(tsee parse-sp-when-tree-match)
-   implies that @(tsee parse-sp) succeeds, so @(tsee parse-wsp) succeeds
-   and @(tsee parse-wsp-when-tree-match) is proved.
-   In the second case, in order to use, in a similar way,
-   the completeness theorem @(tsee parse-htab-when-tree-match),
-   we need to show that @(tsee parse-sp) fails,
-   so that @(tsee parse-wsp) reduces to @(tsee parse-htab) by backtracking
-   and then @(tsee parse-wsp-when-tree-match) is proved
-   using @(tsee parse-htab-when-tree-match).
-   The disambiguation theorem @(tsee fail-sp-when-match-htab)
-   serves to show that, in the second case above, @(tsee parse-sp) fails.
-   </p>
+   (xdoc::p
+    "The @(tsee tree-match-element-p) hypotheses of the completeness theorems
+     are expanded via explicit @(':expand') hints;
+     just enabling @(tsee tree-match-element-p) does not perform the expansion
+     (presumably due to ACL2's heuristics for expanding recursive functions).
+     Since many repetitions consist of one element,
+     the rewrite rule @(tsee tree-list-match-repetition-p-of-1-repetition)
+     is used in many completeness proofs:
+     we enable it just before the completeness theorems
+     and disabled it just after.
+     There is no direct use of the definitions of
+     @(tsee tree-list-list-match-alternation-p) and
+     @(tsee tree-list-list-match-concatenation-p)
+     because the alternations and concatenations in the completeness theorems
+     always have an explicit list structure and thus rewrite rules like
+     @(tsee tree-list-list-match-alternation-p-of-cons-alternation) suffice.
+     Repetition are handled via the rules
+     @(tsee tree-list-match-repetition-p-of-0+-reps-when-consp) and
+     @(tsee tree-list-match-repetition-p-of-1+-repetitions)
+     where needed, as explained below.")
 
-   <p>
-   All the completeness theorems for parsing functions that may backtrack
-   follow this proof pattern,
-   which motivates the formulation of the disambiguation theorems.
-   In particular,
-   it motivates the ``asymmetric'' use of trees and parsing functions
-   to show incompatibility
-   (as opposed to showing incompatibility
-   between parsing functions or between trees).
-   </p>
+   (xdoc::p
+    "If a parsing function may backtrack,
+     its completeness theorem uses a disambiguation theorem as a rewrite rule,
+     by explicitly enabling it
+     (with just one exception:
+     @(tsee parse-alpha-when-tree-match) uses
+     @(tsee fail-1st-range-when-match-2nd-range) with a @(':use') hint,
+     because the latter does not quite apply as a rewrite rule there).
+     For example,
+     in the proof of the completeness theorem @(tsee parse-wsp-when-tree-match),
+     the hypothesis that the tree matches @('WSP')
+     reduces to two cases for the subtree:
+     either the subtree matches @('SP') or the subtree matches @('HTAB').
+     In the first case,
+     the completeness theorem @(tsee parse-sp-when-tree-match)
+     implies that @(tsee parse-sp) succeeds, so @(tsee parse-wsp) succeeds
+     and @(tsee parse-wsp-when-tree-match) is proved.
+     In the second case, in order to use, in a similar way,
+     the completeness theorem @(tsee parse-htab-when-tree-match),
+     we need to show that @(tsee parse-sp) fails,
+     so that @(tsee parse-wsp) reduces to @(tsee parse-htab) by backtracking
+     and then @(tsee parse-wsp-when-tree-match) is proved
+     using @(tsee parse-htab-when-tree-match).
+     The disambiguation theorem @(tsee fail-sp-when-match-htab)
+     serves to show that, in the second case above, @(tsee parse-sp) fails.")
 
-   <p>
-   Some completeness theorems use some disambiguation theorems
-   not to show that the parsing function must backtrack,
-   but to relieve hypotheses of other completeness theorems.
-   For example,
-   in the completeness theorem @(tsee parse-1*-dot-1*bit-when-tree-list-match),
-   the disambiguation theorem @(tsee fail-bit-when-match-*-dot-1*bit)
-   serves to relieve the @(tsee parse-bit) failure hypothesis
-   of the @(tsee parse-dot-1*bit-when-tree-match) completeness theorem.
-   </p>
+   (xdoc::p
+    "All the completeness theorems for parsing functions that may backtrack
+     follow this proof pattern,
+     which motivates the formulation of the disambiguation theorems.
+     In particular,
+     it motivates the ``asymmetric'' use of trees and parsing functions
+     to show incompatibility
+     (as opposed to showing incompatibility
+     between parsing functions or between trees).")
 
-   <p>
-   If a parsing function parses a repetition of one or more elements
-   (e.g. @(tsee parse-1*bit)),
-   its completeness theorem
-   (e.g. @(tsee parse-1*bit-when-tree-list-match))
-   is proved by
-   using @(tsee tree-list-match-repetition-p-of-1+-repetitions)
-   to reduce the matching to
-   a single element and to a repetition of zero or more elements,
-   and then using the completeness theorems
-   for the element
-   (e.g. @(tsee parse-bit-when-tree-match))
-   and for the repetition of zero or more elements
-   (e.g. @(tsee parse-*bit-when-tree-list-match)).
-   </p>
+   (xdoc::p
+    "Some completeness theorems use some disambiguation theorems
+     not to show that the parsing function must backtrack,
+     but to relieve hypotheses of other completeness theorems.
+     For example,
+     in the completeness theorem
+     @(tsee parse-1*-dot-1*bit-when-tree-list-match),
+     the disambiguation theorem @(tsee fail-bit-when-match-*-dot-1*bit)
+     serves to relieve the @(tsee parse-bit) failure hypothesis
+     of the @(tsee parse-dot-1*bit-when-tree-match) completeness theorem.")
 
-   <p>
-   If a parsing function is singly recursive (e.g. @(tsee parse-*bit)),
-   i.e. it parses a repetition of zero or more elements,
-   its completeness theorem is proved by induction
-   on the length of the list of trees that matches the repetition;
-   induction on the parsing function does not work,
-   because the argument of the parsing function is not a variable
-   (it is @('(append (tree-list->string trees) rest-input)')).
-   We enable @(tsee tree-list-match-repetition-p-of-0+-reps-when-consp)
-   to handle the induction step of the proof.
-   We also disable the rewrite rule @('acl2::nat-list-fix-of-append')
-   because it interferes with the proof
-   by preventing @(tsee nat-list-fix) from being eliminated
-   via the rewrite rule that shows that the parsing function fixes the input
-   (e.g. the theorem
-   <see topic='@(url parse-*bit)'>@('parse-*bit-of-nat-list-fix')</see>).
-   </p>
+   (xdoc::p
+    "If a parsing function parses a repetition of one or more elements
+     (e.g. @(tsee parse-1*bit)),
+     its completeness theorem
+     (e.g. @(tsee parse-1*bit-when-tree-list-match))
+     is proved by
+     using @(tsee tree-list-match-repetition-p-of-1+-repetitions)
+     to reduce the matching to
+     a single element and to a repetition of zero or more elements,
+     and then using the completeness theorems
+     for the element
+     (e.g. @(tsee parse-bit-when-tree-match))
+     and for the repetition of zero or more elements
+     (e.g. @(tsee parse-*bit-when-tree-list-match)).")
 
-   <p>
-   The proof of the mutually recursive parsing functions
-   (i.e. @(tsee parse-alternation), @(tsee parse-concatenation), etc.)
-   is more complex.
-   As with the singly recursive parsing functions,
-   a straightforward induction on the mutually recursive parsing functions
-   does not work because their arguments are not variables
-   (they are
-   @('(append (tree->string tree) rest-input)') and
-   @('(append (tree-list->string trees) rest-input)')).
-   In analogy with
-   the completeness theorems for the singly recursive parsing functions,
-   we could try an induction on the sizes of the trees
-   (variables @('tree') and @('trees')),
-   but the formulation seems somewhat complicated,
-   due to the presence of multiple parsing functions.
-   </p>
+   (xdoc::p
+    "If a parsing function is singly recursive (e.g. @(tsee parse-*bit)),
+     i.e. it parses a repetition of zero or more elements,
+     its completeness theorem is proved by induction
+     on the length of the list of trees that matches the repetition;
+     induction on the parsing function does not work,
+     because the argument of the parsing function is not a variable
+     (it is @('(append (tree-list->string trees) rest-input)')).
+     We enable @(tsee tree-list-match-repetition-p-of-0+-reps-when-consp)
+     to handle the induction step of the proof.
+     We also disable the rewrite rule @('acl2::nat-list-fix-of-append')
+     because it interferes with the proof
+     by preventing @(tsee nat-list-fix) from being eliminated
+     via the rewrite rule that shows that the parsing function fixes the input
+     (e.g. the theorem "
+    (xdoc::seetopic "parse-*bit" "@('parse-*bit-of-nat-list-fix')")
+    ").")
 
-   <p>
-   Instead, we take the desired formulation of each completeness theorem
-   of the mutually recursive parsing functions,
-   we add a hypothesis that a new variable @('input') is equal to
-   @('(append (tree->string tree) rest-input)') or
-   @('(append (tree-list->string trees) rest-input)'),
-   we universally quantify
-   the @('tree') or @('trees') variable and the @('rest-input') variable
-   into a @(tsee define-sk) predicate with argument @('input'),
-   and we prove all these predicates by induction on
-   the mutually recursive functions.
-   That is, we prove that the parsing functions
-   satisfy their ``completeness properties'' for every way
-   in which their input can be ``split''
-   into (the string at the leaves of) a (list of) tree(s)
-   and some remaining input.
-   The predicates capture these completeness properties.
-   </p>
+   (xdoc::p
+    "The proof of the mutually recursive parsing functions
+     (i.e. @(tsee parse-alternation), @(tsee parse-concatenation), etc.)
+     is more complex.
+     As with the singly recursive parsing functions,
+     a straightforward induction on the mutually recursive parsing functions
+     does not work because their arguments are not variables
+     (they are
+     @('(append (tree->string tree) rest-input)') and
+     @('(append (tree-list->string trees) rest-input)')).
+     In analogy with
+     the completeness theorems for the singly recursive parsing functions,
+     we could try an induction on the sizes of the trees
+     (variables @('tree') and @('trees')),
+     but the formulation seems somewhat complicated,
+     due to the presence of multiple parsing functions.")
 
-   <p>
-   The predicates are @(tsee pred-alternation), @(tsee pred-concatenation), etc.
-   They are not guard-verified because they only serve
-   to prove the completeness of the mutually recursive parsing functions.
-   The consequents of the implications in their bodies
-   call the parsing functions on
-   @('(append (tree->string tree) rest-input)') or
-   @('(append (tree-list->string trees) rest-input)'),
-   and not on the shorter @('input') that the antecedents assert to be equal,
-   for a practical reason:
-   if we used @('input') in the consequents,
-   the rewrite rules generated by @(tsee define-sk)
-   (e.g. @('pred-alternation-necc'))
-   would have @('tree'), @('trees'), and @('rest-input') as free variables,
-   making their use harder.
-   The predicates also include
-   the fact that the remaining input satisfies @(tsee nat-listp),
-   instead of using @(tsee nat-list-fix) in the consequent:
-   this is because the @(tsee nat-list-fix) approach causes the proofs to fail
-   (perhaps due to some interaction with the equality with @('input')),
-   so we use @(tsee nat-listp) instead in the predicates.
-   </p>
+   (xdoc::p
+    "Instead, we take the desired formulation of each completeness theorem
+     of the mutually recursive parsing functions,
+     we add a hypothesis that a new variable @('input') is equal to
+     @('(append (tree->string tree) rest-input)') or
+     @('(append (tree-list->string trees) rest-input)'),
+     we universally quantify
+     the @('tree') or @('trees') variable and the @('rest-input') variable
+     into a @(tsee define-sk) predicate with argument @('input'),
+     and we prove all these predicates by induction on
+     the mutually recursive functions.
+     That is, we prove that the parsing functions
+     satisfy their ``completeness properties'' for every way
+     in which their input can be ``split''
+     into (the string at the leaves of) a (list of) tree(s)
+     and some remaining input.
+     The predicates capture these completeness properties.")
 
-   <p>
-   We prove by induction on the mutually recursive parsing functions that
-   all the predicates hold for every @('input') argument:
-   see
-   @(tsee
-     parse-alt/conc/rep/elem/group/option-when-tree-/-tree-list-match-lemmas).
-   These are completeness lemmas,
-   from which the completeness theorems are proved with ease.
-   The completeness theorem have the same formulation as the ones
-   for the other, non-recursive or singly recursive parsing functions;
-   in particular, they use @(tsee nat-list-fix) instead of @(tsee nat-listp)
-   on the remaining input.
-   </p>
+   (xdoc::p
+    "The predicates are @(tsee pred-alternation),
+     @(tsee pred-concatenation), etc.
+     They are not guard-verified because they only serve
+     to prove the completeness of the mutually recursive parsing functions.
+     The consequents of the implications in their bodies
+     call the parsing functions on
+     @('(append (tree->string tree) rest-input)') or
+     @('(append (tree-list->string trees) rest-input)'),
+     and not on the shorter @('input') that the antecedents assert to be equal,
+     for a practical reason:
+     if we used @('input') in the consequents,
+     the rewrite rules generated by @(tsee define-sk)
+     (e.g. @('pred-alternation-necc'))
+     would have @('tree'), @('trees'), and @('rest-input') as free variables,
+     making their use harder.
+     The predicates also include
+     the fact that the remaining input satisfies @(tsee nat-listp),
+     instead of using @(tsee nat-list-fix) in the consequent:
+     this is because the @(tsee nat-list-fix) approach causes the proofs to fail
+     (perhaps due to some interaction with the equality with @('input')),
+     so we use @(tsee nat-listp) instead in the predicates.")
 
-   <p>
-   The induction proof of the conpleteness lemmas generates
-   5 base cases and 26 induction steps.
-   We prove each of them separately
-   (these are the theorems whose names end with
-   @('-base-case') and @('-induction-step-N') where @('N') is a number,
-   e.g. @(tsee parse-element-when-tree-match-base-case)
-   and @(tsee parse-alternation-when-tree-match-induction-step-2).
-   Attempting to prove the completeness lemmas by induction in one shot fails,
-   perhaps due to interference between the different hints
-   used for the base cases and induction steps;
-   however, it may be possible to find a way to prove the lemmas in one shot.
-   </p>
+   (xdoc::p
+    "We prove by induction on the mutually recursive parsing functions that
+     all the predicates hold for every @('input') argument:
+     see
+     @(tsee
+       parse-alt/conc/rep/elem/group/option-when-tree-/-tree-list-match-lemmas).
+     These are completeness lemmas,
+     from which the completeness theorems are proved with ease.
+     The completeness theorem have the same formulation as the ones
+     for the other, non-recursive or singly recursive parsing functions;
+     in particular, they use @(tsee nat-list-fix) instead of @(tsee nat-listp)
+     on the remaining input.")
 
-   <p>
-   The formulation of each base case and induction step
-   is derived directly from the output
-   generated by the @('defthm-parse-alt/conc/rep/elem/group/option-flag') form.
-   Attempting to prove each base case and induction step in one shot fails,
-   perhaps because of the equality between @('input') and
-   @('(append (tree->string tree) rest-input)') or
-   @('(append (tree-list->string trees) rest-input)').
-   So, we prove each base case and induction step via a local lemma
-   where the predicate in the conclusion of the base case or induction step
-   is replaced with its definition;
-   the base case or induction step is then proved just by
-   expanding the predicate definition
-   and using the local lemma as a rewrite rule.
-   </p>
+   (xdoc::p
+    "The induction proof of the conpleteness lemmas generates
+     5 base cases and 26 induction steps.
+     We prove each of them separately
+     (these are the theorems whose names end with
+     @('-base-case') and @('-induction-step-N') where @('N') is a number,
+     e.g. @(tsee parse-element-when-tree-match-base-case)
+     and @(tsee parse-alternation-when-tree-match-induction-step-2).
+     Attempting to prove the completeness lemmas by induction in one shot fails,
+     perhaps due to interference between the different hints
+     used for the base cases and induction steps;
+     however,
+     it may be possible to find a way to prove the lemmas in one shot.")
 
-   <p>
-   The proof of each local lemma for base cases and induction steps
-   is similar to the proofs of the completeness theorems
-   of the non-recursive and singly recursive parsing functions.
-   In addition, these local lemmas use (implicitly)
-   the rewrite rules generated by @(tsee define-sk)
-   (e.g. @('pred-alternation-necc'));
-   some disambiguation theorems are sometimes enabled
-   to relieve the hypotheses of these @(tsee define-sk) rewrite rules.
-   The induction steps that involve lists of trees (as opposed to single trees)
-   use a @(':cases') hint to split on whether the lists are empty or not.
-   </p>
+   (xdoc::p
+    "The formulation of each base case and induction step
+     is derived directly from the output
+     generated by
+     the @('defthm-parse-alt/conc/rep/elem/group/option-flag') form.
+     Attempting to prove each base case and induction step in one shot fails,
+     perhaps because of the equality between @('input') and
+     @('(append (tree->string tree) rest-input)') or
+     @('(append (tree-list->string trees) rest-input)').
+     So, we prove each base case and induction step via a local lemma
+     where the predicate in the conclusion of the base case or induction step
+     is replaced with its definition;
+     the base case or induction step is then proved just by
+     expanding the predicate definition
+     and using the local lemma as a rewrite rule.")
 
-   <p>
-   Earlier we explained that some completeness theorems have
-   stronger parsing failure hypotheses on the remaining input
-   than needed, in order to keep the theorems simpler.
-   These theorems enable certain
-   <see topic='@(url grammar-parser-parsing-failure-propagation)'>parsing
-   failure propagation theorems</see>
-   to turn the stronger hypotheses into
-   the facts needed to show the weaker parsing failures
-   within the parsing functions.
-   For example,
-   in the completeness theorem @(tsee parse-*-dot-1*bit-when-tree-list-match),
-   the parsing failure propagation theorem @(tsee fail-dot-1*bit-when-fail-dot)
-   is used to turn the hypothesis that
-   @(tsee parse-ichar) with argument @('#\\.') fails
-   into the fact that @(tsee parse-dot-1*bit) fails,
-   needed to show that @(tsee parse-*-dot-1*bit) stops
-   before the remaining input.
-   </p>"
+   (xdoc::p
+    "The proof of each local lemma for base cases and induction steps
+     is similar to the proofs of the completeness theorems
+     of the non-recursive and singly recursive parsing functions.
+     In addition, these local lemmas use (implicitly)
+     the rewrite rules generated by @(tsee define-sk)
+     (e.g. @('pred-alternation-necc'));
+     some disambiguation theorems are sometimes enabled
+     to relieve the hypotheses of these @(tsee define-sk) rewrite rules.
+     The induction steps that involve lists of trees
+     (as opposed to single trees)
+     use a @(':cases') hint to split on whether the lists are empty or not.")
+
+   (xdoc::p
+    "Earlier we explained that some completeness theorems have
+     stronger parsing failure hypotheses on the remaining input
+     than needed, in order to keep the theorems simpler.
+     These theorems enable certain "
+    (xdoc::seetopic "grammar-parser-parsing-failure-propagation"
+                    "parsing failure propagation theorems")
+    " to turn the stronger hypotheses into
+     the facts needed to show the weaker parsing failures
+     within the parsing functions.
+     For example,
+     in the completeness theorem @(tsee parse-*-dot-1*bit-when-tree-list-match),
+     the parsing failure propagation theorem
+     @(tsee fail-dot-1*bit-when-fail-dot)
+     is used to turn the hypothesis that
+     @(tsee parse-ichar) with argument @('#\\.') fails
+     into the fact that @(tsee parse-dot-1*bit) fails,
+     needed to show that @(tsee parse-*-dot-1*bit) stops
+     before the remaining input."))
 
   :order-subtopics t)
 
@@ -12971,23 +12848,22 @@
   :parents (grammar-parser-completeness)
   :short "Top-level completeness theorem of the parser of ABNF grammars."
   :long
-  "<p>
-   For every terminated tree rooted at @('rulelist')
-   that satisfies the
-   <see topic='@(url grammar-parser-disambiguating-restrictions)'
-   >disambiguating restrictions</see>,
-   @(tsee parse-grammar) succeeds on the string at the leaves of the tree
-   and returns that tree.
-   </p>
-   <p>
-   This is proved from @(tsee parse-rulelist-when-tree-match-and-restriction)
-   and the fact that its two parsing failure hypotheses are satisfied
-   because there is no extra input beyond the string at the leaves of the tree.
-   </p>
-   <p>
-   An alternative formulation is to avoid @(tsee tree-fix)
-   but include the hypothesis that the tree satisfies @(tsee treep).
-   </p>"
+  (xdoc::topstring
+   (xdoc::p
+    "For every terminated tree rooted at @('rulelist')
+     that satisfies the "
+    (xdoc::seetopic "grammar-parser-disambiguating-restrictions"
+                    "disambiguating restrictions")
+    ", @(tsee parse-grammar) succeeds on the string at the leaves of the tree
+     and returns that tree.")
+   (xdoc::p
+    "This is proved from @(tsee parse-rulelist-when-tree-match-and-restriction)
+     and the fact that its two parsing failure hypotheses are satisfied
+     because there is no extra input
+     beyond the string at the leaves of the tree.")
+   (xdoc::p
+    "An alternative formulation is to avoid @(tsee tree-fix)
+     but include the hypothesis that the tree satisfies @(tsee treep)."))
   (implies (and (tree-match-element-p tree
                                       (element-rulename *rulelist*)
                                       *all-concrete-syntax-rules*)

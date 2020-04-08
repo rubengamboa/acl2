@@ -1,6 +1,6 @@
-; APT Partial Evaluation Transformation -- Tests
+; APT (Automated Program Transformations) Library
 ;
-; Copyright (C) 2018 Kestrel Institute (http://www.kestrel.edu)
+; Copyright (C) 2020 Kestrel Institute (http://www.kestrel.edu)
 ;
 ; License: A 3-clause BSD license. See the LICENSE file distributed with ACL2.
 ;
@@ -10,8 +10,10 @@
 
 (in-package "ACL2")
 
-(include-book "kestrel/utilities/testing" :dir :system)
 (include-book "parteval")
+
+(include-book "std/testing/assert-bang" :dir :system)
+(include-book "std/testing/eval" :dir :system)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -221,6 +223,49 @@
  (defstub z~ () => *)
 
  (parteval f ((z (z~)) (x (x~))))
+
+ :with-output-off nil)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(must-succeed*
+
+ (test-title "Template recursive function with unchanging static argument ~
+              and n = 1 and m = 1.")
+
+ ;; cf. parteval-template.lisp
+
+ (encapsulate
+
+   (((a * *) => *)
+    ((b * *) => *)
+    ((c * * *) => *)
+    ((d * *) => *)
+    ((mu *) => *))
+
+   (local (defun a (x y) (declare (ignore y)) (zp x)))
+   (local (defun b (x y) (declare (ignore x y)) nil))
+   (local (defun c (x y z) (declare (ignore x y z)) nil))
+   (local (defun d (x y) (declare (ignore y)) (1- x)))
+   (local (defun mu (x) (acl2-count x)))
+
+   (defthm tau
+     (and (o-p (mu x))
+          (implies (not (a x y))
+                   (o< (mu (d x y))
+                       (mu x))))
+     :rule-classes nil)) ; end of ENCAPSULATE
+
+ (defund f (x y)
+   (declare (xargs :measure (mu x)
+                   :hints (("Goal" :in-theory nil :use tau))))
+   (if (a x y)
+       (b x y)
+     (c x y (f (d x y) y))))
+
+ (defstub y~ () => *)
+
+ (parteval f ((y (y~))))
 
  :with-output-off nil)
 
@@ -818,4 +863,22 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(must-succeed (parteval expt ((i 5)) :new-name expt5 :thm-enable nil))
+(must-succeed*
+
+ (test-title "Test the exponential function with static exponent.")
+
+ (parteval expt ((i 5)) :new-name expt5 :thm-enable nil))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(must-succeed*
+
+ (test-title "Test a recursive function with unchanging static argument.")
+
+ (defun f (x y)
+   (declare (xargs :guard (and (true-listp x) (natp y))))
+   (if (endp x)
+       (1+ y)
+     (f (cdr x) y)))
+
+ (parteval f ((y 0))))

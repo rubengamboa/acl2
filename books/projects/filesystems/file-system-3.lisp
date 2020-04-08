@@ -1,7 +1,3 @@
-; Copyright (C) 2017, Regents of the University of Texas
-; Written by Mihir Mehta
-; License: A 3-clause BSD license.  See the LICENSE file distributed with ACL2.
-
 (in-package "ACL2")
 
 ;  file-system-3.lisp                                  Mihir Mehta
@@ -10,7 +6,7 @@
 ; We first start with a file-system recognizer, and then we define various
 ; file-system operations.
 
-(include-book "misc/assert" :dir :system)
+(include-book "std/testing/assert" :dir :system)
 (include-book "bounded-nat-listp")
 (include-book "block-listp")
 (include-book "generate-index-list")
@@ -458,8 +454,6 @@
                           (remove1-assoc (car hns) fs))
                     new-disk)))
             ))))))
-
-; Mihir, run some example and provide some ASSERT$ events.
 
 (defthm l3-wrchs-returns-fs-lemma-1
   (implies (l3-fs-p fs)
@@ -940,30 +934,3 @@ That takes care of that
 ; Add file -- or, if you will, create a file with some initial contents
 
 ; and so on...
-
-;; (assign fs '((a "Mihir" . 5) (b "Warren" . 6) (c (a "Mehta" . 5) (b "Hunt" . 4))))
-
-;; (assign h1 '(a))
-;; (assign h2 '(a b))
-;; (assign h3 '(c b))
-;; (assign h4 '(c))
-
-;; (l3-stat (@ h1) (@ fs))
-;; (l3-stat (@ h2) (@ fs))
-;; (l3-stat (@ h3) (@ fs))
-;; (l3-stat (@ h4) (@ fs))
-
-;; (wc-len (@ h1) (@ fs))
-;; (wc-len (@ h2) (@ fs))
-;; (wc-len (@ h3) (@ fs))
-;; (wc-len (@ h4) (@ fs))
-
-;; (l3-wrchs (@ h1) (@ fs) 1 "athur")
-;; (l3-wrchs (@ h3) (@ fs) 1 "inojosa")
-;; (l3-wrchs (@ h3) (@ fs) 5 "Alvarez")
-;; (l3-wrchs (@ h2) (@ fs) 1 "athur")
-
-;; (l3-unlink (@ h1) (@ fs))
-;; (l3-unlink (@ h2) (@ fs))
-;; (l3-unlink (@ h3) (@ fs))
-;; (l3-unlink (@ h4) (@ fs))

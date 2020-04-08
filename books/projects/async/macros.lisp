@@ -1,13 +1,17 @@
 ;; Copyright (C) 2017, Regents of the University of Texas
-;; Written by Cuong Chau
+;; Written by Cuong Chau (derived from the FM9001 work of Brock and Hunt)
 ;; License: A 3-clause BSD license.  See the LICENSE file distributed with
 ;; ACL2.
 
+;; The ACL2 source code for the FM9001 work is available at
+;; https://github.com/acl2/acl2/tree/master/books/projects/fm9001.
+
 ;; Cuong Chau <ckcuong@cs.utexas.edu>
-;; December 2018
+;; May 2019
 
 (in-package "ADE")
 
+(include-book "misc/defopener" :dir :system)
 (include-book "std/util/bstar" :dir :system)
 
 ;; ======================================================================
@@ -21,29 +25,20 @@
   (intern$ (concatenate 'string "*" (symbol-name x) "*")
            "ADE"))
 
-(defun state-accessors-gen (module sts idx)
+(defun state-accessors-gen (module st idx)
   (declare (xargs :guard (and (symbolp module)
-                              (symbol-listp sts)
+                              (symbol-listp st)
                               (natp idx))))
-  (if (atom sts)
+  (if (atom st)
       nil
-    (b* ((st (car sts))
+    (b* ((sub-st (car st))
          (name (strings-to-symbol "*"
                                   (symbol-name module)
                                   "$"
-                                  (symbol-name st)
+                                  (symbol-name sub-st)
                                   "*")))
       (cons `(defconst ,name ,idx)
-            (state-accessors-gen module (cdr sts) (1+ idx))))))
-
-(defmacro netlist-hyps (netlist &rest modules)
-  (if (atom modules)
-      nil
-    (if (atom (cdr modules))
-        `(equal (assoc ',(car modules) ,netlist)
-                (car ,(var-to-const (car modules))))
-      `(netlist-hyps (delete-to-eq ',(car modules) ,netlist)
-                     ,@(cdr modules)))))
+            (state-accessors-gen module (cdr st) (1+ idx))))))
 
 (defmacro not-primp-lemma (fn)
   (b* ((thm-name (strings-to-symbol "NOT-PRIMP-" (symbol-name fn))))
@@ -61,7 +56,7 @@
 ;; how to destructure a module definition.
 
 (defmacro destructuring-lemma (fn args declare-form bindings
-                                  name ins outs sts occs)
+                                  name ins outs st occs)
   (b* ((destructure (strings-to-symbol (symbol-name fn) "$DESTRUCTURE"))
        (prefix-name (strings-to-symbol
                      (coerce (butlast (coerce (symbol-name fn) 'list)
@@ -73,7 +68,7 @@
        (defun ,fn ,args
          ,declare-form
          (let ,bindings
-           (list ,name ,ins ,outs ,sts ,occs)))
+           (list ,name ,ins ,outs ,st ,occs)))
 
        (defthmd ,destructure
          (let ,bindings
@@ -81,7 +76,7 @@
             (EQUAL (CAR ,form) ,name)
             (EQUAL (CADR ,form) ,ins)
             (EQUAL (CADDR ,form) ,outs)
-            (EQUAL (CADDDR ,form) ,sts)
+            (EQUAL (CADDDR ,form) ,st)
             (EQUAL (CAR (CDDDDR ,form)) ,occs))))
 
        ;; Prove that this module is not a DE primitive.
@@ -92,7 +87,7 @@
 
 ;; MODULE-GENERATOR generator args name inputs outputs body state.
 
-(defmacro module-generator (generator args name inputs outputs sts body
+(defmacro module-generator (generator args name inputs outputs st body
                                       &optional declare-form)
   (let ((destructuring-lemma (strings-to-symbol (symbol-name generator)
                                                 "$DESTRUCTURE"))
@@ -105,14 +100,14 @@
     `(progn
        (defun ,generator ,args
          ,declare-form
-         (LIST ,name ,inputs ,outputs ,sts ,body))
+         (LIST ,name ,inputs ,outputs ,st ,body))
 
        (defthmd ,destructuring-lemma
          (AND
           (EQUAL (CAR ,form) ,name)
           (EQUAL (CADR ,form) ,inputs)
           (EQUAL (CADDR ,form) ,outputs)
-          (EQUAL (CADDDR ,form) ,sts)
+          (EQUAL (CADDDR ,form) ,st)
           (EQUAL (CAR (CDDDDR ,form)) ,body)))
 
        ;; Prove that this module is not a DE primitive.
@@ -135,12 +130,74 @@
          (eval-primp-apply (strings-to-symbol (symbol-name eval)
                                               "-PRIMP-APPLY")))
       (cons `(defthm ,thm-name
-               (equal (,eval ',fn ins sts netlist)
+               (equal (,eval ',fn ins st netlist)
                       ,expr)
                :hints (("Goal" :in-theory (enable ,eval-primp-apply))))
             (primitives-lemmas-gen eval (cdr primitives))))))
 
 ;; ======================================================================
+
+(define outputs/step-gen (state name
+                                &key
+                                (type ''outputs)
+                                (inputs '())
+                                (input-signals '())
+                                (hyps 't)
+                                (enable 'nil)
+                                (disable 'nil))
+  :mode :program
+  (b* ((fn-name (strings-to-symbol (symbol-name name)
+                                   (if (equal type 'outputs)
+                                       "$OUTPUTS-GEN"
+                                     "$STEP")))
+       ;; (lemma-name (strings-to-symbol (symbol-name name)
+       ;;                                (if (equal type 'value)
+       ;;                                    "$VALUE"
+       ;;                                  "$STATE")))
+       (recognizer (strings-to-symbol (symbol-name name)
+                                      "&"))
+       (destructure (strings-to-symbol (symbol-name name)
+                                       "*$DESTRUCTURE"))
+       (eval (if (equal type 'outputs) 'se 'de))
+       (hints
+        `(("Goal"
+           :do-not-induct t
+           :expand (:free (inputs data-size)
+                          (,eval (si ',name data-size) inputs st netlist))
+           :in-theory (e/d (de-rules
+                            ,recognizer
+                            ,destructure
+                            ,@enable)
+                           (de-module-disabled-rules
+                            ,@disable)))))
+       ((mv & lemma state)
+        (bash-fn `(b* ((inputs ,inputs))
+                    (implies ,hyps
+                             (equal (,eval (si ',name data-size)
+                                           inputs st netlist)
+                                    ?)))
+                 hints nil 'bash state))
+       (fn-body (cadr (caddar lemma))))
+    (mv nil
+        `(defun ,fn-name (inputs st data-size)
+             (b* ,input-signals
+               ,fn-body))
+        ;; `(progn
+        ;;    (defun ,fn-name (inputs st data-size)
+        ;;      (b* ,input-signals
+        ;;        ,fn-body))
+
+        ;;    (defthm ,lemma-name
+        ;;      (b* ((inputs ,inputs))
+        ;;        (implies ,hyps
+        ;;                 (equal (,eval (si ',name data-size)
+        ;;                               inputs st netlist)
+        ;;                        (,fn-name inputs st data-size))))
+        ;;      :hints ,hints)
+
+        ;;    (in-theory (disable ,fn-name))
+        ;;    )
+        state)))
 
 (defmacro run-gen (name &rest sizes)
   (declare (xargs :guard (and (symbolp name)
@@ -149,20 +206,14 @@
                                 "$STEP"))
        (run (strings-to-symbol (symbol-name name)
                                "$RUN"))
-       (len-of-run (strings-to-symbol "LEN-OF-"
-                                      (symbol-name name)
-                                      "$RUN"))
-       (st-len-const (strings-to-symbol "*"
-                                        (symbol-name name)
-                                        "$ST-LEN*"))
        (open-run-zp (strings-to-symbol "OPEN-"
                                        (symbol-name name)
                                        "$RUN-ZP"))
        (open-run (strings-to-symbol "OPEN-"
                                     (symbol-name name)
                                     "$RUN"))
-       (run-m+n (strings-to-symbol (symbol-name name)
-                                   "$RUN-M+N"))
+       (run-plus (strings-to-symbol (symbol-name name)
+                                   "$RUN-PLUS"))
        (inputs-seq 'inputs-seq))
     (if sizes
         `(progn
@@ -175,28 +226,21 @@
                      ,@sizes
                      (1- n))))
 
-           (defthm ,len-of-run
-             (implies
-              (equal (len st) ,st-len-const)
-              (equal (len (,run ,inputs-seq st ,@sizes n))
-                     ,st-len-const)))
+           (defopener ,open-run-zp
+             (,run ,inputs-seq st ,@sizes n)
+             :hyp (zp n)
+             :hints (("Goal"
+                      :in-theory (theory 'minimal-theory)
+                      :expand (,run ,inputs-seq st ,@sizes n))))
 
-           (defthm ,open-run-zp
-             (implies (zp n)
-                      (equal (,run ,inputs-seq st ,@sizes n)
-                             st)))
+           (defopener ,open-run
+             (,run ,inputs-seq st ,@sizes n)
+             :hyp (not (zp n))
+             :hints (("Goal"
+                      :in-theory (theory 'minimal-theory)
+                      :expand (,run ,inputs-seq st ,@sizes n))))
 
-           (defthm ,open-run
-             (implies
-              (not (zp n))
-              (equal
-               (,run ,inputs-seq st ,@sizes n)
-               (,run (cdr ,inputs-seq)
-                     (,step (car ,inputs-seq) st ,@sizes)
-                     ,@sizes
-                     (1- n)))))
-
-           (defthm ,run-m+n
+           (defthm ,run-plus
              (implies
               (and (natp m)
                    (natp n))
@@ -220,25 +264,21 @@
                    (,step (car ,inputs-seq) st)
                    (1- n))))
 
-         (defthm ,len-of-run
-           (implies (equal (len st) ,st-len-const)
-                    (equal (len (,run ,inputs-seq st n))
-                           ,st-len-const)))
+         (defopener ,open-run-zp
+           (,run ,inputs-seq st n)
+           :hyp (zp n)
+           :hints (("Goal"
+                    :in-theory (theory 'minimal-theory)
+                    :expand (,run ,inputs-seq st n))))
 
-         (defthm ,open-run-zp
-           (implies (zp n)
-                    (equal (,run ,inputs-seq st n)
-                           st)))
+         (defopener ,open-run
+           (,run ,inputs-seq st n)
+           :hyp (not (zp n))
+           :hints (("Goal"
+                    :in-theory (theory 'minimal-theory)
+                    :expand (,run ,inputs-seq st n))))
 
-         (defthm ,open-run
-           (implies
-            (not (zp n))
-            (equal (,run ,inputs-seq st n)
-                   (,run (cdr ,inputs-seq)
-                         (,step (car ,inputs-seq) st)
-                         (1- n)))))
-
-         (defthm ,run-m+n
+         (defthm ,run-plus
            (implies (and (natp m)
                          (natp n))
                     (equal (,run ,inputs-seq st (+ m n))
@@ -252,7 +292,7 @@
          (in-theory (disable ,run)))
       )))
 
-(defmacro input-format-n-gen (name &optional data-width)
+(defmacro input-format-n-gen (name &optional data-size)
   (declare (xargs :guard (symbolp name)))
   (b* ((input-format (strings-to-symbol (symbol-name name)
                                         "$INPUT-FORMAT"))
@@ -264,49 +304,49 @@
        (open-input-format-n (strings-to-symbol "OPEN-"
                                                (symbol-name name)
                                                "$INPUT-FORMAT-N"))
-       (input-format-m+n (strings-to-symbol (symbol-name name)
-                                            "$INPUT-FORMAT-M+N"))
+       (input-format-plus (strings-to-symbol (symbol-name name)
+                                            "$INPUT-FORMAT-PLUS"))
        (inputs-seq 'inputs-seq))
-    (if data-width
+    (if data-size
         `(progn
 
-           (defun ,input-format-n (,inputs-seq ,data-width n)
+           (defun ,input-format-n (,inputs-seq ,data-size n)
              (declare (xargs :guard (and (true-list-listp ,inputs-seq)
-                                         (natp ,data-width)
+                                         (natp ,data-size)
                                          (natp n))
                              :measure (acl2-count n)))
              (if (zp n)
                  t
-               (and (,input-format (car ,inputs-seq) ,data-width)
+               (and (,input-format (car ,inputs-seq) ,data-size)
                     (,input-format-n (cdr ,inputs-seq)
-                                     ,data-width
+                                     ,data-size
                                      (1- n)))))
 
-           (defthm ,open-input-format-n-zp
-             (implies (zp n)
-                      (equal (,input-format-n ,inputs-seq ,data-width n)
-                             t)))
+           (defopener ,open-input-format-n-zp
+             (,input-format-n ,inputs-seq ,data-size n)
+             :hyp (zp n)
+             :hints (("Goal"
+                      :in-theory (theory 'minimal-theory)
+                      :expand (,input-format-n ,inputs-seq ,data-size n))))
 
-           (defthm ,open-input-format-n
-             (implies (not (zp n))
-                      (equal (,input-format-n ,inputs-seq ,data-width n)
-                             (and (,input-format (car ,inputs-seq)
-                                                 ,data-width)
-                                  (,input-format-n (cdr ,inputs-seq)
-                                                   ,data-width
-                                                   (1- n))))))
+           (defopener ,open-input-format-n
+             (,input-format-n ,inputs-seq ,data-size n)
+             :hyp (not (zp n))
+             :hints (("Goal"
+                      :in-theory (theory 'minimal-theory)
+                      :expand (,input-format-n ,inputs-seq ,data-size n))))
 
-           (defthm ,input-format-m+n
+           (defthm ,input-format-plus
              (implies
               (and (natp m)
                    (natp n))
-              (equal (,input-format-n ,inputs-seq ,data-width (+ m n))
-                     (and (,input-format-n ,inputs-seq ,data-width m)
+              (equal (,input-format-n ,inputs-seq ,data-size (+ m n))
+                     (and (,input-format-n ,inputs-seq ,data-size m)
                           (,input-format-n (nthcdr m ,inputs-seq)
-                                           ,data-width
+                                           ,data-size
                                            n))))
              :hints (("Goal"
-                      :induct (,input-format-n ,inputs-seq ,data-width m))))
+                      :induct (,input-format-n ,inputs-seq ,data-size m))))
 
            (in-theory (disable ,input-format-n)))
 
@@ -320,19 +360,21 @@
              (and (,input-format (car ,inputs-seq))
                   (,input-format-n (cdr ,inputs-seq) (1- n)))))
 
-         (defthm ,open-input-format-n-zp
-           (implies (zp n)
-                    (equal (,input-format-n ,inputs-seq n)
-                           t)))
+         (defopener ,open-input-format-n-zp
+           (,input-format-n ,inputs-seq n)
+           :hyp (zp n)
+           :hints (("Goal"
+                    :in-theory (theory 'minimal-theory)
+                    :expand (,input-format-n ,inputs-seq n))))
 
-         (defthm ,open-input-format-n
-           (implies (not (zp n))
-                    (equal (,input-format-n ,inputs-seq n)
-                           (and (,input-format (car ,inputs-seq))
-                                (,input-format-n (cdr ,inputs-seq)
-                                                 (1- n))))))
+         (defopener ,open-input-format-n
+           (,input-format-n ,inputs-seq n)
+           :hyp (not (zp n))
+           :hints (("Goal"
+                    :in-theory (theory 'minimal-theory)
+                    :expand (,input-format-n ,inputs-seq n))))
 
-         (defthm ,input-format-m+n
+         (defthm ,input-format-plus
            (implies (and (natp m)
                          (natp n))
                     (equal (,input-format-n ,inputs-seq (+ m n))
@@ -342,70 +384,67 @@
          (in-theory (disable ,input-format-n)))
       )))
 
-(defmacro input-format-n-with-state-gen (name &optional data-width)
+(defmacro input-format-n-with-state-gen (name &optional data-size)
   (declare (xargs :guard (symbolp name)))
   (b* ((input-format (strings-to-symbol (symbol-name name)
-                                        "$INPUT-FORMAT"))
+                                            "$INPUT-FORMAT"))
        (input-format-n (strings-to-symbol (symbol-name name)
-                                          "$INPUT-FORMAT-N"))
+                                              "$INPUT-FORMAT-N"))
        (open-input-format-n-zp (strings-to-symbol "OPEN-"
-                                                  (symbol-name name)
-                                                  "$INPUT-FORMAT-N-ZP"))
+                                                      (symbol-name name)
+                                                      "$INPUT-FORMAT-N-ZP"))
        (open-input-format-n (strings-to-symbol "OPEN-"
-                                               (symbol-name name)
-                                               "$INPUT-FORMAT-N"))
-       (input-format-m+n (strings-to-symbol (symbol-name name)
-                                            "$INPUT-FORMAT-M+N"))
+                                                   (symbol-name name)
+                                                   "$INPUT-FORMAT-N"))
+       (input-format-plus (strings-to-symbol (symbol-name name)
+                                                 "$INPUT-FORMAT-PLUS"))
        (step (strings-to-symbol (symbol-name name)
                                 "$STEP"))
        (run (strings-to-symbol (symbol-name name)
                                "$RUN"))
        (inputs-seq 'inputs-seq))
-    (if data-width
+    (if data-size
         `(progn
 
-           (defun ,input-format-n (,inputs-seq st ,data-width n)
+           (defun ,input-format-n (,inputs-seq st ,data-size n)
              (declare (xargs :measure (acl2-count n)))
              (if (zp n)
                  t
-               (and (,input-format (car ,inputs-seq) st ,data-width)
+               (and (,input-format (car ,inputs-seq) st ,data-size)
                     (,input-format-n
                      (cdr ,inputs-seq)
-                     (,step (car ,inputs-seq) st ,data-width)
-                     ,data-width
+                     (,step (car ,inputs-seq) st ,data-size)
+                     ,data-size
                      (1- n)))))
 
-           (defthm ,open-input-format-n-zp
-             (implies
-              (zp n)
-              (equal (,input-format-n ,inputs-seq st ,data-width n)
-                     t)))
+           (defopener ,open-input-format-n-zp
+             (,input-format-n ,inputs-seq st ,data-size n)
+             :hyp (zp n)
+             :hints (("Goal"
+                      :in-theory (theory 'minimal-theory)
+                      :expand (,input-format-n ,inputs-seq st ,data-size n))))
 
-           (defthm ,open-input-format-n
-             (implies
-              (not (zp n))
-              (equal (,input-format-n ,inputs-seq st ,data-width n)
-                     (and (,input-format (car ,inputs-seq) st ,data-width)
-                          (,input-format-n
-                           (cdr ,inputs-seq)
-                           (,step (car ,inputs-seq) st ,data-width)
-                           ,data-width
-                           (1- n))))))
+           (defopener ,open-input-format-n
+             (,input-format-n ,inputs-seq st ,data-size n)
+             :hyp (not (zp n))
+             :hints (("Goal"
+                      :in-theory (theory 'minimal-theory)
+                      :expand (,input-format-n ,inputs-seq st ,data-size n))))
 
-           (defthm ,input-format-m+n
+           (defthm ,input-format-plus
              (implies
               (and (natp m)
                    (natp n))
-              (equal (,input-format-n ,inputs-seq st ,data-width (+ m n))
-                     (and (,input-format-n ,inputs-seq st ,data-width m)
+              (equal (,input-format-n ,inputs-seq st ,data-size (+ m n))
+                     (and (,input-format-n ,inputs-seq st ,data-size m)
                           (,input-format-n
                            (nthcdr m ,inputs-seq)
-                           (,run ,inputs-seq st ,data-width m)
-                           ,data-width
+                           (,run ,inputs-seq st ,data-size m)
+                           ,data-size
                            n))))
              :hints
              (("Goal"
-               :induct (,input-format-n ,inputs-seq st ,data-width m))))
+               :induct (,input-format-n ,inputs-seq st ,data-size m))))
 
            (in-theory (disable ,input-format-n)))
 
@@ -417,24 +456,24 @@
                t
              (and (,input-format (car ,inputs-seq) st)
                   (,input-format-n (cdr ,inputs-seq)
-                                   (,step (car ,inputs-seq) st)
-                                   (1- n)))))
+                                       (,step (car ,inputs-seq) st)
+                                       (1- n)))))
 
-         (defthm ,open-input-format-n-zp
-           (implies (zp n)
-                    (equal (,input-format-n ,inputs-seq st n)
-                           t)))
+         (defopener ,open-input-format-n-zp
+           (,input-format-n ,inputs-seq st n)
+           :hyp (zp n)
+           :hints (("Goal"
+                    :in-theory (theory 'minimal-theory)
+                    :expand (,input-format-n ,inputs-seq st n))))
 
-         (defthm ,open-input-format-n
-           (implies
-            (not (zp n))
-            (equal (,input-format-n ,inputs-seq st n)
-                   (and (,input-format (car ,inputs-seq) st)
-                        (,input-format-n (cdr ,inputs-seq)
-                                         (,step (car ,inputs-seq) st)
-                                         (1- n))))))
+         (defopener ,open-input-format-n
+           (,input-format-n ,inputs-seq st n)
+           :hyp (not (zp n))
+           :hints (("Goal"
+                    :in-theory (theory 'minimal-theory)
+                    :expand (,input-format-n ,inputs-seq st n))))
 
-         (defthm ,input-format-m+n
+         (defthm ,input-format-plus
            (implies (and (natp m)
                          (natp n))
                     (equal (,input-format-n ,inputs-seq st (+ m n))
@@ -453,7 +492,7 @@
 ;; "hardware" run function.
 
 (defmacro simulate-lemma (name  &key
-                               (sizes '(data-width))
+                               (sizes '(data-size))
                                (clink 'nil))
   (declare (xargs :guard (and (symbolp name)
                               (symbol-listp sizes)
@@ -486,8 +525,7 @@
                   (,st-format (,step inputs st ,@sizes)
                               ,@sizes))
          :hints (("Goal"
-                  :in-theory (enable get-field
-                                     ,step
+                  :in-theory (enable ,step
                                      ,st-format))))
 
        (defthmd ,value-alt
@@ -533,7 +571,7 @@
 
 (defmacro seq-gen (name in-out act-name act-idx data
                         &key
-                        (sizes '(data-width))
+                        (sizes '(data-size))
                         (netlist-data 'nil)
                         (clink 'nil)
                         (partial-clink 'nil))
@@ -562,10 +600,10 @@
                                "$"
                                (symbol-name in-out)
                                "-SEQ"))
-       (netlist-seq (strings-to-symbol (symbol-name name)
-                                       "$NETLIST-"
+       (seq-netlist (strings-to-symbol (symbol-name name)
+                                       "$"
                                        (symbol-name in-out)
-                                       "-SEQ"))
+                                       "-SEQ-NETLIST"))
        (seq-lemma (strings-to-symbol (symbol-name name)
                                      "$"
                                      (symbol-name in-out)
@@ -591,7 +629,7 @@
                  (append seq (list data))
                seq))))
 
-       (defun ,netlist-seq (inputs-seq st netlist ,(car sizes) n)
+       (defun ,seq-netlist (inputs-seq st netlist ,(car sizes) n)
          (declare (ignorable st netlist)
                   (xargs :measure (acl2-count n)))
          (if (zp n)
@@ -603,7 +641,7 @@
                                 `(nth ,act-idx outputs)
                               act))
                 (data ,(if netlist-data netlist-data data))
-                (seq (,netlist-seq (cdr inputs-seq)
+                (seq (,seq-netlist (cdr inputs-seq)
                                    (de (si ',name ,(car sizes))
                                        inputs st netlist)
                                    netlist
@@ -619,9 +657,11 @@
                             `(,input-format-n inputs-seq st ,(car sizes) n)
                           `(,input-format-n inputs-seq ,(car sizes) n))
                        (,st-format st ,@sizes))
-                  (equal (,netlist-seq inputs-seq st netlist ,(car sizes) n)
+                  (equal (,seq-netlist inputs-seq st netlist ,(car sizes) n)
                          (,seq inputs-seq st ,@sizes n)))
-         :hints (("Goal" :in-theory (enable ,value-alt ,state-alt))))
+         :hints (("Goal" :in-theory (enable ,value-alt
+                                            ,state-alt
+                                            ,act-fn))))
        )
     ))
 
@@ -646,7 +686,7 @@
        (de-n-lemma (strings-to-symbol (symbol-name name)
                                       "$DE-N"))
        (input-format-n (strings-to-symbol (symbol-name name)
-                                          "$INPUT-FORMAT-N"))
+                                              "$INPUT-FORMAT-N"))
        (valid-st (strings-to-symbol (symbol-name name)
                                     "$VALID-ST"))
        (valid-st=>st-format (strings-to-symbol (symbol-name name)
@@ -655,63 +695,63 @@
                                   "$INV"))
        (in-seq (strings-to-symbol (symbol-name name)
                                   "$IN-SEQ"))
-       (netlist-in-seq (strings-to-symbol (symbol-name name)
-                                          "$NETLIST-IN-SEQ"))
+       (in-seq-netlist (strings-to-symbol (symbol-name name)
+                                          "$IN-SEQ-NETLIST"))
        (out-seq (strings-to-symbol (symbol-name name)
                                    "$OUT-SEQ"))
-       (netlist-out-seq (strings-to-symbol (symbol-name name)
-                                           "$NETLIST-OUT-SEQ"))
+       (out-seq-netlist (strings-to-symbol (symbol-name name)
+                                           "$OUT-SEQ-NETLIST"))
        (op-map (strings-to-symbol (symbol-name op) "-MAP"))
        (seq (if op
                 `(,op-map seq)
-              `(,in-seq inputs-seq st data-width n)))
+              `(,in-seq inputs-seq st data-size n)))
        (hyps (if inv
                  `(and ,(if clink
-                            `(,input-format-n inputs-seq st data-width n)
-                          `(,input-format-n inputs-seq data-width n))
-                       (,valid-st st data-width)
+                            `(,input-format-n inputs-seq st data-size n)
+                          `(,input-format-n inputs-seq data-size n))
+                       (,valid-st st data-size)
                        (,st-inv st))
                `(and ,(if clink
-                          `(,input-format-n inputs-seq st data-width n)
-                        `(,input-format-n inputs-seq data-width n))
-                     (,valid-st st data-width))))
+                          `(,input-format-n inputs-seq st data-size n)
+                        `(,input-format-n inputs-seq data-size n))
+                     (,valid-st st data-size))))
        (netlist-hyps
         (if inv
-            `(and (,recognizer netlist data-width)
+            `(and (,recognizer netlist data-size)
                   ,(if clink
-                       `(,input-format-n inputs-seq st data-width n)
-                     `(,input-format-n inputs-seq data-width n))
-                  (,valid-st st data-width)
+                       `(,input-format-n inputs-seq st data-size n)
+                     `(,input-format-n inputs-seq data-size n))
+                  (,valid-st st data-size)
                   (,st-inv st))
-          `(and (,recognizer netlist data-width)
+          `(and (,recognizer netlist data-size)
                 ,(if clink
-                     `(,input-format-n inputs-seq st data-width n)
-                   `(,input-format-n inputs-seq data-width n))
-                (,valid-st st data-width))))
+                     `(,input-format-n inputs-seq st data-size n)
+                   `(,input-format-n inputs-seq data-size n))
+                (,valid-st st data-size))))
        (concl (if op
                   `(equal (append final-extracted-st
-                                  (,out-seq inputs-seq st data-width n))
+                                  (,out-seq inputs-seq st data-size n))
                           (append (,op-map
-                                   (,in-seq inputs-seq st data-width n))
+                                   (,in-seq inputs-seq st data-size n))
                                   extracted-st))
                 `(equal (append final-extracted-st
-                                (,out-seq inputs-seq st data-width n))
-                        (append (,in-seq inputs-seq st data-width n)
+                                (,out-seq inputs-seq st data-size n))
+                        (append (,in-seq inputs-seq st data-size n)
                                 extracted-st))))
        (netlist-concl
         (if op
             `(equal (append final-extracted-st
-                            (,netlist-out-seq
-                             inputs-seq st netlist data-width n))
+                            (,out-seq-netlist
+                             inputs-seq st netlist data-size n))
                     (append (,op-map
-                             (,netlist-in-seq
-                              inputs-seq st netlist data-width n))
+                             (,in-seq-netlist
+                              inputs-seq st netlist data-size n))
                             extracted-st))
           `(equal (append final-extracted-st
-                          (,netlist-out-seq
-                           inputs-seq st netlist data-width n))
-                  (append (,netlist-in-seq
-                           inputs-seq st netlist data-width n)
+                          (,out-seq-netlist
+                           inputs-seq st netlist data-size n))
+                  (append (,in-seq-netlist
+                           inputs-seq st netlist data-size n)
                           extracted-st))))
        (dataflow-correct-aux (strings-to-symbol (symbol-name name)
                                                 "$DATAFLOW-CORRECT-AUX"))
@@ -733,14 +773,14 @@
 
        (defthmd ,dataflow-correct
          (b* ((extracted-st (,extract st))
-              (final-st (,run inputs-seq st data-width n))
+              (final-st (,run inputs-seq st data-size n))
               (final-extracted-st (,extract final-st)))
            (implies ,hyps ,concl))
          :hints (("Goal" :in-theory (enable ,extracted-step))))
 
        (defthmd ,functionally-correct
          (b* ((extracted-st (,extract st))
-              (final-st (de-n (si ',name data-width)
+              (final-st (de-n (si ',name data-size)
                               inputs-seq st netlist n))
               (final-extracted-st (,extract final-st)))
            (implies ,netlist-hyps ,netlist-concl))

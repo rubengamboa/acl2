@@ -77,7 +77,7 @@ conses, where @('n') is the length of @('x').</p>"
                      (equal (append (take (- n 1) x) (cons (nth (- n 1) x) y))
                             (append (take n x) y)))
             :hints(("goal"
-                    :in-theory (enable acl2::take-redefinition)
+                    :in-theory (enable acl2::take)
                     :induct (take n x)))))
 
   (defthm append-chars-aux-correct
@@ -192,7 +192,7 @@ conses, where @('n') is the length of @('x').</p>"
   (defcong list-equiv equal (prefix-strings prefix x) 2
     :hints(("Goal" :in-theory (enable list-equiv)
             :use ((:instance l0 (x x))
-                  (:instance l0 (x acl2::x-equiv)))))))
+                  (:instance l0 (x x-equiv)))))))
 
 
 (define join ((x string-listp)
@@ -265,9 +265,7 @@ and reverse the result string.</p>"
   (defcong list-equiv equal (join x separator) 1
     :hints(("Goal" :in-theory (enable list-equiv)
             :use ((:instance l0 (x x))
-                  (:instance l0 (x acl2::x-equiv))))))
+                  (:instance l0 (x x-equiv))))))
 
   (defcong streqv equal (join x separator) 2)
   (defcong istreqv istreqv (join x separator) 2))
-
-

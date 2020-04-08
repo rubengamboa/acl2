@@ -1,5 +1,5 @@
-; ACL2 Version 8.1 -- A Computational Logic for Applicative Common Lisp
-; Copyright (C) 2018, Regents of the University of Texas
+; ACL2 Version 8.2 -- A Computational Logic for Applicative Common Lisp
+; Copyright (C) 2019, Regents of the University of Texas
 
 ; This version of ACL2 is a descendent of ACL2 Version 1.9, Copyright
 ; (C) 1997 Computational Logic, Inc.  See the documentation topic NOTE-2-0.
@@ -54,12 +54,12 @@
 (defparameter *find-package-cache* nil)
 (defun-one-output find-package-fast (string)
     (if (equal string (car *find-package-cache*))
-	(cdr *find-package-cache*)
+        (cdr *find-package-cache*)
       (let ((pair (assoc string *package-alist* :test 'equal)))
-	(cond (pair (setq *find-package-cache* pair) (cdr pair))
-	      (t (let ((pkg (find-package string)))
-		   (push (cons string pkg) *package-alist*)
-		   pkg))))))
+        (cond (pair (setq *find-package-cache* pair) (cdr pair))
+              (t (let ((pkg (find-package string)))
+                   (push (cons string pkg) *package-alist*)
+                   pkg))))))
 
 (defvar *global-symbol-key* (make-symbol "*GLOBAL-SYMBOL-KEY*"))
 
@@ -519,8 +519,7 @@
                 (eq (car (caddr form)) 'throw-nonexec-error))
            (setq *acl2-output-type-abort* '*))
           (t (output-type-for-declare-form-rec (car (last form)) flet-alist))))
-   ((member (car form) '(return-last return-from)
-            :test 'eq)
+   ((eq (car form) 'return-from)
     (output-type-for-declare-form-rec (car (last form)) flet-alist))
    ((eq (car form) 'when)
     (let ((tmp (output-type-for-declare-form-rec (car (last form))
@@ -533,7 +532,9 @@
    ((assoc (car form) flet-alist :test 'eq)
     (cdr (assoc (car form) flet-alist :test 'eq)))
    ((member (car form) '(values
-                         #+acl2-mv-as-values mv)
+                         #+acl2-mv-as-values mv
+; Note: for swap-stobjs, cadr and caddr have the same type.
+                         #+acl2-mv-as-values swap-stobjs)
             :test 'eq)
     (cond ((null (cdr form))
            (setq *acl2-output-type-abort* '*))
@@ -560,7 +561,9 @@
                                 tmp)
                                (t t))))))))
    #-acl2-mv-as-values
-   ((eq (car form) 'mv)
+   ((member (car form) '(mv swap-stobjs)
+            :test 'eq)
+; Note: for swap-stobjs, cadr and caddr have the same type.
     (output-type-for-declare-form-rec (cadr form) flet-alist))
    #-acl2-mv-as-values
    ((eq (car form) 'values)
@@ -700,7 +703,9 @@
   #+acl2-mv-as-values
   (let* ((*acl2-output-type-abort* nil) ; protect for call on next line
          (result (output-type-for-declare-form-rec form nil))
-         (stobjs-out (and ; check that (w *the-live-state*) is bound
+         (stobjs-out (and
+                      (not (eq fn 'return-last)) ; *stobjs-out-invalid* check
+; check that (w *the-live-state*) is bound
                       (boundp 'ACL2_GLOBAL_ACL2::CURRENT-ACL2-WORLD)
                       (fboundp 'get-stobjs-out-for-declare-form)
                       (qfuncall get-stobjs-out-for-declare-form fn))))

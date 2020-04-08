@@ -11,7 +11,7 @@
 (ld '(
 
 ; Include a lot of books.
-(include-book "doc/top" :dir :system) ; probably takes several minutes
+(include-book "doc/top-slow" :dir :system) ; probably takes several minutes
 
 ; The following three forms probably speed things up.
 (set-gc-strategy :egc)
@@ -25,6 +25,7 @@
       (unmemoize 'remove-guard-holders1-lst)
       (unmemoize 'remove-guard-holders1)
       (unmemoize 'remove-guard-holders)
+      (unmemoize 'remove-guard-holders-weak)
       (unmemoize 'ffnnamep-mod-mbe-lst)
       (unmemoize 'all-vars1-lst)
       (unmemoize 'all-vars1)

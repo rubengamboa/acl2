@@ -57,10 +57,11 @@ data last modified: [2014-08-06]
 
 (defun register-type-fn (name args ctx pkg wrld)
   (declare (xargs :mode :program))
-  (b* (((mv kwd-alist rest) (extract-keywords ctx *register-type-keywords* args nil))
+  (b* (((mv kwd-alist rest)
+        (extract-keywords ctx *register-type-keywords* args nil nil))
        ((when rest) (er hard? ctx "~| Extra args: ~x0~%" rest))
-       ((unless (proper-symbolp name)) (er hard? ctx "~| ~x0 should be a proper symbol.~%" name))
-       
+       ((unless (proper-symbolp name))
+        (er hard? ctx "~| ~x0 should be a proper symbol.~%" name))
        
        ((unless (well-formed-type-metadata-p kwd-alist wrld))
         (er hard? ctx "~| ~s0~%" (ill-formed-type-metadata-msg kwd-alist wrld)))
@@ -84,12 +85,17 @@ data last modified: [2014-08-06]
        ((when (eq enum/acc enum/acc-name))
         (er hard? ctx "~| Please rename the enumerator ~x0 to be different from ~x1, to which it will be attached.~%" enum/acc enum/acc-name))
        
-       (enum/acc-default (s+ enum/acc-name '|-BUILTIN|))
+       (enum/acc-default (s+ enum/acc-name '|-BUILTIN| :pkg pkg))
        (kwd-alist (put-assoc-eq :enumerator enum-name kwd-alist))
        (kwd-alist (put-assoc-eq :enum/acc enum/acc-name kwd-alist))
        
-       (kwd-alist (put-assoc-eq :domain-size (or (get1 :domain-size kwd-alist) 't) kwd-alist))
-       (kwd-alist (put-assoc-eq :theory-name (or (get1 :theory-name kwd-alist) (s+ name '-theory)) kwd-alist))
+       (kwd-alist (put-assoc-eq
+                   :domain-size
+                   (or (get1 :domain-size kwd-alist) 't) kwd-alist))
+       (kwd-alist (put-assoc-eq
+                   :theory-name (or (get1 :theory-name kwd-alist)
+                                    (s+ name '-theory :pkg pkg))
+                   kwd-alist))
 
        (existing-entry (assoc-eq name (table-alist 'type-metadata-table wrld)))
        ((when existing-entry)
@@ -150,10 +156,9 @@ data last modified: [2014-08-06]
        (ctx 'register-type)
        ((unless (and (member :predicate keys) (member :enumerator keys)))
         (er hard ctx "~| Keyword args predicate, enumerator are mandatory.~%")))
-    `(with-output ,@(if verbosep '(:on :all) '(:on error)) :stack :push
+    `(encapsulate
+      nil
+      (with-output
+       ,@(if verbosep '(:on :all) '(:on error)) :stack :push
        (make-event
-        (register-type-fn ',name ',keys ',ctx (current-package state) (w state))))))
-
-
-
-
+        (register-type-fn ',name ',keys ',ctx (current-package state) (w state)))))))

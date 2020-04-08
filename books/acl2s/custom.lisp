@@ -5,6 +5,13 @@
 
 
 (in-package "ACL2S")
+(defconst *acl2s-version* "ACL2s Version 1.3.1")
+
+; Common books to all modes.
+(include-book "cgen/top" :ttags :all)
+(include-book "defunc" :ttags :all)
+(include-book "definec" :ttags :all)
+(include-book "defintrange" :ttags :all)
 
 ;; (defun allp (x)
 ;;   (declare (ignore x)
@@ -12,65 +19,14 @@
 ;;   t)
 
 
-(program)
-
-
-;***** CHECK and CHECK= macros for Peter Dillinger & Pete Manolios & Northeastern CSU290 *****
-
-(defmacro check (form)
-  `(with-output
-    :stack :push
-    :off :all
-    (make-event
-     (with-output
-      :stack :pop
-     ; (state-global-let*
-     ; ((guard-checking-on :none))
-      (er-let*
-        ((eval-result (acl2::trans-eval
-                       '(if ,form
-                          (value nil)
-                          (er soft 'check "Check failed (returned NIL)."))
-                       'check
-                       state t)))
-        (if (second eval-result)
-          (mv t nil state)
-          (value '(value-triple :passed)))))
-     :check-expansion t)))
-
-(defmacro check= (form1 form2)
-  `(with-output
-    :stack :push
-    :off :all
-    (make-event
-     (with-output
-      :stack :pop
-      ;(state-global-let*
-      ;((guard-checking-on :none))
-      (er-let*
-        ((eval-result1 (acl2::trans-eval ',form1 'check= state t))
-         (eval-result2 (acl2::trans-eval ',form2 'check= state t)))
-        (cond ((not (equal (car eval-result1)
-                           (car eval-result2)))
-               (er soft 'check=
-                   "Forms return different number or stobj types of ~
-                    results; thus, they should not be considered equal."))
-              ((not (equal (cdr eval-result1)
-                           (cdr eval-result2)))
-               (er soft 'check=
-                   "Check failed (values not equal).~%First value:  ~x0~%~
-                    Second value: ~x1" (cdr eval-result1) (cdr eval-result2)))
-              (t
-               (value '(value-triple :passed))))))
-     :check-expansion t)))
-
+;(program)
 
 ;***** DEFUNT macro for Pete Manolios & Northeastern CSU290 ***** 
 
 (defun defunt-make-sym (s suf)
 ; Returns the symbol s-suf.
   (declare (xargs :guard (and (symbolp s) (symbolp suf))))
-  (intern-in-package-of-symbol
+  (fix-intern-in-pkg-of-sym
    (concatenate 'string
                 (symbol-name s)
                 "-"
@@ -155,108 +111,135 @@
 (defmacro acl2-user::defunt (&rest def)
   `(defunt . ,def))
 
+;(logic)
 
 
-(logic)
+#|
+(defmacro acl2s-common-settings ()
+`(er-progn
+  (assign checkpoint-processors
+          (set-difference-eq (@ checkpoint-processors)
+                             '(ELIMINATE-DESTRUCTORS-CLAUSE)))
+  
+  ;;CCG settings
+  (set-ccg-print-proofs nil)     
+  (set-ccg-inhibit-output-lst
+   '(QUERY BASICS PERFORMANCE BUILD/REFINE SIZE-CHANGE))
 
+  ;; PETE: for debugging          
+  ;; (acl2::set-guard-checking :nowarn)
+  (acl2::set-guard-checking :all)
 
+  (assign acl2::splitter-output nil)
 
-;;; When things have stabilized under simplification, enable non-linear
-;;; arithmetic for one round (goal being simplified) only.
+  (set-default-hints
+   '((my-nonlinearp-default-hint stable-under-simplificationp hist pspv)
+     (acl2s::stage acl2s::negp)
+     (acl2s::stage acl2s::posp)
+     (acl2s::stage acl2s::natp)
+     (acl2s::stage acl2s::non-pos-integerp)
+     (acl2s::stage acl2s::neg-ratiop)
+     (acl2s::stage acl2s::pos-ratiop)
+     (acl2s::stage acl2s::non-neg-ratiop)
+     (acl2s::stage acl2s::non-pos-ratiop)
+     (acl2s::stage acl2s::ratiop)
+     (acl2s::stage acl2s::neg-rationalp)
+     (acl2s::stage acl2s::pos-rationalp)
+     (acl2s::stage acl2s::non-neg-rationalp)
+     (acl2s::stage acl2s::non-pos-rationalp)))
 
-#!ACL2
-(defun my-nonlinearp-default-hint (stable-under-simplificationp hist pspv)
-  ;; (declare (xargs :guard (and (consp pspv)
-  ;;                 (consp (car pspv))
-  ;;                 (consp (caar pspv))
-  ;;                 (consp (cdaar pspv))
-  ;;                 (consp (cddaar pspv))
-  ;;                 (consp (cdr (cddaar pspv)))
-  ;;                 (consp (cddr (cddaar pspv)))
-  ;;                 (consp (cdddr (cddaar pspv)))
-  ;;                 (consp (cddddr (cddaar pspv))))))
-  (cond (stable-under-simplificationp
-         (if (not (access rewrite-constant
-                   (access prove-spec-var pspv :rewrite-constant)
-                   :nonlinearp))
-       (prog2$
-        nil ;;harshrc 14Jan2012- The following gives a nasty error when run inside of ld
-        ;; (observation-cw 'my-nonlinearp-default-hint 
-        ;;                 "~%~%[Note: We now enable non-linear arithmetic.]~%~%")
-        '(:computed-hint-replacement t
-                     :nonlinearp t))
-           nil))
-        ((access rewrite-constant
-              (access prove-spec-var pspv :rewrite-constant)
-              :nonlinearp)
-         (if (and (consp hist)
-          (consp (car hist))
-          ;; Without this, we would loop forever.  But
-          ;; whenever I try to write an explanation, I get
-          ;; confused about why it works.  I stumbled across
-          ;; this by trial and error and observing the output
-          ;; of tracing.  Some day I should figure out what I
-          ;; am doing.
-          (not (equal (caar hist) 'SETTLED-DOWN-CLAUSE)))
-         (prog2$
-          nil ;;The following gives a nasty error when run inside of ld
-          ;; (observation-cw 'my-nonlinearp-default-hint 
-          ;;                 "~%~%[Note: We now disable non-linear arithmetic.]~%~%")
-           '(:computed-hint-replacement t
-                        :nonlinearp nil))
-           nil))
-        (t
-         nil)))#|ACL2s-ToDo-Line|#
+  ;; Other events:
+  (set-well-founded-relation l<)
+  (if (member-eq 'ruler-extenders-lst
+                 (getprop 'put-induction-info 'formals nil
+                          'current-acl2-world (w state)))
+      (value '(set-ruler-extenders :all))
+    (value '(value-triple :invisible)))
 
+  ;;CCG events
+  (set-termination-method :ccg)
+  (set-ccg-time-limit nil)
 
+  ;;Cgen settings
+  (acl2s::acl2s-defaults :set acl2s::testing-enabled t)
+  (acl2s::acl2s-defaults :set acl2s::num-trials 500)
 
-; Common books to all modes.
-(include-book "cgen/top" :ttags :all)
-(include-book "defunc" :ttags :all)
+  (make-event '(dont-print-thanks-message-override-hint))
+  (value '(value-triple :invisible))
+  ))
+|#
+
 
 #!ACL2
 (defmacro acl2s-common-settings ()
 `(progn
-   (make-event
-    (er-progn
-     (assign checkpoint-processors
-             (set-difference-eq (@ checkpoint-processors)
-                                '(ELIMINATE-DESTRUCTORS-CLAUSE)))
-     
-     ;;CCG settings
-     (set-ccg-print-proofs nil)     
-     (set-ccg-inhibit-output-lst
-      '(QUERY BASICS PERFORMANCE BUILD/REFINE SIZE-CHANGE))
 
-     ;;Misc
-     (set-guard-checking :nowarn)
+   ;; There doesn't seem to be a good way to set guard-checking
+   ;; here. Previously, we were doing this inside of the er-progn
+   ;; which is inside of the make-event, but while that works for
+   ;; set-ccg-print-proofs, etc, it does not work for
+   ;; set-guard-checking because it is in
+   ;; *protected-system-state-globals* so any changes are reverted
+   ;; back to what they were when there is a make-event involved. In
+   ;; order to keep this interface, one option is to use progn!, but I
+   ;; decided to pull this out from here and put it into
+   ;; acl2s-mode.lsp to avoid requiring a trust tag for
+   ;; acl2s-common-settings.
+   
+   ;; How to check (f-get-global 'guard-checking-on state)
+   ;; (acl2::set-guard-checking :nowarn)
+
+   ;; (acl2::set-guard-checking :nowarn)
+   ;; (acl2::set-guard-checking :all)
+
+  (make-event
+   (er-progn
+    (assign checkpoint-processors
+            (set-difference-eq (@ checkpoint-processors)
+                               '(ELIMINATE-DESTRUCTORS-CLAUSE)))
+  
+    ;;CCG settings
+    (set-ccg-print-proofs nil)     
+    (set-ccg-inhibit-output-lst
+     '(QUERY BASICS PERFORMANCE BUILD/REFINE SIZE-CHANGE))
+    (assign acl2::splitter-output nil)
+    (value '(value-triple :invisible))))
+      
+  (set-default-hints
+   '((my-nonlinearp-default-hint stable-under-simplificationp hist pspv)
+     (acl2s::stage acl2s::negp)
+     (acl2s::stage acl2s::posp)
+     (acl2s::stage acl2s::natp)
+     (acl2s::stage acl2s::non-pos-integerp)
+     (acl2s::stage acl2s::neg-ratiop)
+     (acl2s::stage acl2s::pos-ratiop)
+     (acl2s::stage acl2s::non-neg-ratiop)
+     (acl2s::stage acl2s::non-pos-ratiop)
+     (acl2s::stage acl2s::ratiop)
+     (acl2s::stage acl2s::neg-rationalp)
+     (acl2s::stage acl2s::pos-rationalp)
+     (acl2s::stage acl2s::non-neg-rationalp)
+     (acl2s::stage acl2s::non-pos-rationalp)))
+
+  ;; Other events:
+  (set-well-founded-relation l<)
+  (make-event ; use ruler-extenders if available
+   (if (member-eq 'ruler-extenders-lst
+                  (getprop 'put-induction-info 'formals nil
+                           'current-acl2-world (w state)))
+       (value '(set-ruler-extenders :all))
      (value '(value-triple :invisible))))
+
+  ;;CCG events
+  (set-termination-method :ccg)
+  (set-ccg-time-limit 300)
+  
+  (dont-print-thanks-message-override-hint)
    
-   (set-default-hints '((my-nonlinearp-default-hint stable-under-simplificationp hist pspv)))
-
-     ;; Other events:
-   (set-well-founded-relation l<)
-   (make-event ; use ruler-extenders if available
-    (if (member-eq 'ruler-extenders-lst
-                   (getprop 'put-induction-info 'formals nil
-                            'current-acl2-world (w state)))
-        (value '(set-ruler-extenders :all))
-      (value '(value-triple :invisible))))
-
-   ;;CCG events
-   (set-termination-method :ccg)
-   (set-ccg-time-limit nil)
-
-   (dont-print-thanks-message-override-hint)
-   
-   ;;Cgen settings
-   (acl2s::acl2s-defaults :set acl2s::testing-enabled t)
-   (acl2s::acl2s-defaults :set acl2s::num-trials 500)
-
-   
-
-))
-
+  ;;Cgen settings
+  (acl2s::acl2s-defaults :set acl2s::testing-enabled t)
+  (acl2s::acl2s-defaults :set acl2s::num-trials 500)
+  ))
 
 #!ACL2
 (defmacro acl2s-beginner-settings ()
@@ -279,8 +262,6 @@
     (assign triple-print-prefix "; ")
 
     ))
-
-
 
 #!ACL2
 (defmacro acl2s-bare-bones-settings ()
@@ -324,3 +305,4 @@
     (assign evalable-printing-abstractions '(list cons))
     (assign triple-print-prefix "; ")
     ))
+

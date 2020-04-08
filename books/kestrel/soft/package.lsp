@@ -1,6 +1,6 @@
-; SOFT (Second-Order Functions and Theorems) -- Package
+; SOFT (Second-Order Functions and Theorems) Library
 ;
-; Copyright (C) 2018 Kestrel Institute (http://www.kestrel.edu)
+; Copyright (C) 2019 Kestrel Institute (http://www.kestrel.edu)
 ;
 ; License: A 3-clause BSD license. See the LICENSE file distributed with ACL2.
 ;
@@ -21,17 +21,19 @@
                          defchoose-body
                          defchoose-bound-vars
                          defchoose-strengthen
+                         defchoosep
                          definedp
                          defpun
                          defun-sk-bound-vars
                          defun-sk-definition-name
                          defun-sk-matrix
+                         defun-sk-p
                          defun-sk-quantifier
+                         defun-sk-quantifier-p
                          defun-sk-rewrite-kind
                          defun-sk-rewrite-name
                          defun-sk-strengthen
                          defun-sk-witness
-                         defun-sk-quantifier-p
                          defxdoc+
                          er-soft+
                          fail-event
@@ -48,10 +50,11 @@
                          make-event-terse
                          make-lambda
                          maybe-msgp
+                         maybe-pseudo-event-formp
                          measure
                          o<
-                         pseudo-event-formp
                          pseudo-event-form-listp
+                         pseudo-event-formp
                          recursivep
                          remove-keyword
                          restore-output

@@ -1,5 +1,5 @@
-; ACL2 Version 8.1 -- A Computational Logic for Applicative Common Lisp
-; Copyright (C) 2018, Regents of the University of Texas
+; ACL2 Version 8.2 -- A Computational Logic for Applicative Common Lisp
+; Copyright (C) 2019, Regents of the University of Texas
 
 ; This version of ACL2 is a descendent of ACL2 Version 1.9, Copyright
 ; (C) 1997 Computational Logic, Inc.  See the documentation topic NOTE-2-0.
@@ -843,14 +843,7 @@ implementations.")
     (format t "Finished creating a command file for copying distribution files.")))
 
 (defun make-tags ()
-  #-(or ccl sbcl cmu)
-; We disallow ccl and sbcl for the following check.  We have found that the
-; result of the system-call is a process, (typep <result> 'external-process) in
-; ccl and (typep <result> 'sb-impl::process) in sbcl, which can probably be
-; made to yield the status.  But the status is 0 even for commands not found,
-; so why bother?  Since cmucl seems to fall victim in the same way as sbcl, we
-; treat these two the same here.
-  (when (not (eql (system-call "which" '("etags")) 0))
+  (when (not (eql (ignore-errors (system-call "which" '("etags"))) 0))
     (format t "SKIPPING etags: No such program is in the path.")
     (return-from make-tags 1))
   (system-call "etags"
@@ -890,15 +883,38 @@ implementations.")
 (defvar *saved-build-date-lst*)
 (defvar *saved-mode*)
 
-(defun git-commit-hash ()
+(defun git-commit-hash (&optional quiet)
   (multiple-value-bind
    (exit-code hash)
    (ignore-errors (system-call+ "git" '("rev-parse" "HEAD")))
-   (cond ((not (and (eql exit-code 0)
-                    (stringp hash)))
-          "[UNKNOWN]                               ")
-         (t (coerce (remove #\Newline (coerce hash 'list))
-                    'string)))))
+   (cond ((and (eql exit-code 0)
+               (stringp hash))
+          (coerce (remove #\Newline (coerce hash 'list))
+                  'string))
+         (quiet nil)
+         (t (error "Unable to determine git commit hash.")))))
+
+(defun acl2-snapshot-info ()
+  (let* ((var "ACL2_SNAPSHOT_INFO")
+         (s (getenv$-raw var))
+         (err-string
+          "Unable to determine git commit hash for use in the startup~%~
+           banner.  Consider setting environment variable ACL2_SNAPSHOT_INFO~%~
+           to a message to use in its place, or set it to NONE if you simply~%~
+           want to avoid this error."))
+    (cond ((and s (string-equal s "NONE"))
+           " +~71t+")
+          ((and s (not (equal s "")))
+           (format nil
+                   " + (Note from the environment when this executable was ~
+                    saved:~71t+~% +  ~a)~71t+"
+                   s))
+          (t (let ((h (git-commit-hash t)))
+               (cond (h
+                      (format nil
+                              " + (Git commit hash: ~a)~71t+"
+                              h))
+                     (t (error err-string var))))))))
 
 (defconstant *acl2-snapshot-string*
 
@@ -920,20 +936,20 @@ implementations.")
    nil
    "
  +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
- + WARNING: This is NOT an ACL2 release; it is a development snapshot  +
- + (git commit hash: ~a).        +
+ + WARNING: This is NOT an ACL2 release; it is a development snapshot. +
+~a
  + On rare occasions development snapshots may be incomplete, fragile, +
  + or unable to pass the usual regression tests.                       +
  +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 "
-   (git-commit-hash))
+   (acl2-snapshot-info))
   )
 
 (defvar *saved-string*
   (concatenate
    'string
    "~% ~a built ~a.~
-    ~% Copyright (C) 2018, Regents of the University of Texas"
+    ~% Copyright (C) 2019, Regents of the University of Texas"
    "~% ACL2 comes with ABSOLUTELY NO WARRANTY.  This is free software and you~
     ~% are welcome to redistribute it under certain conditions.  For details,~
     ~% see the LICENSE file distributed with ACL2.~%"
@@ -961,7 +977,10 @@ implementations.")
   (let* ((home (our-user-homedir-pathname))
          (fl (and home
                   (probe-file (merge-pathnames home "acl2-init.lsp")))))
-    (when fl (load fl))))
+    (when fl
+      (format t "; Loading file ~s...~%" fl)
+      (load fl)
+      (format t "; Finished loading file ~s.~%" fl))))
 
 (defun chmod-executable (sysout-name)
   (system-call "chmod" (list "+x" sysout-name)))

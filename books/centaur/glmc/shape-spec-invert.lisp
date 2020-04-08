@@ -33,6 +33,7 @@
 
 (include-book "centaur/gl/shape-spec" :dir :system)
 (include-book "centaur/fty/deftypes" :dir :system)
+(include-book "centaur/fty/baselists" :dir :system)
 (include-book "std/lists/index-of" :dir :system)
 (local (include-book "std/basic/arith-equivs" :dir :system))
 (local (include-book "std/alists/alist-keys" :dir :system))
@@ -78,7 +79,8 @@
                 (nat-listp vars))
            (equal (bfr-list->s (numlist-to-vars vars) (bfr-set-var v val env))
                   (bfr-list->s (numlist-to-vars vars) env)))
-  :hints(("Goal" :in-theory (enable bfr-list->s s-endp scdr numlist-to-vars))))
+  :hints(("Goal" :in-theory (enable bfr-list->s s-endp scdr numlist-to-vars)
+          :expand ((:free (a b env) (bfr-list->s (cons a b) env))))))
 
 (defthm bfr-list->u-of-numlist-to-vars-set-non-member
   (implies (and (not (member (bfr-varname-fix v) vars))
@@ -93,7 +95,7 @@
   :hints(("Goal" :in-theory (enable numlist-to-vars))))
 
 
-(fty::deflist nat-list :pred nat-listp :elt-type natp :true-listp t :elementp-of-nil nil)
+(local (fty::deflist nat-list :pred nat-listp :elt-type natp :true-listp t :elementp-of-nil nil))
 
 (define pseudo-term-alistp (x)
   (if (atom x)

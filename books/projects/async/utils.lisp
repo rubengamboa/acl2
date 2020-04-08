@@ -1,10 +1,13 @@
 ;; Copyright (C) 2017, Regents of the University of Texas
-;; Written by Cuong Chau
+;; Written by Cuong Chau (derived from the FM9001 work of Brock and Hunt)
 ;; License: A 3-clause BSD license.  See the LICENSE file distributed with
 ;; ACL2.
 
+;; The ACL2 source code for the FM9001 work is available at
+;; https://github.com/acl2/acl2/tree/master/books/projects/fm9001.
+
 ;; Cuong Chau <ckcuong@cs.utexas.edu>
-;; December 2018
+;; May 2019
 
 (in-package "ADE")
 
@@ -135,6 +138,11 @@
            (true-listp (union-equal l1 l2)))
   :rule-classes :type-prescription)
 
+(defthm member-append
+  (implies (or (member a x)
+               (member a y))
+           (member a (append x y))))
+
 (defthm not-member-append
   (implies (and (not (member e x))
                 (not (member e y)))
@@ -175,6 +183,11 @@
   (implies (equal (len x) (len a))
            (equal (pairlis$ (append x y) (append a b))
                   (append (pairlis$ x a) (pairlis$ y b)))))
+
+(defthmd pairlis$-of-take
+  (implies (equal (len x) n)
+           (equal (pairlis$ x (take n y))
+                  (pairlis$ x y))))
 
 (defthm alistp-append
   (implies (and (alistp x)
@@ -323,6 +336,10 @@
            (equal (nthcdr i (cons x y))
                   (nthcdr (1- i) y))))
 
+(defthmd nthcdr-cdr
+  (equal (nthcdr n (cdr l))
+         (cdr (nthcdr n l))))
+
 (defthm append-take-nthcdr
   (implies (<= n (len l))
            (equal (append (take n l) (nthcdr n l))
@@ -352,6 +369,12 @@
 (defthm nthcdr-of-nthcdr
   (equal (nthcdr m (nthcdr n l))
          (nthcdr (+ (nfix m) (nfix n)) l)))
+
+(defthmd nthcdr-plus
+  (implies (and (natp m)
+                (natp n))
+           (equal (nthcdr (+ m n) l)
+                  (nthcdr m (nthcdr n l)))))
 
 (encapsulate
   ()
@@ -566,26 +589,20 @@
            (member (cons e x)
                    (cons-rec e y))))
 
-;; GET-FIELD
-
-;; We use this function as a wrapper of NTH. This is useful when we don't want
-;; to apply rewrite rules to NTH by letting GET-FIELD remain disabled.
-
-(defund get-field (n l)
-  (declare (xargs :guard (and (natp n)
-                              (true-listp l))))
-  (nth n l))
-
 ;; INTERLEAVE
 
 (defun interleave (l1 l2)
   (declare (xargs :guard t
                   :measure (acl2-count (list l1 l2))))
-  (cond ((and (atom l1) (atom l2)) nil)
+  (cond ((and (atom l1) (atom l2)) '(nil))
         ((atom l1) (list l2))
         ((atom l2) (list l1))
         (t (append (cons-rec (car l1) (interleave (cdr l1) l2))
                    (cons-rec (car l2) (interleave l1 (cdr l2)))))))
+
+(defthm consp-interleave
+  (consp (interleave l1 l2))
+  :rule-classes :type-prescription)
 
 (defthm true-list-listp-interleave
   (implies (and (true-listp l1)
@@ -607,10 +624,11 @@
 
 (defthm member-append-interleave-1
   (implies (and (member x (interleave y z))
+                (equal y++x1 (append y x1))
                 (true-listp x1)
                 (true-listp z))
            (member (append x x1)
-                   (interleave (append y x1) z)))
+                   (interleave y++x1 z)))
   :hints (("Goal"
            :in-theory (disable subsetp-prepend-rec-interleave-1)
            :use (:instance subsetp-prepend-rec-interleave-1
@@ -620,10 +638,11 @@
 
 (defthm member-append-interleave-2
   (implies (and (member x (interleave y z))
+                (equal z++x1 (append z x1))
                 (true-listp x1)
                 (true-listp y))
            (member (append x x1)
-                   (interleave y (append z x1))))
+                   (interleave y z++x1)))
   :hints (("Goal"
            :in-theory (disable subsetp-prepend-rec-interleave-2)
            :use (:instance subsetp-prepend-rec-interleave-2
@@ -741,6 +760,13 @@
 (defthm member==>position1
   (implies (member x l)
            (position1 x l)))
+
+(defthm position1-of-append
+  (implies (and (not (member a x))
+                (member a y))
+           (equal (position1 a (append x y))
+                  (+ (len x)
+                     (position1 a y)))))
 
 (in-theory (disable position1))
 

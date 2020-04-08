@@ -1,6 +1,6 @@
 ; Representation of Natural Numbers as Digits in Base 2^1
 ;
-; Copyright (C) 2018 Kestrel Institute (http://www.kestrel.edu)
+; Copyright (C) 2019 Kestrel Institute (http://www.kestrel.edu)
 ;
 ; License: A 3-clause BSD license. See the LICENSE file distributed with ACL2.
 ;
@@ -10,8 +10,9 @@
 
 (in-package "ACL2")
 
-(include-book "kestrel/utilities/fixbytes/ubyte1-list" :dir :system)
+(include-book "kestrel/fty/defbytelist-standard-instances" :dir :system)
 (include-book "pow2")
+(include-book "defthm-dab-return-types")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 

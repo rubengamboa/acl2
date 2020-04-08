@@ -1,6 +1,6 @@
-; Representation of Natural Numbers as Digits in Arbitrary Bases
+; Representation of Natural Numbers as Digits in Arbitrary Bases -- Core
 ;
-; Copyright (C) 2018 Kestrel Institute (http://www.kestrel.edu)
+; Copyright (C) 2020 Kestrel Institute (http://www.kestrel.edu)
 ;
 ; License: A 3-clause BSD license. See the LICENSE file distributed with ACL2.
 ;
@@ -10,22 +10,22 @@
 
 (in-package "ACL2")
 
-(include-book "kestrel/utilities/xdoc/constructors" :dir :system)
 (include-book "centaur/fty/top" :dir :system)
 (include-book "std/util/defrule" :dir :system)
 (include-book "kestrel/utilities/zp-lists" :dir :system)
+(include-book "xdoc/defxdoc-plus" :dir :system)
 
 (local (include-book "kestrel/utilities/typed-lists/nat-list-fix-theorems" :dir :system))
 (local (include-book "std/basic/inductions" :dir :system))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defxdoc digits-any-base
+(defxdoc+ digits-any-base
   :parents (kestrel-utilities)
   :short "Conversions between natural numbers
           and their representations as digits in arbitrary bases."
   :long
-  (xdoc::topapp
+  (xdoc::topstring
    (xdoc::p
     "In these utilities, the digits are natural numbers below the base.
      The base (a natural number above 1) is supplied as argument.")
@@ -36,9 +36,8 @@
    (xdoc::p
     "The name of some functions in these utilities start with @('dab'),
      which stands for `digits any base'.
-     Without this prefix, the names seem too ``general''.")))
-
-(local (xdoc::set-default-parents digits-any-base))
+     Without this prefix, the names seem too ``general''."))
+  :default-parent t)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -46,14 +45,14 @@
   :returns (yes/no booleanp)
   :short "Recognize valid bases for representing natural numbers as digits."
   :long
-  (xdoc::topapp
+  (xdoc::topstring
    (xdoc::p
     "The fixing function for this predicate is @(tsee dab-base-fix)
      and the fixtype for this predicate is @('dab-base').")
    (xdoc::p
     "Any integer above 1 raised to a positive power is a valid base,
      e.g. binary, octal, and hexadecimal bases."))
-  (and (natp x)
+  (and (integerp x)
        (>= x 2))
   ///
 
@@ -101,7 +100,7 @@
   :short "Recognize valid digits
           for representing natural numbers as digits in the specified base."
   :long
-  (xdoc::topapp
+  (xdoc::topstring
    (xdoc::p
     "The fixing function for this predicate is @(tsee dab-digit-fix)."))
   (and (natp x)
@@ -155,17 +154,8 @@
     (implies (dab-digit-listp base x)
              (nat-listp x)))
 
-  (defrule dab-digit-listp-of-dab-base-fix-base
-    (equal (dab-digit-listp (dab-base-fix base) x)
-           (dab-digit-listp base x)))
-
-  (defrule dab-digit-listp-of-dab-base-fix-base-normalize-const
-    (implies  (syntaxp (and (quotep base)
-                            (not (dab-basep (cadr base)))))
-              (equal (dab-digit-listp base x)
-                     (dab-digit-listp (dab-base-fix base) x))))
-
-  (defcong dab-base-equiv equal (dab-digit-listp base x) 1))
+  (fty::deffixequiv dab-digit-listp
+    :args ((base dab-basep))))
 
 (define dab-digit-list-fix ((base dab-basep) (x (dab-digit-listp base x)))
   :returns (fixed-x (dab-digit-listp base fixed-x))
@@ -240,7 +230,7 @@
   :short "Tail-recursive code for the execution of
           @(tsee bendian=>nat) and @(tsee lendian=>nat)."
   :long
-  (xdoc::topapp
+  (xdoc::topstring
    (xdoc::p
     "This interprets the digits in big-endian order.
      Thus, @(tsee bendian=>nat) calls this function on the digits directly,
@@ -267,7 +257,7 @@
           @(tsee nat=>bendian*) and @(tsee nat=>lendian*)
           (and, indirectly, of their variants)."
   :long
-  (xdoc::topapp
+  (xdoc::topstring
    (xdoc::p
     "This calculates the digits in big-endian order.
      Thus, @(tsee nat=>bendian*) returns the resulting digits directly,
@@ -301,11 +291,6 @@
   :verify-guards nil ; done below
   :hooks (:fix)
   ///
-
-  (more-returns
-   (nat natp
-        :rule-classes :type-prescription
-        :name lendian=>nat-type-prescription))
 
   (defrule lendian=>nat-of-dab-digit-list-fix-digits
     (equal (lendian=>nat base (dab-digit-list-fix base digits))
@@ -363,7 +348,7 @@
   :short "Convert a natural number to
           its minimum-length little-endian list of digits."
   :long
-  (xdoc::topapp
+  (xdoc::topstring
    (xdoc::p
     "The resulting list is empty if @('nat') is 0.
      The @('*') in the name of this function can be read as `zero or more'
@@ -521,7 +506,7 @@
   :short "Convert a natural number to
           its non-empty minimum-length little-endian list of digits."
   :long
-  (xdoc::topapp
+  (xdoc::topstring
    (xdoc::p
     "The resulting list is never empty; it is @('(0)') if @('nat') is 0.
      The @('+') in the name of this function can be read as `one or more'
@@ -548,7 +533,7 @@
   :short "Convert a natural number to
           its little-endian list of digits of specified length."
   :long
-  (xdoc::topapp
+  (xdoc::topstring
    (xdoc::p
     "The number must be representable in the specified number of digits.
      The resulting list starts with zero or more 0s.")
@@ -652,7 +637,7 @@
   :short "Convert a natural number to
           its minimum-length big-endian list of digits."
   :long
-  (xdoc::topapp
+  (xdoc::topstring
    (xdoc::p
     "The resulting list is empty if @('nat') is 0.
      The @('*') in the name of this function can be read as `zero or more'
@@ -715,7 +700,8 @@
                              (equal (> (len (nat=>bendian* base nat))
                                        width)
                                     (>= nat
-                                        (expt base width))))))))
+                                        (expt base width))))
+                    :hints (("Goal" :in-theory '(not)))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -724,7 +710,7 @@
   :short "Convert a natural number to
           its non-empty minimum-length big-endian list of digits."
   :long
-  (xdoc::topapp
+  (xdoc::topstring
    (xdoc::p
     "The resulting list is never empty; it is @('(0)') if @('nat') is 0.
      The @('+') in the name of this function can be read as `one or more'
@@ -751,7 +737,7 @@
   :short "Convert a natural number to
           its big-endian list of digits of specified length."
   :long
-  (xdoc::topapp
+  (xdoc::topstring
    (xdoc::p
     "The number must be representable in the specified number of digits.
      The resulting list starts with zero or more 0s.")
@@ -787,10 +773,10 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defsection nat=>digits=>nat-inversion-theorems
+(defsection nat=>digits=>nat-inverses-theorems
   :short "Theorems about converting natural numbers to digits and back."
   :long
-  (xdoc::topapp
+  (xdoc::topstring
    (xdoc::p
     "@(tsee lendian=>nat) is left inverse of
      @(tsee nat=>lendian*), @(tsee nat=>lendian+), and @(tsee nat=>lendian),
@@ -849,12 +835,12 @@
   :short "Theorems about the injectivity of
           the conversions from natural numbers to digits."
   :long
-  (xdoc::topapp
+  (xdoc::topstring
    (xdoc::p
     "The conversions from natural numbers to digits
      are injective over natural numbers.
      These are simple consequences of the
-     <see topic='@(url nat=>digits=>nat-inversion-theorems)'>theorems about
+     <see topic='@(url nat=>digits=>nat-inverses-theorems)'>theorems about
      converting natural numbers to digits and back</see>."))
 
   (defrule nat=>lendian*-injectivity
@@ -948,7 +934,7 @@
   :short "Remove all the most significant zero digits
           from a big-endian representation."
   :long
-  (xdoc::topapp
+  (xdoc::topstring
    (xdoc::p
     "This produces a minimal-length representation with the same value.")
    (xdoc::p
@@ -1021,7 +1007,7 @@
   :short "Remove all the most significant zero digits
           from a little-endian representation."
   :long
-  (xdoc::topapp
+  (xdoc::topstring
    (xdoc::p
     "This produces a minimal-length representation with the same value.")
    (xdoc::p
@@ -1111,7 +1097,7 @@
           from a big-endian representation,
           but leave one zero if all the digits are zero."
   :long
-  (xdoc::topapp
+  (xdoc::topstring
    (xdoc::p
     "This produces a minimal-length non-empty representation
      with the same value.")
@@ -1149,7 +1135,7 @@
           from a little-endian representation,
           but leave one zero if all the digits are zero."
   :long
-  (xdoc::topapp
+  (xdoc::topstring
    (xdoc::p
     "This produces a minimal-length non-empty representation
      with the same value.")
@@ -1181,10 +1167,10 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defsection digits=>nat=>digits-inversion-theorems
+(defsection digits=>nat=>digits-inverses-theorems
   :short "Theorems about converting digits to natural numbers and back."
   :long
-  (xdoc::topapp
+  (xdoc::topstring
    (xdoc::p
     "@(tsee lendian=>nat) is right inverse of
      @(tsee nat=>lendian*), @(tsee nat=>lendian+), and @(tsee nat=>lendian),
@@ -1265,16 +1251,50 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(defsection lendian=>nat-ext
+  :extension lendian=>nat
+
+  ;; The proof of the following theorem implicitly uses
+  ;; the rewrite rule NAT=>LENDIAN*-OF-LENDIAN=>NAT.
+
+  (defrule lendian=>nat-upper-bound
+    (< (lendian=>nat base digits)
+       (expt (dab-base-fix base) (len digits)))
+    :rule-classes ((:linear :trigger-terms ((lendian=>nat base digits))))
+    :use (:instance len-of-nat=>lendian*-leq-width
+          (nat (lendian=>nat base digits))
+          (base (dab-base-fix base))
+          (width (len digits)))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defsection bendian=>nat-ext
+  :extension bendian=>nat
+
+  ;; The proof of the following theorem implicitly uses
+  ;; the rewrite rule NAT=>BENDIAN*-OF-BENDIAN=>NAT.
+
+  (defrule bendian=>nat-upper-bound
+    (< (bendian=>nat base digits)
+       (expt (dab-base-fix base) (len digits)))
+    :rule-classes ((:linear :trigger-terms ((bendian=>nat base digits))))
+    :use (:instance len-of-nat=>bendian*-leq-width
+          (nat (bendian=>nat base digits))
+          (base (dab-base-fix base))
+          (width (len digits)))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (defsection digits=>nat-injectivity-theorems
   :short "Theorems about the injectivity of
           the conversions from digits to natural numbers."
   :long
-  (xdoc::topapp
+  (xdoc::topstring
    (xdoc::p
     "The conversions from digits to natural numbers are injective
      over digits without superfluous zeros in the most significant positions.
      These are simple consequences of the
-     <see topic='@(url digits=>nat=>digits-inversion-theorems)'>theorems about
+     <see topic='@(url digits=>nat=>digits-inverses-theorems)'>theorems about
      converting digits to natural numbers and back</see>.
      The absence of suprfluous digits can be expressed by saying that
      the digits, fixed with @(tsee dab-digit-list-fix),
@@ -1369,166 +1389,284 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define defthm-dab-return-types-fn ((eq-thm-name symbolp)
-                                    (prefix symbolp)
-                                    (topic symbolp)
-                                    (topicp booleanp)
-                                    (parents symbol-listp)
-                                    (parentsp booleanp)
-                                    (short stringp)
-                                    (shortp booleanp)
-                                    (long stringp)
-                                    (longp booleanp)
-                                    (wrld plist-worldp))
-  :returns (event "A @(tsee pseudo-event-formp).")
-  :mode :program
-  :parents (defthm-dab-return-types)
-  :short "Event form to introduce additional return type theorems for
-          the conversions from natural numbers to digits."
+(define group-lendian ((base dab-basep)
+                       (exp posp)
+                       (digits (dab-digit-listp base digits)))
+  :guard (integerp (/ (len digits) (pos-fix exp)))
+  :returns (new-digits (dab-digit-listp base^exp new-digits)
+                       :hyp (equal base^exp
+                                   (expt (dab-base-fix base) (pos-fix exp))))
+  ;; :returns (new-digits
+  ;;           (dab-digit-listp (expt (dab-base-fix base) (pos-fix exp))
+  ;;                            new-digits))
+  :short "Group digits from a smaller base to a larger base, little-endian."
   :long
-  (xdoc::topp
-   "See @(tsee defthm-dab-return-types).")
-  (b* ((equality (formula eq-thm-name nil wrld))
-       (dab-digit-listp-call (cadr equality))
-       (base (cadr dab-digit-listp-call))
-       (var (caddr dab-digit-listp-call))
-       (term (caddr equality))
-       (nat=>bendian*-thm-name (packn (list prefix '-nat=>bendian*)))
-       (nat=>bendian+-thm-name (packn (list prefix '-nat=>bendian+)))
-       (nat=>bendian-thm-name (packn (list prefix '-nat=>bendian)))
-       (nat=>lendian*-thm-name (packn (list prefix '-nat=>lendian*)))
-       (nat=>lendian+-thm-name (packn (list prefix '-nat=>lendian+)))
-       (nat=>lendian-thm-name (packn (list prefix '-nat=>lendian)))
-       (nat=>bendian*-call (fcons-term* 'nat=>bendian* base 'nat))
-       (nat=>bendian+-call (fcons-term* 'nat=>bendian+ base 'nat))
-       (nat=>bendian-call (fcons-term* 'nat=>bendian base 'width 'nat))
-       (nat=>lendian*-call (fcons-term* 'nat=>lendian* base 'nat))
-       (nat=>lendian+-call (fcons-term* 'nat=>lendian+ base 'nat))
-       (nat=>lendian-call (fcons-term* 'nat=>lendian base 'width 'nat))
-       (nat=>bendian*-term (fsubcor-var
-                            (list var) (list nat=>bendian*-call) term))
-       (nat=>bendian+-term (fsubcor-var
-                            (list var) (list nat=>bendian+-call) term))
-       (nat=>bendian-term (fsubcor-var
-                           (list var) (list nat=>bendian-call) term))
-       (nat=>lendian*-term (fsubcor-var
-                            (list var) (list nat=>lendian*-call) term))
-       (nat=>lendian+-term (fsubcor-var
-                            (list var) (list nat=>lendian+-call) term))
-       (nat=>lendian-term (fsubcor-var
-                           (list var) (list nat=>lendian-call) term))
-       (theorems
-        `((defthm ,nat=>bendian*-thm-name
-            ,(untranslate nat=>bendian*-term t wrld)
-            :hints (("Goal"
-                     :use ((:instance return-type-of-nat=>bendian* (base ,base))
-                           (:instance ,eq-thm-name (,var ,nat=>bendian*-call)))
-                     :in-theory nil)))
-          (defthm ,nat=>bendian+-thm-name
-            ,(untranslate nat=>bendian+-term t wrld)
-            :hints (("Goal"
-                     :use ((:instance return-type-of-nat=>bendian+ (base ,base))
-                           (:instance ,eq-thm-name (,var ,nat=>bendian+-call)))
-                     :in-theory nil)))
-          (defthm ,nat=>bendian-thm-name
-            ,(untranslate nat=>bendian-term t wrld)
-            :hints (("Goal"
-                     :use ((:instance return-type-of-nat=>bendian (base ,base))
-                           (:instance ,eq-thm-name (,var ,nat=>bendian-call)))
-                     :in-theory nil)))
-          (defthm ,nat=>lendian*-thm-name
-            ,(untranslate nat=>lendian*-term t wrld)
-            :hints (("Goal"
-                     :use ((:instance return-type-of-nat=>lendian* (base ,base))
-                           (:instance ,eq-thm-name (,var ,nat=>lendian*-call)))
-                     :in-theory nil)))
-          (defthm ,nat=>lendian+-thm-name
-            ,(untranslate nat=>lendian+-term t wrld)
-            :hints (("Goal"
-                     :use ((:instance return-type-of-nat=>lendian+ (base ,base))
-                           (:instance ,eq-thm-name (,var ,nat=>lendian+-call)))
-                     :in-theory nil)))
-          (defthm ,nat=>lendian-thm-name
-            ,(untranslate nat=>lendian-term t wrld)
-            :hints (("Goal"
-                     :use ((:instance return-type-of-nat=>lendian (base ,base))
-                           (:instance ,eq-thm-name (,var ,nat=>lendian-call)))
-                     :in-theory nil))))))
-    (if topicp
-        `(defsection ,topic
-           ,@(and parentsp (list :parents parents))
-           ,@(and shortp (list :short short))
-           ,@(and longp (list :long long))
-           ,@theorems)
-      `(encapsulate
-         ()
-         ,@theorems))))
+  (xdoc::topstring
+   (xdoc::p
+    "The larger base must be a positive power of the smaller base.
+     The argument @('base') is the smaller base;
+     the argument @('exp') is the positive power that yields the larger base,
+     which is thus @('base^exp').
+     The order of these two arguments is so that
+     the base comes before the exponent.")
+   (xdoc::p
+    "The argument @('digits') consists of digits in the smaller base.
+     We first convert the digits to the natural number they represent,
+     and then we convert that to digits in the larger base.
+     This has the effect of grouping
+     each contiguous sub-sequence of @('exp') digits in the smaller base
+     into a single digit in the larger base.
+     The number of input digits must be a multiple of @('exp'),
+     so that they can be evenly grouped into digits in the larget base.")
+   (xdoc::p
+    "The grouping of digits is little-endian:
+     each sub-sequence of @('exp') digits in the smaller base
+     is converted to a little-endian natural number
+     that becomes a digit in the larger base.")
+   (xdoc::p
+    "This operation is useful, for example, to turn
+     a sequence of nibbles into one of bytes,
+     or a sequence of bits into one of bytes,
+     or a sequence of numbers below 10 into one of numbers below 100.")
+   (xdoc::p
+    "As a degenerate case, if @('exp') is 1,
+     this operation leaves the digits unchanged."))
+  (b* ((exp (pos-fix exp))
+       (base^exp (expt (dab-base-fix base) exp))
+       (nat (lendian=>nat base digits))
+       (number-of-new-digits (ceiling (len digits) exp))
+       (new-digits (nat=>lendian base^exp number-of-new-digits nat)))
+    new-digits)
+  :prepwork ((local (include-book "arithmetic/top-with-meta" :dir :system)))
+  :guard-hints (("Goal" :in-theory (enable dab-basep)))
+  :hooks (:fix)
+  ///
 
-(defsection defthm-dab-return-types
-  :short "Introduce additional return type theorems for
-          the conversions from natural numbers to digits."
+  (defrule group-lendian-of-dab-digit-list-fix-digits
+    (equal (group-lendian base exp (dab-digit-list-fix base digits))
+           (group-lendian base exp digits)))
+
+  (defrule group-lendian-of-dab-digit-list-fix-digits-normalize-const
+    (implies (syntaxp (and (quotep digits)
+                           (not (dab-digit-listp base (cadr digits)))))
+             (equal (group-lendian base exp digits)
+                    (group-lendian base exp (dab-digit-list-fix base digits)))))
+
+  (defrule len-of-group-lendian
+    (equal (len (group-lendian base exp digits))
+           (ceiling (len digits) (pos-fix exp))))
+
+  (defrule group-lendian-when-exp-is-1
+    (equal (group-lendian base 1 digits)
+           (dab-digit-list-fix base digits))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define group-bendian ((base dab-basep)
+                       (exp posp)
+                       (digits (dab-digit-listp base digits)))
+  :guard (integerp (/ (len digits) (pos-fix exp)))
+  :returns (new-digits (dab-digit-listp base^exp new-digits)
+                       :hyp (equal base^exp
+                                   (expt (dab-base-fix base) (pos-fix exp))))
+  ;; :returns (new-digits
+  ;;           (dab-digit-listp (expt (dab-base-fix base) (pos-fix exp))
+  ;;                            new-digits))
+  :short "Group digits from a smaller base to a larger base, big-endian."
   :long
-  (xdoc::topapp
+  (xdoc::topstring
    (xdoc::p
-    "Given an equality theorem of the form
-     @('(equal (dab-digit-listp BASE VAR) TERM<VAR>)'),
-     where @('BASE') is an integer greater than 1,
-     @('VAR') is a variable,
-     and @('TERM<VAR>') is a term with @('VAR') as the only free variable,
-     this macro generates six theorems of the form
-     @('TERM<(CONV BASE nat)>') or @('TERM<(CONV BASE width nat)>'),
-     where @('CONV') is one of the conversions
-     @(tsee nat=>bendian*), @(tsee nat=>bendian+), @(tsee nat=>bendian),
-     @(tsee nat=>lendian*), @(tsee nat=>lendian+), and @(tsee nat=>lendian),
-     where @('TERM<(CONV BASE nat)>') is the result of
-     replacing @('VAR') with @('(CONV BASE nat)') in @('TERM<VAR>'),
-     and where @('TERM<(CONV BASE width nat)>') is the result of
-     replacing @('VAR') with @('(CONV BASE width nat)') in @('TERM<VAR>')
-     These are additional return type theorems for these conversions.")
-   (xdoc::p
-    "The name of the equality theorem
-     is the first argument of this macro.
-     The name of each generated return type theorem is @('PREFIX-CONV'),
-     where @('PREFIX') is the second argument of this macro
-     and @('CONV') is the conversion.")
-   (xdoc::p
-    "The theorems are generated inside a @(tsee defsection)
-     whose topic (name), @(':parents'), @(':short'), and @(':long')
-     are supplied as keyword arguments.
-     If the topic is not supplied, no @(tsee defsection) is generated.
-     If any of @(':parents'), @(':short'), or @(':long') is not supplied,
-     the @(tsee defsection) has no corresponding
-     @(':parents'), @(':short'), or @(':long').")
-   (xdoc::p
-    "This macro does not thoroughly validates its inputs.
-     However, its implementation is quite simple,
-     and understanding failures due to incorrect inputs should be easy.
-     Regardless, this macro may be extended
-     to more thoroughly validate its inputs in the future.")
-   (xdoc::def "defthm-dab-return-types"))
+    "This is analogous to @(tsee group-lendian),
+     but each sub-sequence of @('exp') digits in the smaller base
+     is converted to a big-endian number as a digit in the larger base."))
+  (b* ((exp (pos-fix exp))
+       (base^exp (expt (dab-base-fix base) exp))
+       (nat (bendian=>nat base digits))
+       (number-of-new-digits (ceiling (len digits) exp))
+       (new-digits (nat=>bendian base^exp number-of-new-digits nat)))
+    new-digits)
+  :prepwork ((local (include-book "arithmetic/top-with-meta" :dir :system)))
+  :guard-hints (("Goal" :in-theory (enable dab-basep)))
+  :hooks (:fix)
+  ///
 
-  (defmacro defthm-dab-return-types (eq-thm-name
-                                     prefix
-                                     &key
-                                     (topic 'nil topicp)
-                                     (parents 'nil parentsp)
-                                     (short '"" shortp)
-                                     (long '"" longp))
-    (declare (xargs :guard (and (symbolp eq-thm-name)
-                                (symbolp prefix)
-                                (symbolp topic)
-                                (symbol-listp parents)
-                                (stringp short)
-                                (stringp long))))
-    `(make-event (defthm-dab-return-types-fn
-                   ',eq-thm-name
-                   ',prefix
-                   ',topic
-                   ',topicp
-                   ',parents
-                   ',parentsp
-                   ',short
-                   ',shortp
-                   ',long
-                   ',longp
-                   (w state)))))
+  (defrule group-bendian-of-dab-digit-list-fix-digits
+    (equal (group-bendian base exp (dab-digit-list-fix base digits))
+           (group-bendian base exp digits)))
+
+  (defrule group-bendian-of-dab-digit-list-fix-digits-normalize-const
+    (implies (syntaxp (and (quotep digits)
+                           (not (dab-digit-listp base (cadr digits)))))
+             (equal (group-bendian base exp digits)
+                    (group-bendian base exp (dab-digit-list-fix base digits)))))
+
+  (defrule len-of-group-bendian
+    (equal (len (group-bendian base exp digits))
+           (ceiling (len digits) (pos-fix exp))))
+
+  (defrule group-bendian-when-exp-is-1
+    (equal (group-bendian base 1 digits)
+           (dab-digit-list-fix base digits))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define ungroup-lendian ((base dab-basep)
+                         (exp posp)
+                         (digits
+                          (dab-digit-listp (expt (dab-base-fix base)
+                                                 (pos-fix exp))
+                                           digits)))
+  :returns (new-digits (dab-digit-listp base new-digits))
+  :short "Ungroup digits from a larger base to a smaller base, little-endian."
+  :long
+  (xdoc::topstring
+   (xdoc::p
+    "This is the inverse of @(tsee group-lendian).
+     As in that function,
+     the argument @('base') is the smaller base,
+     and the argument @('exp') is such that @('base^exp') is the larger base.
+     The @('digits') argument consists of the digits in the larger base.
+     Each input digit in the larger base
+     is converted to @('exp') digits in the smaller base, little-endian.")
+   (xdoc::p
+    "This operation is useful, for example, to turn
+     a sequence of bytes into one of nibbles,
+     or a sequence of bytes into one of bits,
+     or a sequence of numbers below 100 into one of numbers below 10.")
+   (xdoc::p
+    "As a degenerate case, if @('exp') is 1,
+     this operation leaves the digits unchanged."))
+  (b* ((exp (pos-fix exp))
+       (base^exp (expt (dab-base-fix base) exp))
+       (nat (lendian=>nat base^exp digits))
+       (number-of-new-digits (* (len digits) exp))
+       (new-digits (nat=>lendian base number-of-new-digits nat)))
+    new-digits)
+  :prepwork ((local (include-book "arithmetic/top-with-meta" :dir :system)))
+  :guard-hints (("Goal" :in-theory (enable dab-basep)))
+  :hooks (:fix)
+  ///
+
+  (defrule ungroup-lendian-of-dab-digit-list-fix-digits
+    (implies (equal base^exp
+                    (expt (dab-base-fix base)
+                          (pos-fix exp)))
+             (equal (ungroup-lendian base exp (dab-digit-list-fix base^exp
+                                                                  digits))
+                    (ungroup-lendian base exp digits))))
+
+  (defrule ungroup-lendian-of-dab-digit-list-fix-digits-normalize-const
+    (implies (syntaxp (and (quotep digits)
+                           (not (dab-digit-listp base (cadr digits)))))
+             (equal (ungroup-lendian base exp digits)
+                    (ungroup-lendian base exp (dab-digit-list-fix
+                                               (expt (dab-base-fix base)
+                                                     (pos-fix exp))
+                                               digits)))))
+
+  (defrule len-of-ungroup-lendian
+    (equal (len (ungroup-lendian base exp digits))
+           (* (len digits) (pos-fix exp))))
+
+  (defrule ungroup-lendian-when-exp-is-1
+    (equal (ungroup-lendian base 1 digits)
+           (dab-digit-list-fix base digits))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define ungroup-bendian ((base dab-basep)
+                         (exp posp)
+                         (digits
+                          (dab-digit-listp (expt (dab-base-fix base)
+                                                 (pos-fix exp))
+                                           digits)))
+  :returns (new-digits (dab-digit-listp base new-digits))
+  :short "Ungroup digits from a larger base to a smaller base, little-endian."
+  :long
+  (xdoc::topstring
+   (xdoc::p
+    "This is analogous to @(tsee ungroup-lendian),
+     but each digit in the larger base is converted to
+     a big-endian sequence of @('exp') digits in the smaller base."))
+  (b* ((exp (pos-fix exp))
+       (base^exp (expt (dab-base-fix base) exp))
+       (nat (bendian=>nat base^exp digits))
+       (number-of-new-digits (* (len digits) exp))
+       (new-digits (nat=>bendian base number-of-new-digits nat)))
+    new-digits)
+  :prepwork ((local (include-book "arithmetic/top-with-meta" :dir :system)))
+  :guard-hints (("Goal" :in-theory (enable dab-basep)))
+  :hooks (:fix)
+  ///
+
+  (defrule ungroup-bendian-of-dab-digit-list-fix-digits
+    (implies (equal base^exp
+                    (expt (dab-base-fix base)
+                          (pos-fix exp)))
+             (equal (ungroup-bendian base exp (dab-digit-list-fix base^exp
+                                                                  digits))
+                    (ungroup-bendian base exp digits))))
+
+  (defrule ungroup-bendian-of-dab-digit-list-fix-digits-normalize-const
+    (implies (syntaxp (and (quotep digits)
+                           (not (dab-digit-listp base (cadr digits)))))
+             (equal (ungroup-bendian base exp digits)
+                    (ungroup-bendian base exp (dab-digit-list-fix
+                                               (expt (dab-base-fix base)
+                                                     (pos-fix exp))
+                                               digits)))))
+
+  (defrule len-of-ungroup-bendian
+    (equal (len (ungroup-bendian base exp digits))
+           (* (len digits) (pos-fix exp))))
+
+  (defrule ungroup-bendian-when-exp-is-1
+    (equal (ungroup-bendian base 1 digits)
+           (dab-digit-list-fix base digits))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defsection group/ungroup-inverses-theorems
+  :short "Theorems about grouping and ungrouping digits."
+  :long
+  (xdoc::topstring
+   (xdoc::p
+    "@(tsee ungroup-lendian) is left inverse of @(tsee group-lendian),
+     over lists of digits whose length is a multiple of
+     the power that relates smaller and larger bases.")
+   (xdoc::p
+    "@(tsee ungroup-bendian) is left inverse of @(tsee group-bendian),
+     over lists of digits whose length is a multiple of
+     the power that relates smaller and larger bases.")
+   (xdoc::p
+    "@(tsee ungroup-lendian) is right inverse of @(tsee group-lendian).")
+   (xdoc::p
+    "@(tsee ungroup-bendian) is right inverse of @(tsee group-bendian)."))
+
+  (defrule ungroup-lendian-of-group-lendian
+    (implies (integerp (/ (len digits) (pos-fix exp)))
+             (equal (ungroup-lendian base exp (group-lendian base exp digits))
+                    (dab-digit-list-fix base digits)))
+    :enable (group-lendian ungroup-lendian dab-base-fix)
+    :prep-books ((include-book "arithmetic/top-with-meta" :dir :system)))
+
+  (defrule ungroup-bendian-of-group-bendian
+    (implies (integerp (/ (len digits) (pos-fix exp)))
+             (equal (ungroup-bendian base exp (group-bendian base exp digits))
+                    (dab-digit-list-fix base digits)))
+    :enable (group-bendian ungroup-bendian dab-base-fix)
+    :prep-books ((include-book "arithmetic/top-with-meta" :dir :system)))
+
+  (defrule group-lendian-of-ungroup-lendian
+    (equal (group-lendian base exp (ungroup-lendian base exp digits))
+           (dab-digit-list-fix (expt (dab-base-fix base) (pos-fix exp))
+                               digits))
+    :enable (group-lendian ungroup-lendian dab-base-fix)
+    :prep-books ((include-book "arithmetic/top-with-meta" :dir :system)))
+
+  (defrule group-bendian-of-ungroup-bendian
+    (equal (group-bendian base exp (ungroup-bendian base exp digits))
+           (dab-digit-list-fix (expt (dab-base-fix base) (pos-fix exp))
+                               digits))
+    :enable (group-bendian ungroup-bendian dab-base-fix)
+    :prep-books ((include-book "arithmetic/top-with-meta" :dir :system))))

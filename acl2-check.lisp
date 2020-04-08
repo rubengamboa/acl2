@@ -1,5 +1,5 @@
-; ACL2 Version 8.1 -- A Computational Logic for Applicative Common Lisp
-; Copyright (C) 2018, Regents of the University of Texas
+; ACL2 Version 8.2 -- A Computational Logic for Applicative Common Lisp
+; Copyright (C) 2019, Regents of the University of Texas
 
 ; This version of ACL2 is a descendent of ACL2 Version 1.9, Copyright
 ; (C) 1997 Computational Logic, Inc.  See the documentation topic NOTE-2-0.
@@ -332,8 +332,11 @@ most-negative-fixnum = ~s."
 (error "This Common Lisp is unsuitable for ACL2 because~%~
         neither :UNIX nor :MSWINDOWS is a member of *features*.")
 
-(or (typep (1- array-dimension-limit) 'fixnum)
-    (error "We assume that (1- ARRAY-DIMENSION-LIMIT) is a fixnum.  CLTL2 ~
+(or (typep array-dimension-limit 'fixnum)
+
+; We assume this explicitly in the various copy-array functions.
+
+    (error "We assume that ARRAY-DIMENSION-LIMIT is a fixnum.  CLTL2 ~
             requires this.  ACL2 will not work in this Common Lisp."))
 
 (or (>= multiple-values-limit *number-of-return-values*)

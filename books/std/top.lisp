@@ -39,6 +39,9 @@
 (include-book "stobjs/top")
 (include-book "osets/top")
 (include-book "util/top")
+(include-book "typed-alists/top")
+(include-book "testing/top")
+(include-book "system/top")
 
 (defsection std
   :parents (top)
@@ -62,6 +65,5 @@ but please be aware that things may change out from under you.</p>
 Each of these libraries provides many lemmas for reasoning about built-in
 ACL2 functions, and also many additional functions.  There is also a very
 convenient @(see std/util) macro library, with macros that automate many
-otherwise-tedious tasks.</p>")
-
-
+otherwise-tedious tasks.  There is also a @(see std/testing) library with
+utilities to create tests.</p>")

@@ -31,7 +31,6 @@
 (in-package "STD")
 (include-book "da-base")
 (include-book "look-up")
-(local (include-book "misc/assert" :dir :system))
 (program)
 
 (defxdoc returns-specifiers
@@ -419,16 +418,7 @@ For example, @('natp-of-foo').</dd>
            (cons (second x)
                  (untranslate-and (third x))))
           (t
-           (list x))))
-
-  (local
-   (progn
-     (assert! (equal (untranslate-and 'x) '(x)))
-     (assert! (equal (untranslate-and 't) '(t)))
-     (assert! (equal (untranslate-and '(if x y z)) '((if x y z))))
-     (assert! (equal (untranslate-and '(if x y 'nil)) '(x y)))
-     (assert! (equal (untranslate-and '(if x (if a b c) 'nil)) '(x (if a b c))))
-     (assert! (equal (untranslate-and '(if x (if a b 'nil) 'nil)) '(x a b))))))
+           (list x)))))
 
 (defun force-each (x)
   (declare (xargs :guard t))
@@ -536,7 +526,7 @@ For example, @('natp-of-foo').</dd>
  ((returnspec-default-default-hint 'fnname acl2::id world)))
 
 
-(defun returnspec-sublis (subst x)
+(defun returnspec-sublis (subst str-subst x)
   "Like sublis, but only substitutes symbols, and looks them up both by value and by name."
   (if (atom x)
       (if (symbolp x)
@@ -546,11 +536,18 @@ For example, @('natp-of-foo').</dd>
               (let ((look (assoc-equal (symbol-name x) subst)))
                 (if look
                     (cdr look)
-                  x))))
+                  (let ((subst (dumb-str-sublis str-subst (symbol-name x))))
+                    (if (equal subst (symbol-name x))
+                        x
+                      (intern-in-package-of-symbol subst x)))))))
         x)
-    (cons-with-hint (returnspec-sublis subst (car x))
-                    (returnspec-sublis subst (cdr x))
+    (cons-with-hint (returnspec-sublis subst str-subst (car x))
+                    (returnspec-sublis subst str-subst (cdr x))
                     x)))
+
+(defun returnspec-strsubst (fnname fnname-fn)
+  `(("<FN>" . ,(symbol-name fnname))
+    ("<FN!>" . ,(symbol-name fnname-fn))))
 
 (defun returnspec-single-thm (name name-fn x body-subst hint-subst badname-okp world)
   "Returns EVENTS"
@@ -563,14 +560,16 @@ For example, @('natp-of-foo').</dd>
   (b* (((returnspec x) x)
        (formals (look-up-formals name-fn world))
        (binds `(,x.name (,name-fn . ,formals)))
-       (formula (returnspec-sublis body-subst (returnspec-thm-body name-fn binds x world)))
+       (formula (returnspec-sublis body-subst nil (returnspec-thm-body name-fn binds x world)))
        ((when (eq formula t)) nil)
-       (hints (if x.hintsp (returnspec-sublis hint-subst x.hints)
+       (strsubst (returnspec-strsubst name name-fn))
+       (hints (if x.hintsp
+                  (returnspec-sublis hint-subst strsubst x.hints)
                 (returnspec-default-hints name-fn world))))
     `((defthm ,(returnspec-generate-name name x t badname-okp)
         ,formula
         :hints ,hints
-        :rule-classes ,(returnspec-sublis hint-subst x.rule-classes)))))
+        :rule-classes ,(returnspec-sublis hint-subst nil x.rule-classes)))))
 
 (defun returnspec-multi-thm (name name-fn binds x body-subst hint-subst badname-okp world)
   "Returns EVENTS"
@@ -579,15 +578,16 @@ For example, @('natp-of-foo').</dd>
                               (returnspec-p x)
                               (plist-worldp world))))
   (b* (((returnspec x) x)
-       (formula (returnspec-sublis body-subst (returnspec-thm-body name-fn binds x world)))
+       (formula (returnspec-sublis body-subst nil (returnspec-thm-body name-fn binds x world)))
        ((when (equal formula t)) nil)
+       (strsubst (returnspec-strsubst name name-fn))
        (hints (if x.hintsp
-                  (returnspec-sublis hint-subst x.hints)
+                  (returnspec-sublis hint-subst strsubst x.hints)
                 (returnspec-default-hints name-fn world))))
     `((defthm ,(returnspec-generate-name name x nil badname-okp)
         ,formula
         :hints ,hints
-        :rule-classes ,(returnspec-sublis hint-subst x.rule-classes)))))
+        :rule-classes ,(returnspec-sublis hint-subst nil x.rule-classes)))))
 
 (defun returnspec-multi-thms (name name-fn binds x body-subst hint-subst badname-okp world)
   "Returns EVENTS"
@@ -646,11 +646,11 @@ For example, @('natp-of-foo').</dd>
   (b* ((call (cons name-fn formals))
        (both-subst `(("<CALL>" . ,call)
                      ("<FN>" . ,name)
-                     ("<FN!>" . ,name-fn)))
+                     ("<FN!>" . ,name-fn)
+                     ("<VALUES>" . ,names)))
        ((when (eql (len names) 1))
         (mv both-subst (cons (cons (car names) call) both-subst))))
     (mv both-subst (append both-subst (returnspec-mv-nth-subst names 0 call)))))
-       
 
 (defun returnspec-thms (name name-fn specs world)
   "Returns EVENTS"
@@ -670,6 +670,3 @@ For example, @('natp-of-foo').</dd>
        (ignorable-names (make-symbols-ignorable names))
        (binds   `((mv . ,ignorable-names) (,name-fn . ,formals))))
     (returnspec-multi-thms name name-fn binds specs body-subst hint-subst badname-okp world)))
-
-
-

@@ -61,26 +61,24 @@
   ;; 89: MOV r/m64, r64
 
   :parents (one-byte-opcodes)
+
   :guard-hints (("Goal" :in-theory (e/d (riml08 riml32)
 					())))
 
   :returns (x86 x86p :hyp (x86p x86))
 
+  :modr/m t
+
   :body
 
-  (b* ((ctx 'x86-mov-Op/En-MR)
-
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-
-       (p2 (the (unsigned-byte 8) (prefixes->seg prefixes)))
+  (b* ((p2 (the (unsigned-byte 8) (prefixes->seg prefixes)))
        (p4? (equal #.*addr-size-override*
 		   (prefixes->adr prefixes)))
 
        (byte-operand? (equal opcode #x88))
        ((the (integer 1 8) operand-size)
-	(select-operand-size proc-mode byte-operand? rex-byte nil prefixes x86))
+	(select-operand-size
+         proc-mode byte-operand? rex-byte nil prefixes nil nil nil x86))
 
        (register (rgfi-size operand-size (reg-index reg rex-byte #.*r*)
 			    rex-byte x86))
@@ -97,7 +95,7 @@
        ((when flg0)
 	(!!ms-fresh :x86-effective-addr-error flg0))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        ((mv flg temp-rip) (add-to-*ip proc-mode temp-rip increment-RIP-by x86))
        ((when flg) (!!ms-fresh :rip-increment-error flg))
@@ -130,31 +128,30 @@
   ;; Op/En: RM
   ;; [OP REG, R/M]
   ;; 8A: MOV r8,  r/m8
-  ;; 8A: MOV r16, r/m16
+  ;; 8B: MOV r16, r/m16
   ;; 8B: MOV r32, r/m32
   ;; 8B: MOV r64, r/m64
 
   :parents (one-byte-opcodes)
+
   :guard-hints (("Goal" :in-theory (e/d (riml08 riml32) ())))
 
   :returns (x86 x86p :hyp (x86p x86))
+
+  :modr/m t
+
   :body
 
-  (b* ((ctx 'x86-mov-Op/En-RM)
-
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-
-       (p2 (prefixes->seg prefixes))
+  (b* ((p2 (prefixes->seg prefixes))
        (p4? (equal #.*addr-size-override*
 		   (prefixes->adr prefixes)))
 
        (byte-operand? (equal opcode #x8A))
        ((the (integer 1 8) operand-size)
-	(select-operand-size proc-mode byte-operand? rex-byte nil prefixes x86))
+	(select-operand-size
+         proc-mode byte-operand? rex-byte nil prefixes nil nil nil x86))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        (inst-ac? t)
        ((mv flg0 reg/mem (the (unsigned-byte 3) increment-RIP-by) ?addr x86)
@@ -197,11 +194,10 @@
 					 rme-size
 					 rime-size)
 					(unsigned-byte-p))))
+
   :body
 
-  (b* ((ctx 'x86-mov-Op/En-FD)
-
-       ;; This instruction does not require a ModR/M byte.
+  (b* (;; This instruction does not require a ModR/M byte.
        (p2 (prefixes->seg prefixes))
        (p4? (equal #.*addr-size-override*
 		   (prefixes->adr prefixes)))
@@ -217,7 +213,7 @@
        ;; offset, either 16, 32 or 64 bits.
 
        ;; Under the "Instruction Column in the Opcode Summary Table"
-       ;; (Intel manual, Mar'17, Vol. 2, Sec. 3.1.1.3):
+       ;; (Intel manual, Jan'19, Vol. 2, Sec. 3.1.1.3):
 
        ;; moffs8, moffs16, moffs32, moffs64   A simple memory variable
        ;; (memory offset) of type byte, word, or doubleword used by
@@ -228,17 +224,18 @@
        ;; address-size attribute of the instruction.
 
        ;; Under "Codes for Addressing Method"
-       ;; (Intel manual, Mar'17, Vol. 2, App. A.2.1):
+       ;; (Intel manual, Jan'19, Vol. 2, App. A.2.1):
 
        ;; O The instruction has no ModR/M byte. The offset of the
        ;; operand is coded as a word or double word (depending on
        ;; address size attribute) in the instruction. No base
        ;; register, index register, or scaling factor can be applied
-       ;; (for example, MOV (A0 A3)).
+       ;; (for example, MOV (A0-A3)).
 
        (byte-operand? (eql opcode #xA0))
        ((the (integer 1 8) operand-size)
-	(select-operand-size proc-mode byte-operand? rex-byte nil prefixes x86))
+	(select-operand-size
+         proc-mode byte-operand? rex-byte nil prefixes nil nil nil x86))
 
        ((the (integer 1 8) offset-size)
 	(select-address-size proc-mode p4? x86))
@@ -257,7 +254,7 @@
        ((when badlength?)
 	(!!fault-fresh :gp 0 :instruction-length badlength?)) ;; #GP(0)
 
-       (seg-reg (select-segment-register proc-mode p2 p4? 0 0 x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? 0 0 sib x86))
 
        ;; Get data from offset in segment:
        (inst-ac? (alignment-checking-enabled-p x86))
@@ -271,6 +268,106 @@
        (x86 (write-*ip proc-mode temp-rip x86)))
     x86))
 
+(def-inst x86-mov-Op/En-TD
+
+  ;; Op/En: TD
+  ;; [OP Moffs, rAX]
+  ;; A2: MOV moffs8,                  AL
+  ;; A3: MOV moffs16/moffs32/moffs64, AX/EAX/RAX
+
+  :parents (one-byte-opcodes)
+
+  :returns (x86 x86p :hyp (x86p x86))
+
+  :guard-hints (("Goal" :in-theory (e/d (select-address-size
+					 segment-base-and-bounds
+					 ea-to-la
+					 rme-size
+					 rime-size)
+					(unsigned-byte-p))))
+  :body
+
+  (b* (;; This instruction does not require a ModR/M byte.
+       (p2 (prefixes->seg prefixes))
+       (p4? (equal #.*addr-size-override*
+		   (prefixes->adr prefixes)))
+
+       ;; The Intel manual says the following:
+
+       ;; Under the MOV instruction description:
+
+       ;; The moffs8, moffs16, moffs32 and moffs64 operands specify a
+       ;; simple offset relative to the segment base, where 8, 16, 32
+       ;; and 64 refer to the size of the data. The address-size
+       ;; attribute of the instruction determines the size of the
+       ;; offset, either 16, 32 or 64 bits.
+
+       ;; Under the "Instruction Column in the Opcode Summary Table"
+       ;; (Intel manual, Jan'19, Vol. 2, Sec. 3.1.1.3):
+
+       ;; moffs8, moffs16, moffs32, moffs64   A simple memory variable
+       ;; (memory offset) of type byte, word, or doubleword used by
+       ;; some variants of the MOV instruction. The actual address is
+       ;; given by a simple offset relative to the segment base. No
+       ;; ModR/M byte is used in the instruction. The number shown
+       ;; with moffs indicates its size, which is determined by the
+       ;; address-size attribute of the instruction.
+
+       ;; Under "Codes for Addressing Method"
+       ;; (Intel manual, Jan'19, Vol. 2, App. A.2.1):
+
+       ;; O The instruction has no ModR/M byte. The offset of the
+       ;; operand is coded as a word or double word (depending on
+       ;; address size attribute) in the instruction. No base
+       ;; register, index register, or scaling factor can be applied
+       ;; (for example, MOV (A0-A3)).
+
+       (byte-operand? (eql opcode #xA2))
+       ((the (integer 1 8) operand-size)
+	(select-operand-size
+         proc-mode byte-operand? rex-byte nil prefixes nil nil nil x86))
+
+       ((the (integer 1 8) offset-size)
+	(select-address-size proc-mode p4? x86))
+
+       ;; Get the offset:
+       ((mv flg offset x86)
+	(rime-size-opt proc-mode offset-size temp-rip #.*cs* :x nil x86))
+       ((when flg) (!!ms-fresh :rime-size-error flg))
+
+       ;; Check if the above memory read caused any problems:
+       ((mv flg (the (signed-byte #.*max-linear-address-size*) temp-rip))
+	(add-to-*ip proc-mode temp-rip offset-size x86))
+       ((when flg) (!!ms-fresh :rip-increment-error temp-rip))
+
+       (badlength? (check-instruction-length start-rip temp-rip 0))
+       ((when badlength?)
+	(!!fault-fresh :gp 0 :instruction-length badlength?)) ;; #GP(0)
+
+       (seg-reg (select-segment-register proc-mode p2 p4? 0 0 sib x86))
+
+       ;; Get data from rAX:
+       (data (rgfi-size operand-size *rax* rex-byte x86))
+
+       ;; Write the data to offset in segment:
+       (inst-ac? t)
+       ((mv flg x86)
+        (x86-operand-to-reg/mem proc-mode
+                                operand-size
+                                inst-ac?
+                                nil ;; Not a memory pointer operand
+                                data
+                                seg-reg
+                                offset
+                                rex-byte
+                                0
+                                0
+                                x86))
+       ((when flg) (!!ms-fresh :x86-operand-to-reg/mem flg))
+
+       (x86 (write-*ip proc-mode temp-rip x86)))
+    x86))
+
 (def-inst x86-mov-Op/En-OI
 
   ;; Op/En: OI
@@ -281,18 +378,18 @@
   ;; B8 + rd: MOV r64, imm64
 
   :parents (one-byte-opcodes)
+
   :guard-hints (("Goal" :in-theory (e/d (rme-size riml08 riml32) ())))
 
   :returns (x86 x86p :hyp (x86p x86))
 
   :body
 
-  (b* ((ctx 'x86-mov-Op/En-OI)
-
-       (byte-operand? (and (<= #xB0 opcode) ;; B0+rb
+  (b* ((byte-operand? (and (<= #xB0 opcode) ;; B0+rb
 			   (<= opcode #xB7)))
        ((the (integer 1 8) operand-size)
-	(select-operand-size proc-mode byte-operand? rex-byte nil prefixes x86))
+	(select-operand-size
+         proc-mode byte-operand? rex-byte nil prefixes nil nil nil x86))
 
        ;; We don't do any alignment check below when fetching the
        ;; immediate operand; reading the immediate operand is done
@@ -330,26 +427,25 @@
   ;; C7/0: MOV r/m64, imm32
 
   :parents (one-byte-opcodes)
+
   :guard-hints (("Goal" :in-theory (e/d (riml08
 					 riml32
 					 rme-size) ())))
 
   :returns (x86 x86p :hyp (x86p x86))
 
+  :modr/m t
+
   :body
 
-  (b* ((ctx 'x86-mov-Op/En-MI)
-
-       (mod (modr/m->mod modr/m))
-       (r/m (modr/m->r/m modr/m))
-
-       (p2 (prefixes->seg prefixes))
+  (b* ((p2 (prefixes->seg prefixes))
        (p4? (equal #.*addr-size-override*
 		   (prefixes->adr prefixes)))
 
        (byte-operand? (eql opcode #xC6))
        ((the (integer 1 8) imm-size)
-	(select-operand-size proc-mode byte-operand? rex-byte t prefixes x86))
+	(select-operand-size
+         proc-mode byte-operand? rex-byte t prefixes nil nil nil x86))
 
        ((the (integer 1 8) reg/mem-size)
 	(if (and (equal opcode #xC7)
@@ -374,7 +470,7 @@
        ((when flg0)
 	(!!ms-fresh :x86-effective-addr-error flg0))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? 0 0 x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        ((mv flg (the (signed-byte #.*max-linear-address-size*) temp-rip))
 	(add-to-*ip proc-mode temp-rip increment-RIP-by x86))
@@ -431,24 +527,22 @@
   ;; LEA r64, m
 
   :parents (one-byte-opcodes)
+
   :guard-hints (("Goal" :in-theory (e/d (riml08 riml32) ())))
 
   :returns (x86 x86p :hyp (x86p x86))
 
+  :modr/m t
+
   :body
 
-  (b* ((ctx 'x86-lea)
-
-       (r/m (the (unsigned-byte 3) (modr/m->r/m  modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod  modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg  modr/m)))
-
-       (p4? (equal #.*addr-size-override* (prefixes->adr prefixes)))
+  (b* ((p4? (equal #.*addr-size-override* (prefixes->adr prefixes)))
 
        ;; this is the operand size
        ;; in Intel manual, Mar'17, Vol 2, Tables 3-53 and 3-54:
        ((the (integer 2 8) register-size)
-	(select-operand-size proc-mode nil rex-byte nil prefixes x86))
+	(select-operand-size
+         proc-mode nil rex-byte nil prefixes nil nil nil x86))
 
        ((mv ?flg0
 	    (the (signed-byte 64) M)
@@ -493,25 +587,24 @@
   ;;       MOVSXD r64, r/m32 (Move doubleword to quadword with sign-extension)
 
   :parents (one-byte-opcodes)
+
   :guard-hints (("Goal" :in-theory (e/d (riml08 riml32) ())))
 
   :returns (x86 x86p :hyp (x86p x86))
+
+  :modr/m t
+
   :body
 
-  (b* ((ctx 'x86-movsx)
-
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-
-       (p2 (prefixes->seg prefixes))
+  (b* ((p2 (prefixes->seg prefixes))
 
        (p4? (equal #.*addr-size-override* (prefixes->adr prefixes)))
 
        ((the (integer 1 8) reg/mem-size)
-	(select-operand-size proc-mode nil rex-byte t prefixes x86))
+	(select-operand-size
+         proc-mode nil rex-byte t prefixes nil nil nil x86))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        (inst-ac? t)
        ((mv flg0
@@ -576,6 +669,7 @@
   ;; just an omission from the manuals, and therefore our model supports it.
 
   :parents (two-byte-opcodes)
+
   :guard-hints (("Goal" :in-theory (e/d (riml08 riml32
 					       n08-to-i08
 					       n16-to-i16
@@ -584,19 +678,16 @@
 					())))
 
   :returns (x86 x86p :hyp (x86p x86))
+
+  :modr/m t
+
   :body
 
-  (b* ((ctx 'x86-movsxd)
-
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-
-       (p2 (prefixes->seg prefixes))
+  (b* ((p2 (prefixes->seg prefixes))
        (p4? (equal #.*addr-size-override*
 		   (prefixes->adr prefixes)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        (reg/mem-size (if (equal opcode #xBE) 1 2))
 
@@ -631,7 +722,8 @@
        ((when badlength?)
 	(!!fault-fresh :gp 0 :instruction-length badlength?)) ;; #GP(0)
 
-       (register-size (select-operand-size proc-mode nil rex-byte nil prefixes x86))
+       (register-size (select-operand-size
+                       proc-mode nil rex-byte nil prefixes nil nil nil x86))
 
        (reg/mem (case reg/mem-size
 		  (1
@@ -678,21 +770,19 @@
   ;; just an omission from the manuals, and therefore our model supports it.
 
   :parents (two-byte-opcodes)
+
   :guard-hints (("Goal" :in-theory (e/d (riml08 riml32) ())))
 
   :returns (x86 x86p :hyp (x86p x86))
+
+  :modr/m t
+
   :body
 
-  (b* ((ctx 'x86-movzx)
-
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-
-       (p2 (prefixes->seg prefixes))
+  (b* ((p2 (prefixes->seg prefixes))
        (p4? (equal #.*addr-size-override* (prefixes->adr prefixes)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        (reg/mem-size (if (equal opcode #xB6) 1 2))
 
@@ -727,7 +817,8 @@
 	(!!fault-fresh :gp 0 :instruction-length badlength?)) ;; #GP(0)
 
        ((the (integer 1 8) register-size)
-	(select-operand-size proc-mode nil rex-byte nil prefixes x86))
+	(select-operand-size
+         proc-mode nil rex-byte nil prefixes nil nil nil x86))
 
        ;; Update the x86 state:
        (x86 (!rgfi-size register-size (reg-index reg rex-byte #.*r*) reg/mem
@@ -769,19 +860,18 @@
   ;; data and limits.
 
   :parents (two-byte-opcodes)
+
   :guard-hints (("Goal" :in-theory (e/d () (unsigned-byte-p))))
 
   :returns (x86 x86p :hyp (x86p x86))
 
+  :modr/m t
+
   :body
 
-  (b* ((?ctx 'x86-mov-control-regs-Op/En-MR)
-
-       ;; The r/m field specifies the GPR (destination).
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
+  (b* (;; The r/m field specifies the GPR (destination).
        ;; MOD field is ignored.
        ;; The reg field specifies the control register (source).
-       (reg (the (unsigned-byte 3) (modr/m->reg  modr/m)))
 
        ;; *operand-size-override* and REX.W are ignored.
 

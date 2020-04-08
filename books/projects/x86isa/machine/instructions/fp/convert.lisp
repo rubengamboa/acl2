@@ -81,17 +81,13 @@
                                            sp-sse-cvt-fp-to-int
                                            dp-sse-cvt-fp-to-int)))
 
-  :returns (x86 x86p :hyp (and (x86p x86)
-                               (canonical-address-p temp-rip)))
+  :returns (x86 x86p :hyp (x86p x86))
+
+  :modr/m t
 
   :body
-  (b* ((ctx 'x86-cvts?2si/cvtts?2si-Op/En-RM)
 
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-
-       ((the (integer 4 8) reg-size)
+  (b* (((the (integer 4 8) reg-size)
         (if (logbitp #.*w* rex-byte) 8 4))
 
        ((the (integer 4 8) xmm/mem-size)
@@ -105,7 +101,7 @@
        (p4? (eql #.*addr-size-override*
                  (prefixes->adr prefixes)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        (inst-ac? ;; Exceptions Type 3
         t)
@@ -173,17 +169,13 @@
 
   :sp/dp t
 
-  :returns (x86 x86p :hyp (and (x86p x86)
-                               (canonical-address-p temp-rip)))
+  :returns (x86 x86p :hyp (x86p x86))
+
+  :modr/m t
 
   :body
-  (b* ((ctx 'x86-cvtsi2s?-Op/En-RM)
 
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-
-       ((the (integer 4 8) reg/mem-size)
+  (b* (((the (integer 4 8) reg/mem-size)
         (if (logbitp #.*w* rex-byte) 8 4))
 
        ((the (integer 4 8) xmm-size)
@@ -197,7 +189,7 @@
        (p4? (eql #.*addr-size-override*
                  (prefixes->adr prefixes)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        (inst-ac? ;; Exceptions Type 3
         t)
@@ -267,17 +259,13 @@
 
   :dp-to-sp t
 
-  :returns (x86 x86p :hyp (and (x86p x86)
-                               (canonical-address-p temp-rip)))
+  :returns (x86 x86p :hyp (x86p x86))
+
+  :modr/m t
 
   :body
-  (b* ((ctx 'x86-cvts?2s?-Op/En-RM)
 
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-
-       ((the (integer 4 8) xmm-size)
+  (b* (((the (integer 4 8) xmm-size)
         (if (equal dp-to-sp #.*DP-TO-SP*) 4 8))
 
        ((the (integer 4 8) xmm/mem-size)
@@ -291,7 +279,7 @@
        (p4? (eql #.*addr-size-override*
                  (prefixes->adr prefixes)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        (inst-ac? ;; Exceptions Type 3
         t)
@@ -354,17 +342,13 @@
   "<h3>Op/En = RM: \[OP XMM, XMM/M\]</h3>
   0F 5A: CVTPS2PD xmm1, xmm2/m64<br/>"
 
-  :returns (x86 x86p :hyp (and (x86p x86)
-                               (canonical-address-p temp-rip)))
+  :returns (x86 x86p :hyp (x86p x86))
+
+  :modr/m t
 
   :body
-  (b* ((ctx 'x86-cvtps2pd-Op/En-RM)
 
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-
-       ((the (unsigned-byte 4) xmm-index)
+  (b* (((the (unsigned-byte 4) xmm-index)
         (reg-index reg rex-byte #.*r*))
 
        (p2 (prefixes->seg prefixes))
@@ -372,7 +356,7 @@
        (p4? (eql #.*addr-size-override*
                  (prefixes->adr prefixes)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        (inst-ac? ;; Note that VEX.256 version follows Exception Type 3
         ;; without #AC. We haven't implemented VEX.256 yet.
@@ -458,17 +442,13 @@
 
   :guard-hints (("Goal" :in-theory (enable merge-2-u32s)))
 
-  :returns (x86 x86p :hyp (and (x86p x86)
-                               (canonical-address-p temp-rip)))
+  :returns (x86 x86p :hyp (x86p x86))
+
+  :modr/m t
 
   :body
-  (b* ((ctx 'x86-cvtpd2ps-Op/En-RM)
 
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-
-       ((the (unsigned-byte 4) xmm-index)
+  (b* (((the (unsigned-byte 4) xmm-index)
         (reg-index reg rex-byte #.*r*))
 
        (p2 (prefixes->seg prefixes))
@@ -476,7 +456,7 @@
        (p4? (eql #.*addr-size-override*
                  (prefixes->adr prefixes)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        (inst-ac?
         ;; Exceptions Type 2

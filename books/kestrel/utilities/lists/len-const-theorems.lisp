@@ -10,7 +10,7 @@
 
 (in-package "ACL2")
 
-(include-book "kestrel/utilities/xdoc/constructors" :dir :system)
+(include-book "xdoc/constructors" :dir :system)
 (include-book "std/util/defrule" :dir :system)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -20,7 +20,7 @@
   :short "Some theorems about lists whose lengths are
           (i) equal, (ii) equal or above, or (iii) above constant values."
   :long
-  (xdoc::topp
+  (xdoc::topstring-p
    "These theorems are disabled by default.
     They can be enabled to turn
     assertions about lengths and constants

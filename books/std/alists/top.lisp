@@ -55,6 +55,11 @@
 (include-book "strip-cars")
 (include-book "strip-cdrs")
 (include-book "pairlis")
+(include-book "remove-assocs")
+(include-book "remove-assoc-equal")
+(include-book "alist-map-keys")
+(include-book "alist-map-vals")
+(include-book "assoc")
 
 (include-book "alist-defuns")
 
@@ -181,6 +186,3 @@ lists is <b>@(see alist-equiv)</b>, which says whether alists agree on the
 value of every key.  Many alist operations respect this equivalence relation.
 It is generally a good idea to define appropriate @('alist-equiv') @(see
 congruence) rules for new alist-processing functions.</p>")
-
-
-

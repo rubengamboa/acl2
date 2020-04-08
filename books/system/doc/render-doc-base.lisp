@@ -92,15 +92,15 @@
     :hints (("Goal" :induct (first-n-ac n x ac)))))
 
  (local
-  (defthm len-reveappend
+  (defthm len-revappend
     (equal (len (revappend x y))
            (+ (len x) (len y)))))
 
+; Mihir M. mod, 04/2019: Adapt to the new definition of take.
  (local
-  (defthm len-first-n-ac
-    (equal (len (first-n-ac n x ac))
-           (+ (nfix n)
-              (len ac)))))
+  (defthm len-of-take
+    (equal (len (take n x))
+           (nfix n))))
 
  (local
   (defthm character-listp-nthcdr
@@ -160,8 +160,10 @@
        (escape-char
         #\' "<<quote>>"
         (escape-char
-         #\, "<<comma>>"
-         name))))))))
+         #\` "<<backquote>>"
+         (escape-char
+          #\, "<<comma>>"
+          name)))))))))
 
 (defattach rendered-name rendered-name-acl2-doc)
 

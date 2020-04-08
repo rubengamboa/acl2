@@ -4,7 +4,7 @@
 (acl2::begin-book t);$ACL2s-Preamble$|#
 
 (in-package "ACL2S")
-;(include-book "utilities")
+(include-book "../utilities")
 (include-book "std/util/bstar" :dir :system)
 
 ; [2014-11-25 Tue] Make key package agnostic by always putting it into
@@ -13,26 +13,28 @@
 
 (defun keywordify (sym)
   (declare (xargs :guard (symbolp sym)))
-  (intern-in-package-of-symbol (symbol-name sym) :a))
+  (fix-intern-in-pkg-of-sym (symbol-name sym) :a))
 
 
 ;;; Keep the following defconst synced with all the acl2s parameters
-(defconst *acl2s-parameters* '(:num-trials
+(defconst *acl2s-parameters* '(:testing-enabled
+                               :num-trials
                                :verbosity-level
                                :num-counterexamples
+                               :num-print-counterexamples
                                :num-witnesses
+                               :num-print-witnesses
                                ;show-top-level-counterexample
+                               :search-strategy
                                :sampling-method
                                :backtrack-limit
-                               :search-strategy
-                               :testing-enabled
                                :cgen-timeout
                                :cgen-local-timeout
+                               :cgen-single-test-timeout
                                :print-cgen-summary
+                               :backtrack-bad-generalizations
                                :use-fixers
                                :recursively-fix
-                               :num-print-counterexamples
-                               :num-print-witnesses
                                ))
 
 ;All user-defined parameters are stored here
@@ -111,6 +113,7 @@ These are stored in the constant @('*acl2s-parameters*') and are package-agnosti
                   testing-enabled
                   cgen-timeout
                   cgen-local-timeout
+                  cgen-single-test-timeout
                   print-cgen-summary
                   use-fixers
                   num-print-counterexamples
@@ -120,8 +123,31 @@ These are stored in the constant @('*acl2s-parameters*') and are package-agnosti
 </p>
 ")
 
+(defconst *testing-enabled-values* '(T NIL :naive))
+
 (add-acl2s-parameter 
- num-trials 4000
+ testing-enabled :naive
+ :short "Testing enable/disable flag"
+ :long
+" <p>Testing can be enabled or disabled using this parameter.
+  The default value is  <tt>:naive</tt> (unless you are in
+  the usual ACL2 Sedan session modes, where default is @('t')).
+  Setting this parameter to @('nil') amounts to disabling
+  the testing mechanism. Setting this parameter
+  to <tt>:naive</tt> leads to top-level testing without any
+  theorem prover support.</p>
+  <code>
+   Usage:
+   (acl2s-defaults :set testing-enabled :naive)
+   (acl2s-defaults :get testing-enabled)
+   :doc testing-enabled
+  </code>
+   "
+ :guard (member-eq value *testing-enabled-values*)
+ :setter set-acl2s-random-testing-enabled)
+
+(add-acl2s-parameter 
+ num-trials 1000
  :short "Max number of tries to find counterexamples"
  :long
 " Maximum number of tries (attempts) to construct 
@@ -254,6 +280,133 @@ These are stored in the constant @('*acl2s-parameters*') and are package-agnosti
    "
  :guard (member-eq value *search-strategy-values*))
 
+;; Use natural seeds or random tree of natural numbers 
+
+(defconst *sampling-method-values* '(:random :uniform-random :be :mixed))
+
+(add-acl2s-parameter 
+ sampling-method :random
+ :short "Specify sampling method to be used to instantiate variables "
+ :long "
+  Specify which of the following methods to
+  use for instantiating free variables of the conjecture
+  under test: @(':be') or @(':random') or @(':uniform-random') or @(':mixed')
+  By default this parameter is set to the symbol @(':random')
+   <code>
+    Usage:
+    (acl2s-defaults :set sampling-method :random)
+    (acl2s-defaults :get sampling-method)
+    :doc sampling-method
+   </code>
+   "
+ :guard (member-eq value *sampling-method-values*))
+
+(add-acl2s-parameter 
+ backtrack-limit 3
+ :short "Maximum number of backtracks allowed (per variable)"
+ :long "
+   Maximum number of backtracks allowed by a variable.
+   The default backtrack limit is set to 3. Setting this 
+   parameter to 0 disables the backtracking.
+   <code>
+    Usage:
+    (acl2s-defaults :set backtrack-limit 3)
+    (acl2s-defaults :get backtrack-limit)
+    :doc backtrack-limit
+   </code>
+   "
+ :guard (natp value))
+
+(add-acl2s-parameter 
+ cgen-timeout 60 ;bad name -- TODO: change it in a latter version.
+ :short "test?/prover timeout (in seconds)"
+ :long
+  "Maximum allowed time (in seconds) to be spent
+  in the ACL2 prover on behalf of Cgen/test? macro.
+  This value is used as the first argument of the
+  with-timeout macro around the call to 
+  prove/cgen.
+
+  The default timeout limit is set to 60 sec.
+  Guard : Timeout should be a non-negative rational.
+   <code>
+    Usage:
+    (acl2s-defaults :set cgen-timeout 60)
+    (acl2s-defaults :get cgen-timeout)
+    :doc cgen-timeout
+   </code>
+   "
+ :guard (and (rationalp value) (<= 0 value)))
+        
+(add-acl2s-parameter 
+ cgen-local-timeout 10
+ :short "Cgen/Testing timeout (in seconds)"
+ :long
+  "Maximum allowed time (in seconds) for Cgen to
+  search for counterexamples to a particular form/subgoal.
+  The default timeout limit is set to 10 sec.
+  Setting this parameter to 0 amounts to disabling
+  the timeout mechanism, i.e. its a no-op.
+  Guard : Timeout should be a non-negative rational.
+   <code>
+    Usage:
+    (acl2s-defaults :set cgen-local-timeout 10)
+    (acl2s-defaults :get cgen-local-timeout)
+    :doc cgen-local-timeout
+   </code>
+   "
+ :guard (and (rationalp value) (<= 0 value)))
+
+        
+(add-acl2s-parameter 
+ cgen-single-test-timeout 1/100
+ :short "Cgen/Testing timeout for single, individual tests (in seconds)"
+ :long
+  "Maximum allowed time (in seconds) for Cgen to check a single test. 
+  The default timeout limit is set to 1/100 sec. This is useful if
+  you have functions that are very slow on some inputs. A simple
+  example is the naive definition of the fibonnaci function.
+  Setting this parameter to 0 amounts to disabling the timeout. 
+  Guard : Timeout should be a non-negative rational.
+   <code>
+    Usage:
+    (acl2s-defaults :set cgen-single-test-timeout 10)
+    (acl2s-defaults :get cgen-single-test-timeout)
+    :doc cgen-single-test-timeout
+   </code>
+   "
+ :guard (and (rationalp value) (<= 0 value)))
+
+(add-acl2s-parameter 
+ print-cgen-summary T
+ :short "Print summary for Cgen"
+ :long " <p>Print summary of cgen/testing done in course of test? form (and
+  other forms). The default is set to @('T'). Setting this parameter to
+  @('NIL'), means that no summary is printed.</p>
+
+   <code>
+    Usage:
+    (acl2s-defaults :set print-cgen-summary t)
+    (acl2s-defaults :get print-cgen-summary)
+    :doc print-cgen-summary
+   </code>
+   "
+ :guard (booleanp value))
+
+(add-acl2s-parameter 
+ backtrack-bad-generalizations t
+ :short "Specify whether to check for and then backtrack from bad generalizations."
+ :long "
+  By default this parameter is set to <tt>t</tt>.
+   <code>
+    Usage:
+    (acl2s-defaults :set backtrack-bad-generalizations t)
+    (acl2s-defaults :get backtrack-bad-generalizations)
+    :doc backtrack-bad-generalizations
+   </code>
+   "
+ :guard (booleanp value))
+
 (add-acl2s-parameter 
  use-fixers nil
  :short "Specify whether fixers are to be used."
@@ -277,107 +430,6 @@ These are stored in the constant @('*acl2s-parameters*') and are package-agnosti
   By default this parameter is set to <tt>t</tt>.
    "
  :guard (booleanp value))
-
-;; Use natural seeds or random tree of natural numbers 
-
-(defconst *sampling-method-values* '(:random :uniform-random :be :mixed))
-
-(add-acl2s-parameter 
- sampling-method :random
- :short "Specify sampling method to be used to instantiate variables "
- :long "
-  Specify which of the following methods to
-  use for instantiating free variables of the conjecture
-  under test: @(':be') or @(':random') or @(':uniform-random') or @(':mixed')
-  By default this parameter is set to the symbol @(':random')
-   <code>
-    Usage:
-    (acl2s-defaults :set sampling-method :random)
-    (acl2s-defaults :get sampling-method)
-    :doc sampling-method
-   </code>
-   "
- :guard (member-eq value *sampling-method-values*))
-
-
-(add-acl2s-parameter 
- backtrack-limit 3
- :short "Maximum number of backtracks allowed (per variable)"
- :long "
-   Maximum number of backtracks allowed by a variable.
-   The default backtrack limit is set to 3. Setting this 
-   parameter to 0 disables the backtracking.
-   <code>
-    Usage:
-    (acl2s-defaults :set backtrack-limit 3)
-    (acl2s-defaults :get backtrack-limit)
-    :doc backtrack-limit
-   </code>
-   "
- :guard (natp value))
-
-(add-acl2s-parameter 
- cgen-timeout 3600 ;bad name -- TODO: change it in a latter version.
- :short "test?/prover timeout (in seconds)"
- :long
-  "Maximum allowed time (in seconds) to be spent
-  in the ACL2 prover on behalf of Cgen/test? macro.
-  This value is used as the second argument of the
-  with-prover-time-limit macro around the call to 
-  prove/cgen.
-
-  The default timeout limit is set to 3600 sec.
-  Guard : Timeout should be a rational.
-   <code>
-    Usage:
-    (acl2s-defaults :set cgen-timeout 3600)
-    (acl2s-defaults :get cgen-timeout)
-    :doc cgen-timeout
-   </code>
-   "
- :guard (rationalp value))
-        
-(add-acl2s-parameter 
- cgen-local-timeout 10
- :short "Cgen/Testing timeout (in seconds)"
- :long
-  "Maximum allowed time (in seconds) for Cgen to
-  search for counterexamples to a particular form/subgoal.
-  The default timeout limit is set to 10 sec.
-  Setting this parameter to 0 amounts to disabling
-  the timeout mechanism, i.e. its a no-op.
-  Guard : Timeout should be a rational.
-   <code>
-    Usage:
-    (acl2s-defaults :set cgen-local-timeout 10)
-    (acl2s-defaults :get cgen-local-timeout)
-    :doc cgen-local-timeout
-   </code>
-   "
- :guard (rationalp value))
-
-(defconst *testing-enabled-values* '(T NIL :naive))
-
-(add-acl2s-parameter 
- testing-enabled :naive
- :short "Testing enable/disable flag"
- :long
-" <p>Testing can be enabled or disabled using this parameter.
-  The default value is  <tt>:naive</tt> (unless you are in
-  the usual ACL2 Sedan session modes, where default is @('t')).
-  Setting this parameter to @('nil') amounts to disabling
-  the testing mechanism. Setting this parameter
-  to <tt>:naive</tt> leads to top-level testing without any
-  theorem prover support.</p>
-  <code>
-   Usage:
-   (acl2s-defaults :set testing-enabled :naive)
-   (acl2s-defaults :get testing-enabled)
-   :doc testing-enabled
-  </code>
-   "
- :guard (member-eq value *testing-enabled-values*)
- :setter set-acl2s-random-testing-enabled)
 
 
 
@@ -516,21 +568,6 @@ These are stored in the constant @('*acl2s-parameters*') and are package-agnosti
 
 
 
-(add-acl2s-parameter 
- print-cgen-summary T
- :short "Print summary for Cgen"
- :long " <p>Print summary of cgen/testing done in course of test? form (and
-  other forms). The default is set to @('T'). Setting this parameter to
-  @('NIL'), means that no summary is printed.</p>
-
-   <code>
-    Usage:
-    (acl2s-defaults :set print-cgen-summary t)
-    (acl2s-defaults :get print-cgen-summary)
-    :doc print-cgen-summary
-   </code>
-   "
- :guard (booleanp value))
 
 
 (defun assoc-eq/pkg-agnostic (s al)

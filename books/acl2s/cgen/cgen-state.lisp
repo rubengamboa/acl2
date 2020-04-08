@@ -125,6 +125,11 @@ cgen-state"
 (defun allowed-cgen-event-ctx-p-no-defun (ctx)
   (declare (xargs :guard t))
   (cond ((equal ctx "( THM ...)") t)
+        ;; Pete: added this test because callback.lisp has this call
+        ;; (init-cgen-state/event (acl2s::acl2s-defaults-alist) start :undefined)
+        ;; and the third arg to init-cgen-state/event is supposed to
+        ;; satisfy allowed-cgen-event-ctx-p
+        ((equal ctx :undefined) t)
         ((member-equal ctx '(ACL2::THM ACL2::DEFTHM ACL2::VERIFY-GUARDS)))
         ((and (consp ctx)
               (member-equal (car ctx) '(ACL2::DEFTHM ACL2::VERIFY-GUARDS))) t)
@@ -157,6 +162,7 @@ cgen-state"
           (search-strategy :search-strategy)
           (testing-enabled :testing-enabled)
           (cgen-local-timeout :cgen-local-timeout)
+          (cgen-single-test-timeout :cgen-single-test-timeout)
           (print-cgen-summary :print-cgen-summary)
           (use-fixers :use-fixers)
           (recursively-fix :recursively-fix)
@@ -173,6 +179,7 @@ cgen-state"
          (member-eq search-strategy acl2s::*search-strategy-values*)
          (member-eq testing-enabled acl2s::*testing-enabled-values*)
          (rationalp cgen-local-timeout)
+         (rationalp cgen-single-test-timeout)
          (booleanp print-cgen-summary)
          (booleanp use-fixers)
          (booleanp recursively-fix)
@@ -222,7 +229,7 @@ cgen-state"
   "increments the number-valued fields of test-outcomes%"
   (declare (xargs :guard (member-eq fld '(cts wts vacs dups))))
   (let* ((fld-dc (string-downcase (symbol-name fld)))
-         (fld-nm (intern-in-package-of-symbol 
+         (fld-nm (acl2s::fix-intern-in-pkg-of-sym 
                   (concatenate-names (list "#" fld-dc)) 'test-outcomes%)))
     `(change test-outcomes% ,fld-nm
              (acl2::|1+F| (access test-outcomes% ,fld-nm)))))

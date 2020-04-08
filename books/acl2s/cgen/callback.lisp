@@ -227,7 +227,8 @@
 ;   in 
     cgen-state))
 
-(defconst *check-bad-generalizations-and-backtrack* nil)
+;Turned into an acl2s parameter
+;(defconst *check-bad-generalizations-and-backtrack* t)
         
 ;; The following function implements a callback function (computed hint)
 ;; which calls the counterexample generation testing code. Thus the
@@ -266,6 +267,7 @@ then it returns (value '(:do-not '(acl2::generalize)
    (b* (
 ;TODObug: test? defaults should be the one to be used
        (vl (acl2s-defaults :get verbosity-level))
+       (backtrack? (acl2s-defaults :get backtrack-bad-generalizations))
        
        ((unless (and (f-boundp-global 'cgen-state state)
                      (cgen-state-p (@ cgen-state)))) 
@@ -381,7 +383,7 @@ Nested testing not allowed! Skipping testing of new goal...~%"
 
 ; Check for false generalizations. TODO also do the same for
 ; cross-fertilization and eliminate-irrelevance if its worth the trouble
-     (if (and *check-bad-generalizations-and-backtrack*
+     (if (and backtrack?
               (equal processor 'acl2::generalize-clause))
          ;NOTE: this pspv (and hist) is for the cl not for cl-list, so there
          ;might be some inconsistency or wierdness here
@@ -416,12 +418,14 @@ Nested testing not allowed! Skipping testing of new goal...~%"
               (num-cts-found (access test-outcomes% |#cts|)))
           (value (if (> num-cts-found 0)
                      (progn$ 
-                      (cw? (verbose-stats-flag vl) "~| Generalized subgoal: ~x0~|" 
+                      (cw? (not (f-get-global 'acl2::gag-mode state))
+                           "~| Generalized subgoal: ~x0~|" 
                            (acl2::prettyify-clause gen-cl nil (w state)))
-                      (cw? (verbose-stats-flag vl)
+                      (cw? (not (f-get-global 'acl2::gag-mode state))
                            "~| Counterexample found: ~x0 ~|"
                            (car (access test-outcomes% cts)))
-                      (cw? (verbose-flag vl) "~| Bad generalization! Backtracking...~|")
+                      (cw? (not (f-get-global 'acl2::gag-mode state))
+                           "~| Bad generalization! Backtracking...~|")
                       '(:do-not '(acl2::generalize)
                                 :no-thanks t))
                    nil)))

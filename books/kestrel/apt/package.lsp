@@ -1,6 +1,6 @@
-; APT (Automated Program Transformations) -- Package
+; APT (Automated Program Transformations) Library
 ;
-; Copyright (C) 2017 Kestrel Institute (http://www.kestrel.edu)
+; Copyright (C) 2020 Kestrel Institute (http://www.kestrel.edu)
 ;
 ; License: A 3-clause BSD license. See the LICENSE file distributed with ACL2.
 ;
@@ -16,7 +16,8 @@
 
 (defpkg "APT" (set-difference-eq
                (append *std-pkg-symbols*
-                       '(*fake-runes*
+                       '(*defiso-table-name*
+                         *fake-runes*
                          *force-xnume*
                          *geneqv-iff*
                          *nil*
@@ -33,8 +34,10 @@
                          append-lst
                          append?
                          apply-fn-if-known
+                         apply-fn-into-ifs
                          apply-term
                          apply-term*
+                         apply-unary-to-terms
                          assert-equal
                          assume-true-false-aggressive-p
                          attachment-pair
@@ -47,8 +50,10 @@
                          conc
                          congruence-rule
                          conjoin
+                         conjoin-equalities
                          conjoin-untranslated-terms
                          conjoin2
+                         cons-term
                          constant-t-function-arity-0
                          control-screen-output
                          convert-soft-error
@@ -59,6 +64,9 @@
                          def-error-checker
                          defattach-system
                          definedp
+                         defiso
+                         defiso-info
+                         defiso-lookup
                          defun-sk-bound-vars
                          defun-sk-imatrix
                          defun-sk-matrix
@@ -75,6 +83,7 @@
                          disable*
                          disjoin
                          do-all
+                         doublet-listp
                          doublets-to-alist
                          drop-fake-runes
                          dumb-negate-lit
@@ -105,6 +114,7 @@
                          ensure-function/lambda-no-stobjs$
                          ensure-function/lambda/term-number-of-results$
                          ensure-function/macro/lambda$
+                         ensure-keyword-value-list
                          ensure-keyword-value-list$
                          ensure-list-no-duplicates$
                          ensure-list-subset$
@@ -123,8 +133,19 @@
                          ensure-term-logic-mode$
                          ensure-term-no-stobjs$
                          ensure-term-not-call-of$
+                         ensure-tuple$
                          equivalence-relationp
                          er-soft+
+                         evmac-appcond-listp
+                         evmac-appcond-theorem-list
+                         evmac-appcond-theorems-no-extra-hints
+                         evmac-appcondp
+                         evmac-input-hints-p
+                         evmac-input-print-p
+                         evmac-process-input-hints
+                         evmac-process-input-hints$
+                         evmac-process-input-print
+                         evmac-process-input-show-only
                          ext-address-subterm-governors-lst
                          ext-address-subterm-governors-lst-state
                          ext-fdeposit-term
@@ -147,10 +168,13 @@
                          fn-rune-nume
                          fn-ubody
                          formals
+                         formals+
                          fquotep
+                         fresh-logical-name-with-$s-suffix
                          fresh-name-in-world-with-$s
                          fsublis-fn-lst-simple
                          fsublis-fn-simple
+                         fsublis-var
                          function-intro-macro
                          function-namep
                          fundef-enabledp
@@ -161,18 +185,21 @@
                          get-unnormalized-bodies
                          guard-raw
                          guard-verified-p
+                         ibody
                          implicate
                          implicate-untranslated-terms
                          impossible
                          induction-machine
                          induction-machine-for-fn
-                         install-not-norm
-                         install-not-norm-event
                          install-not-normalized
+                         install-not-normalized$
+                         install-not-normalized-event
                          install-not-normalized-name
-                         str::intern-list
                          io?
+                         irecursivep
                          justification
+                         keyword-listp
+                         keyword-truelist-alistp
                          keyword-value-list-to-alist
                          lambda-applicationp
                          lambda-body
@@ -180,21 +207,32 @@
                          macro-namep
                          macro-required-args
                          make-event-terse
+                         make-evmac-appcond
+                         make-evmac-appcond?
                          make-implication
                          make-lambda
                          make-lambda-term
+                         make-mv-let-call
+                         make-mv-nth-calls
                          make-paired-name
+                         maybe-pseudo-event-formp
+                         mbt$
                          measure
                          merge-sort-lexorder
                          msg-downcase-first
                          must-eval-to-t
                          must-succeed*
+                         mvify
                          named-formulas-to-thm-events
                          next-numbered-name
                          non-executablep
+                         number-of-results
                          on-failure
                          packn
+                         packn-pos
                          pairlis-x1
+                         pos-fix
+                         pos-listp
                          pseudo-event-form-listp
                          pseudo-event-formp
                          pseudo-lambdap
@@ -202,6 +240,7 @@
                          pseudo-tests-and-call-listp
                          recursive-calls
                          recursivep
+                         remove-assocs-eq
                          remove-keyword
                          remove-lambdas
                          rename-fns
@@ -220,23 +259,28 @@
                          sr-limit
                          stobjs-in
                          stobjs-out
+                         str::intern-list
+                         str::symbol-list-names
                          strip-cddrs
                          strip-keyword-list
                          subcor-var
+                         subcor-var-lst
                          sublis-expr
                          sublis-var
                          subst-expr
                          subst-expr1
                          subst-var
                          symbol-class
-                         str::symbol-list-names
-                         symbol-package-name-safe
+                         symbol-package-name-non-cl
                          symbol-symbol-alistp
+                         symbol-truelist-alistp
                          term-guard-obligation
                          termify-clause-set
                          tests-and-call
                          tests-and-calls
                          theorem-intro-macro
+                         theorem-namep
+                         thm-formula+
                          too-many-ifs-post-rewrite
                          too-many-ifs-pre-rewrite
                          tool2-fn

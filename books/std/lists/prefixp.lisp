@@ -115,7 +115,7 @@ the list @('y')."
   (defthm prefixp-of-take
     (equal (prefixp (take n x) x)
            (<= (nfix n) (len x)))
-    :hints(("Goal" :in-theory (enable acl2::take-redefinition))))
+    :hints(("Goal" :in-theory (enable take))))
 
   (defthm prefixp-reflexive
     (prefixp x x)
@@ -134,11 +134,58 @@ the list @('y')."
                     (prefixp x y)))
     :hints(("Goal"
             :induct (prefixp x y)
-            :in-theory (enable prefixp
-                               list-equiv))))
+            :in-theory (enable prefixp list-equiv))))
 
   (defthm prefixp-when-equal-lengths
     (implies (equal (len x) (len y))
              (equal (prefixp x y)
                     (list-equiv x y)))
-    :hints(("Goal" :in-theory (enable prefixp list-equiv)))))
+    :hints(("Goal" :in-theory (enable prefixp list-equiv))))
+
+  ;; Mihir M. mod: Five lemmas are added below. prefixp-transitive generates
+  ;; two rewrite rules which are identical except in how they bind the free
+  ;; variable y; it is similar with prefixp-one-way-or-another and the free
+  ;; variable z. In nth-when-prefixp, the rewrite rule is a little less general
+  ;; than the theorem in order to avoid endless rewriting.
+  (defthm
+    prefixp-transitive
+    (implies (and (prefixp x y) (prefixp y z))
+             (prefixp x z))
+    :hints (("goal" :in-theory (enable prefixp)))
+    :rule-classes
+    (:rewrite (:rewrite :corollary (implies (and (prefixp y z) (prefixp x y))
+                                            (prefixp x z)))))
+
+  (defthm prefixp-append-append
+    (equal (prefixp (append x1 x2) (append x1 y))
+           (prefixp x2 y))
+    :hints (("goal" :in-theory (enable prefixp))))
+
+  (defthm prefixp-nthcdr-nthcdr
+    (implies (and (>= (len l2) n)
+                  (equal (take n l1) (take n l2)))
+             (equal (prefixp (nthcdr n l1) (nthcdr n l2))
+                    (prefixp l1 l2)))
+    :hints (("goal" :in-theory (enable prefixp))))
+
+  (defthm prefixp-one-way-or-another
+    (implies (and (prefixp x z)
+                  (prefixp y z)
+                  (not (prefixp x y)))
+             (prefixp y x))
+    :hints (("goal" :in-theory (enable prefixp)))
+    :rule-classes
+    (:rewrite (:rewrite :corollary (implies (and (prefixp y z)
+                                                 (prefixp x z)
+                                                 (not (prefixp x y)))
+                                            (prefixp y x)))))
+
+  (defthm
+    nth-when-prefixp
+    (implies (and (prefixp x y) (< (nfix n) (len x)))
+             (equal (nth n y) (nth n x)))
+    :hints (("goal" :in-theory (enable prefixp)))
+    :rule-classes ((:rewrite :corollary (implies (and (prefixp x y)
+                                                      (not (list-equiv x y))
+                                                      (< (nfix n) (len x)))
+                                                 (equal (nth n y) (nth n x)))))))

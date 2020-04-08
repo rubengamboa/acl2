@@ -1,5 +1,5 @@
-; ACL2 Version 8.1 -- A Computational Logic for Applicative Common Lisp
-; Copyright (C) 2018, Regents of the University of Texas
+; ACL2 Version 8.2 -- A Computational Logic for Applicative Common Lisp
+; Copyright (C) 2019, Regents of the University of Texas
 
 ; This version of ACL2 is a descendent of ACL2 Version 1.9, Copyright
 ; (C) 1997 Computational Logic, Inc.  See the documentation topic NOTE-2-0.
@@ -10,7 +10,7 @@
 ; This program is distributed in the hope that it will be useful,
 ; but WITHOUT ANY WARRANTY; without even the implied warranty of
 ; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-; LICENSE for more details.
+; LICENSE file in the main ACL2 source directory for more details.
 
 ; Written by:  Matt Kaufmann               and J Strother Moore
 ; email:       Kaufmann@cs.utexas.edu      and Moore@cs.utexas.edu
@@ -73,7 +73,9 @@
   ;      "control-h f compare-windows", for more info).
   ; "control-t q" is like "control-t w" above, but ignores whitespace (and case
   ;      too, with a positive prefix argument).
-  ; Lisp mode comes up with auto-fill mode on, right margin set at column 79.
+  ; Lisp mode comes up with auto-fill mode on, right margin set at column 79,
+  ;      tabs interpreted using spaces, and a single ";" comment staying on the
+  ;      left margin (search for lisp-mode-hook below).
   ;      If X Windows is being run, then font-lock-mode is also turned on,
   ;      which causes Emacs to color text in .lisp files.  If you don't want
   ;      colors in .lisp files, put this in your .emacs file after the load of
@@ -706,9 +708,16 @@ then also ignore case if that argument is positive, else do not ignore case."
 ; that form.  For example, if the form is (defun foo ...), then
 ; "control-t p" compares that form with the form produced by running
 ; "meta-." on foo.
-(fset 'compare-acl2-patch
-      [?\C-x ?1 ?\C-n ?\C-e ?\C-\M-a ?\C-x ?2 ?\C-x ?o ?\C-f ?\C-\M-f ?\M-f
-	     ?\M-b ?\M-. return ?\C-x ?o ?\C-t ?w])
+(if (string< emacs-version "25")
+    (fset 'compare-acl2-patch
+	  [?\C-x ?1 ?\C-n ?\C-e ?\C-\M-a ?\C-x ?2 ?\C-x ?o ?\C-f ?\C-\M-f ?\M-f
+		 ?\M-b ?\M-. return ?\C-x ?o ?\C-t ?w])
+; The Meta-. command changed in Emacs 25.  The resulting Ctl-t p
+; command can be a bit awkward when there is more than one definition,
+; but it's very workable with a bit of persistence.
+  (fset 'compare-acl2-patch
+	[?\C-x ?1 ?\C-n ?\C-e ?\C-\M-a ?\C-x ?2 ?\C-x ?o ?\C-f ?\C-\M-f ?\M-f
+	       ?\M-b ?\M-. ?\C-x ?o ?\C-t ?w]))
 (define-key ctl-t-keymap "p" 'compare-acl2-patch)
 
 (defun my-lisp-mode-hook ()

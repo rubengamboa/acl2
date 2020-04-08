@@ -8,8 +8,7 @@ package edu.kestrel.acl2.aij;
 
 /**
  * Representation of ACL2 ratios.
- * These are the ACL2 values that satisfy
- * {@code rationalp} but not {@code integerp},
+ * These are the values that satisfy {@code rationalp} but not {@code integerp},
  * i.e. ratios in Common Lisp.
  * <p>
  * This class is not public because code outside this package
@@ -21,24 +20,29 @@ final class Acl2Ratio extends Acl2Rational {
     //////////////////////////////////////// private members:
 
     /**
-     * Numerator of the ACL2 ratio.
-     * This is never {@code null} and always coprime with the denominator.
+     * Numerator of the ratio.
+     * Invariants: not null, coprime with the denominator.
      */
     private final Acl2Integer numerator;
 
     /**
-     * Denominator of the ACL2 ratio.
-     * This is never {@code null} and always greater than 1.
+     * Denominator of the ratio.
+     * Invariants: not null, greater than 1, coprime with the numerator.
      */
     private final Acl2Integer denominator;
 
     /**
-     * Constructs an ACL2 ratio from its numerator and denominator.
+     * Constructs a ratio with the given numerator and denominator.
+     *
+     * @param numerator   The numerator of the ratio.
+     *                    Invariants: not null,
+     *                    coprime with {@code denominator}.
+     * @param denominator The denominator of the ratio.
+     *                    Invariants: not null,
+     *                    greater than 1,
+     *                    coprime with {@code numerator}.
      */
     private Acl2Ratio(Acl2Integer numerator, Acl2Integer denominator) {
-        assert numerator != null && denominator != null &&
-                denominator.compareTo(Acl2Integer.ONE) > 0 &&
-                numerator.gcd(denominator).equals(Acl2Integer.ONE);
         this.numerator = numerator;
         this.denominator = denominator;
     }
@@ -46,98 +50,36 @@ final class Acl2Ratio extends Acl2Rational {
     //////////////////////////////////////// package-private members:
 
     /**
-     * Supports the native implementation of
-     * the {@code unary--} ACL2 function.
+     * Returns a ratio with the given numerator and denominator.
+     *
+     * @param numerator   The numerator of the ratio.
+     *                    Invariants: not null,
+     *                    coprime with {@code denominator}.
+     * @param denominator The denominator of the ratio.
+     *                    Invariants: not null,
+     *                    greater than 1,
+     *                    coprime with {@code numerator}.
+     * @return The ratio.
      */
-    @Override
-    Acl2Rational negate() {
-        // -(a/b) is (-a)/b:
-        Acl2Integer a = this.numerator;
-        Acl2Integer b = this.denominator;
-        return Acl2Rational.make(a.negate(), b);
-    }
-
-    /**
-     * Supports the native implementation of
-     * the {@code unary-/} ACL2 function.
-     */
-    @Override
-    Acl2Rational reciprocate() {
-        // 1/(a/b) is b/a:
-        Acl2Integer a = this.numerator;
-        if (a.equals(Acl2Integer.ZERO))
-            return Acl2Integer.ZERO;
-        Acl2Integer b = this.denominator;
-        return Acl2Rational.make(b, a);
-    }
-
-    /**
-     * Supports the native implementation of
-     * the {@code binary-+} ACL2 function.
-     */
-    @Override
-    Acl2Number add(Acl2Value other) {
-        assert other != null;
-        if (other instanceof Acl2Rational) {
-            // a/b + c/d is (a*(lcm/b)+c*(lcm/d))/lcm,
-            // where lcm is the least common multiple of b and d:
-            Acl2Integer thisNumerator = this.numerator;
-            Acl2Integer thisDenominator = this.denominator;
-            Acl2Integer otherNumerator = other.numerator();
-            Acl2Integer otherDenominator = other.denominator();
-            Acl2Integer lcm = thisDenominator.lcm(otherDenominator);
-            Acl2Integer thisMultiplied = // a*(lcm/b)
-                    (Acl2Integer)
-                            thisNumerator.multiply
-                                    (Acl2Rational.make(lcm, thisDenominator));
-            Acl2Integer otherMultiplied = // c*(lcm/d)
-                    (Acl2Integer)
-                            otherNumerator.multiply
-                                    (Acl2Rational.make(lcm, otherDenominator));
-            return Acl2Rational.make
-                    ((Acl2Integer) thisMultiplied.add(otherMultiplied),
-                            lcm);
-        } else {
-            // use Acl2ComplexRational.add() or Acl2Value.add()
-            // and return the result because addition is commutative:
-            return other.add(this);
-        }
-    }
-
-    /**
-     * Supports the native implementation of
-     * the {@code binary-*} ACL2 function.
-     */
-    @Override
-    Acl2Number multiply(Acl2Value other) {
-        assert other != null;
-        if (other instanceof Acl2Rational) {
-            // (a/b)*(c/d) is (a*c)/(b*d):
-            Acl2Integer resultNumerator =
-                    (Acl2Integer) this.numerator.multiply(other.numerator());
-            Acl2Integer resultDenominator =
-                    (Acl2Integer) this.denominator.multiply(other.numerator());
-            return Acl2Rational.make(resultNumerator, resultDenominator);
-        } else {
-            // use Acl2ComplexRational.multiply() or Acl2Value.multiply()
-            // and return the result because multiplication is commutative:
-            return other.multiply(this);
-        }
+    static Acl2Ratio makeInternal(Acl2Integer numerator,
+                                  Acl2Integer denominator) {
+        return new Acl2Ratio(numerator, denominator);
     }
 
     //////////////////////////////////////// public members:
 
     /**
-     * Checks if this ACL2 integer is equal to the argument object.
+     * Compares this ratio with the argument object for equality.
      * This is consistent with the {@code equal} ACL2 function.
-     * If the argument is not a {@link Acl2Value}, the result is {@code false}.
+     *
+     * @param o The object to compare this ratio with.
+     * @return {@code true} if the object is equal to this ratio,
+     * otherwise {@code false}.
      */
     @Override
     public boolean equals(Object o) {
-        /* Since ratios are disjoint from integers and complex rationals,
-           only a ratio can be equal to another ratio.
-           Since the denominator is positive and coprime with the numerator,
-           two ratio are equal iff their numerator and denominator are. */
+        /* Since the denominator is positive and coprime with the numerator,
+           two ratios are equal iff their numerator and denominator are. */
         if (this == o) return true;
         if (!(o instanceof Acl2Ratio)) return false;
         Acl2Ratio that = (Acl2Ratio) o;
@@ -146,7 +88,9 @@ final class Acl2Ratio extends Acl2Rational {
     }
 
     /**
-     * Returns a hash code for this ACL2 ratio.
+     * Returns a hash code for this ratio.
+     *
+     * @return A hash code for this ratio.
      */
     @Override
     public int hashCode() {
@@ -156,34 +100,11 @@ final class Acl2Ratio extends Acl2Rational {
     }
 
     /**
-     * Compares this ACL2 ratio with the argument ACL2 value for order.
-     * This is consistent with the {@code lexorder} ACL2 function.
+     * Returns a printable representation of this ratio.
+     * We return a Java string that
+     * conforms to ACL2's notation for ratios.
      *
-     * @return a negative integer, zero, or a positive integer as
-     * this ratio is less than, equal to, or greater than the argument
-     * @throws NullPointerException if the argument is null
-     */
-    @Override
-    public int compareTo(Acl2Value o) {
-        if (o == null)
-            throw new NullPointerException();
-        if (o instanceof Acl2Rational) {
-            // a/b is less than or equal to or greater than c/d iff
-            // a*d is less than or equal to or greater than c*b,
-            // since b and d are always positive:
-            Acl2Integer thisMultiplied =
-                    (Acl2Integer) this.numerator.multiply(o.numerator());
-            Acl2Integer thatMultiplied =
-                    (Acl2Integer) o.numerator().multiply(this.denominator);
-            return thisMultiplied.compareTo(thatMultiplied);
-        }
-        // ratios are less than
-        // complex rationals, characters, strings, symbols, and cons pairs:
-        return -1;
-    }
-
-    /**
-     * Returns a printable representation of this ACL2 rational.
+     * @return A printable representation of this ratio.
      */
     @Override
     public String toString() {
@@ -191,25 +112,12 @@ final class Acl2Ratio extends Acl2Rational {
     }
 
     /**
-     * Returns an ACL2 ratio with the given numerator and denominator.
-     * This method must be public because
-     * the corresponding method in {@link Acl2Rational} is public,
-     * but it cannot be called form outside the package
-     * because the {@link Acl2Ratio} class is not public.
-     */
-    public static Acl2Ratio make(Acl2Integer numerator,
-                                 Acl2Integer denominator) {
-        assert numerator != null && denominator != null &&
-                denominator.compareTo(Acl2Integer.ONE) > 0 &&
-                numerator.gcd(denominator).equals(Acl2Integer.ONE);
-        return new Acl2Ratio(numerator, denominator);
-    }
-
-    /**
-     * Returns the numerator of this ACL2 ratio.
+     * Returns the numerator of this ratio.
      * The numerator is in reduced form,
      * i.e. it is coprime with the denominator,
      * and its sign is consistent with a positive denominator.
+     *
+     * @return The numerator of this ratio.
      */
     @Override
     public Acl2Integer getNumerator() {
@@ -218,11 +126,14 @@ final class Acl2Ratio extends Acl2Rational {
 
     /**
      * Returns the denominator of this ACL2 ratio.
-     * The numerator is in reduced form,
+     * The denominator is in reduced form,
      * i.e. it is positive and coprime with the numerator.
+     *
+     * @return The denominator of this ratio.
      */
     @Override
     public Acl2Integer getDenominator() {
         return denominator;
     }
+
 }

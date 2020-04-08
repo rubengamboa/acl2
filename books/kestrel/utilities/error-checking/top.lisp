@@ -1,6 +1,6 @@
 ; Error Checking
 ;
-; Copyright (C) 2018 Kestrel Institute (http://www.kestrel.edu)
+; Copyright (C) 2020 Kestrel Institute (http://www.kestrel.edu)
 ;
 ; License: A 3-clause BSD license. See the LICENSE file distributed with ACL2.
 ;
@@ -10,10 +10,10 @@
 
 (in-package "ACL2")
 
-(include-book "kestrel/utilities/numbered-names" :dir :system)
-(include-book "kestrel/utilities/symbol-true-list-alists" :dir :system)
-(include-book "kestrel/utilities/terms" :dir :system)
-(include-book "kestrel/utilities/xdoc/defxdoc-plus" :dir :system)
+(include-book "kestrel/utilities/system/numbered-names" :dir :system)
+(include-book "kestrel/utilities/system/terms" :dir :system)
+(include-book "std/typed-alists/symbol-truelist-alistp" :dir :system)
+(include-book "xdoc/defxdoc-plus" :dir :system)
 
 (include-book "def-error-checker")
 
@@ -91,10 +91,10 @@
   (((symbol-alistp x)
     "~@0 must be an alist with symbols as keys." description)))
 
-(def-error-checker ensure-symbol-true-list-alist
+(def-error-checker ensure-symbol-truelist-alist
   ((x "Value to check."))
   "Cause an error if a value is not an alist from symbols to true lists."
-  (((symbol-true-list-alistp x)
+  (((symbol-truelist-alistp x)
     "~@0 must be an alist from symbols to true lists."
     description)))
 
@@ -118,7 +118,7 @@
   "Cause an error if any element of a true list
    is not a member of another true list."
   (((subsetp-equal list super)
-    "~@0 must have only elements in ~x1, but it includes the ~@2."
+    "~@0 must have only elements in the list ~x1, but it includes the ~@2."
     description
     super
     (let ((extra (remove-duplicates-equal (set-difference-equal list super))))
@@ -161,6 +161,14 @@
   ((symb symbolp "Symbol to check."))
   "Cause an error if a symbol is a keyword."
   (((not (keywordp symb)) "~@0 must not be a keyword." description)))
+
+(def-error-checker ensure-tuple
+  ((x "Value to check.")
+   (n natp "Length that @('x') must have."))
+  "Cause an error if a value is not a tuple of a given length."
+  (((acl2::tuplep n x)
+    "~@0 must be a NIL-terminated list of ~x1 elements."
+    description n)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 

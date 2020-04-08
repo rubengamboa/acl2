@@ -1,5 +1,5 @@
-; ACL2 Version 8.1 -- A Computational Logic for Applicative Common Lisp
-; Copyright (C) 2018, Regents of the University of Texas
+; ACL2 Version 8.2 -- A Computational Logic for Applicative Common Lisp
+; Copyright (C) 2019, Regents of the University of Texas
 
 ; This version of ACL2 is a descendent of ACL2 Version 1.9, Copyright
 ; (C) 1997 Computational Logic, Inc.  See the documentation topic NOTE-2-0.
@@ -69,7 +69,7 @@
                 "Unable to open file ~x0 for output."
                 outfile))
            (t (pprogn
-               (princ$ "Source files:" ch state)
+               (princ$ "Source files (not including doc.lisp):" ch state)
                (newline ch state)
                (princ$ "------------------------------------" ch state)
                (fms "  CODE LINES:~| ~c0 lines, ~c1 characters"

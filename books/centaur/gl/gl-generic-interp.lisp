@@ -1248,7 +1248,7 @@
 
   (defthm glcp-generic-geval-ev-magic-ev-fncall-special
     (b* (((mv erp val)
-          (acl2::magic-ev-fncall f args st t nil)))
+          (acl2::magic-ev-fncall-logic f args st)))
       (implies (and (glcp-generic-geval-ev-meta-extract-global-facts)
                     (equal (w st) (w state))
                     (not erp))
@@ -1905,7 +1905,7 @@
   )
 
 (local (include-book "std/basic/arith-equivs" :dir :system))
-(local (include-book "clause-processors/constant-prop" :dir :System))
+;; (local (include-book "clause-processors/constant-prop" :dir :System))
 
 (defsection bvar-in-range
   (defund bvar-in-range (k bvar-db)
@@ -2198,12 +2198,13 @@
             ;;                               state)))
             ;;      (value nil))))
             ;;   (& (value nil)))
-            (let ((lit (car clause)))
-              (case-match lit
-                (('not ('acl2::flag-is . &) . &)
-                 '(:computed-hint-replacement
-                   ('(:expand :lambdas))
-                   :clause-processor acl2::constant-prop-cp))))
+            ;; (and stable-under-simplificationp
+            ;;      (let ((lit (car clause)))
+            ;;        (case-match lit
+            ;;          (('not ('acl2::flag-is . &) . &)
+            ;;           '(:computed-hint-replacement
+            ;;             ('(:expand :lambdas))
+            ;;             :clause-processor acl2::constant-prop-cp)))))
             (and stable-under-simplificationp
                  '(; :in-theory (enable acl2::expand-marked-meta)
                    :do-not-induct t
@@ -2615,7 +2616,8 @@
                              (bfr-hyp-init$a)
                              (proper-contextsp)
                              kwote-lst
-                             symbol-listp)))
+                             symbol-listp
+                             acl2::magic-ev-fncall-logic)))
 
   (local (defthm proper-contextsp-of-iff
            (proper-contextsp '(iff))
@@ -3236,12 +3238,12 @@
                                          glcp-generic-geval-ev-lst-of-atom))))))
       :expand-calls t
       :hints (;; '(:error t)
-              (let ((lit (car clause)))
-                (case-match lit
-                  (('not ('acl2::flag-is . &) . &)
-                   '(;; :computed-hint-replacement
-                     ;; ('(:expand :lambdas))
-                     :clause-processor acl2::constant-prop-cp))))
+              ;; (let ((lit (car clause)))
+              ;;   (case-match lit
+              ;;     (('not ('acl2::flag-is . &) . &)
+              ;;      '(;; :computed-hint-replacement
+              ;;        ;; ('(:expand :lambdas))
+              ;;        :clause-processor acl2::constant-prop-cp))))
               (and stable-under-simplificationp
                    '(; :in-theory (enable acl2::expand-marked-meta)
                      :do-not-induct t

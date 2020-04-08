@@ -123,14 +123,19 @@ data last modified: [2014-08-06]
 
 (defun map-attach-constraint-rules-ev (p wrld)
   (b* (((cons name A) p)
-       ((acl2::assocs odef new-types) A)) ;what about pdef?
+       ((acl2::assocs pdef new-types) A)) ;what about pdef?
        
-    (case-match odef
+    (case-match pdef
       (('MAP keybody valbody)
        (b* ((M (append new-types (type-metadata-table wrld)))
-            (pred (predicate-name name M))
-            (?keypred (and (proper-symbolp keybody) (assoc-eq keybody M) (predicate-name keybody M)))
-            (?valpred (and (proper-symbolp keybody) (assoc-eq keybody M) (predicate-name valbody M))))
+            (A (type-alias-table wrld))
+            (pred (predicate-name name A M))
+            (?keypred (and (proper-symbolp keybody)
+                           (assoc-eq keybody M)
+                           (predicate-name keybody A M)))
+            (?valpred (and (proper-symbolp keybody)
+                           (assoc-eq keybody M)
+                           (predicate-name valbody A M))))
          `((defdata-attach ,name
              :constraint (mget a x) ;x is the variable of this type
              :constraint-variable x
@@ -151,20 +156,29 @@ data last modified: [2014-08-06]
 
 
 (program)
+
 (defun map-theory-events (name keybody valbody new-types kwd-alist wrld)
  ; (declare (xargs :mode :program))
 ;assumption: key/val body are core defdata exps (holds because user-combinators occur only at top-level)
   (b* ((M (append new-types (type-metadata-table wrld)))
-       (pred (predicate-name name M))
-       ((when (not (proper-symbolp pred))) (er hard? 'map-theory-events "~| Couldnt find predicate name for ~x0.~%" name))
-       
+       (A (type-alias-table wrld))
+       (pred (predicate-name name A M))
+       ((when (not (proper-symbolp pred)))
+        (er hard? 'map-theory-events
+            "~| Couldnt find predicate name for ~x0.~%" name))
        ((mv ?symbol-alist-subtypep ?keypred) 
         (if (and (proper-symbolp keybody) (assoc-eq keybody M))
-            (mv (subtype-p (predicate-name keybody M) 'acl2::symbolp wrld) (predicate-name keybody M))
+            (mv (subtype-p (predicate-name keybody A M)
+                           'acl2::symbolp wrld)
+                (predicate-name keybody A M))
           (mv nil nil))) ;inconsistent with earlier use of :undef
-       (?valpred (and (proper-symbolp keybody) (assoc-eq keybody M) (predicate-name valbody M)))
+       (?valpred (and (proper-symbolp keybody)
+                      (assoc-eq keybody M)
+                      (predicate-name valbody A M)))
 
        (disabled (get1 :disabled kwd-alist))
+       (curr-pkg (get1 :current-package kwd-alist))
+       (pkg-sym (pkg-witness curr-pkg))
        (disabled (cons 'acl2::mset-diff-mset disabled))
        (local-events-template *map-local-events*)
        (export-defthms-template *map-export-defthms*)
@@ -177,13 +191,13 @@ data last modified: [2014-08-06]
                                      :splice-alist splice-alist
                                      :atom-alist atom-alist
                                      :str-alist str-alist
-                                     :pkg-sym 'acl2::asdf))
+                                     :pkg-sym pkg-sym))
        (export-defthms (template-subst export-defthms-template
                                      :features features
                                      :splice-alist splice-alist
                                      :atom-alist atom-alist
                                      :str-alist str-alist
-                                     :pkg-sym 'acl2::asdf))
+                                     :pkg-sym pkg-sym))
        (all-defthm-names (get-event-names export-defthms))
        (theory-name (get1 :theory-name kwd-alist))
 
@@ -195,10 +209,10 @@ data last modified: [2014-08-06]
 
 (defun map-theory-ev (p top-kwd-alist wrld)
   (b* (((cons name A) p)
-       ((acl2::assocs odef new-types kwd-alist) A) ;what about pdef?
+       ((acl2::assocs pdef new-types kwd-alist) A) ;what about pdef?
        (kwd-alist (append kwd-alist top-kwd-alist)))
        
-    (case-match odef
+    (case-match pdef
       (('MAP key-body val-body) (map-theory-events name key-body val-body new-types kwd-alist wrld))
       (& '()))))
              

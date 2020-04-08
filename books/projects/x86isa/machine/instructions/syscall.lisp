@@ -84,9 +84,7 @@
 
   :body
 
-  (b* ((ctx 'x86-syscall-app-view)
-
-       (ia32-efer (n12 (msri *ia32_efer-idx* x86)))
+  (b* ((ia32-efer (n12 (msri *ia32_efer-idx* x86)))
        ((the (unsigned-byte 1) ia32-efer-sce)
         (ia32_eferBits->sce ia32-efer))
        ((when (mbe :logic (zp ia32-efer-sce)
@@ -123,7 +121,7 @@
 
        ;; Also note that the Jan'13 Intel Manual says (Sec. 3.4.3.3,
        ;; V-1): "They (system flags, of which TF is one) should not be
-       ;; modified by application programs."       
+       ;; modified by application programs."
 
        (x86 (wr64 *r11* (!rflagsBits->tf 1 eflags) x86)) ;; SYSCALL
 
@@ -195,7 +193,7 @@
 
        ;; Clear RF, VM. Reserved bits retain their fixed values. Set
        ;; bit 2 (PF).
-       
+
        (eflags (!rflagsBits->rf 0 eflags))
        (eflags (!rflagsBits->vm 0 eflags)) ;; SYSRET
        (eflags (!rflagsBits->pf 1 eflags))
@@ -224,9 +222,7 @@
 
   :body
 
-  (b* ((ctx 'x86-syscall)
-
-       (ia32-efer (n12 (msri #.*ia32_efer-idx* x86)))
+  (b* ((ia32-efer (n12 (msri #.*ia32_efer-idx* x86)))
        ((the (unsigned-byte 1) ia32-efer-sce)
         (ia32_eferBits->sce ia32-efer))
        ((when (mbe :logic (zp ia32-efer-sce)
@@ -293,7 +289,7 @@
        ;; CS.Base   <- 0;       (* Flat segment *)
        ;; CS.Limit  <- FFFFFH;  (* With 4-KByte granularity, implies a 4-GByte limit *)
        (cs-hidden-base-addr 0)
-       (cs-hidden-limit #xfffff)
+       (cs-hidden-limit #xffffffff) ; this is 32 bits, not 20 bits
        ;; CS.A       <- 1;   (* Accessed. *)
        ;; CS.R       <- 1;   (* Execute/read code. *)
        ;; CS.C       <- 0;
@@ -322,11 +318,6 @@
        (x86 (!seg-hidden-limiti #.*cs* cs-hidden-limit x86))
        (x86 (!seg-hidden-attri #.*cs* cs-attr x86))
 
-       ;; CPL     <- 0;
-       (current-cs-register (the (unsigned-byte 16) (seg-visiblei #.*cs* x86)))
-       (current-cs-register (!segment-selectorBits->rpl 0 current-cs-register))
-       (x86 (!seg-visiblei #.*cs* current-cs-register x86))
-
        ;; SS.Selector <- IA32_STAR[47:32] + 8; (* SS just above CS *)
        (new-ss-selector
         (+ (part-select star :low 32 :high 47) 8))
@@ -343,7 +334,7 @@
        ;; SS.Base  <-  0;      (* Flat segment *)
        ;; SS.Limit <-  FFFFFH; (* With 4-KByte granularity, implies a 4-GByte limit *)
        (ss-hidden-base-addr 0)
-       (ss-hidden-limit #xfffff)
+       (ss-hidden-limit #xffffffff) ; this is 32 bits, not 20 bits
        ((the (unsigned-byte 16) ss-attr) (seg-hidden-attri #.*ss* x86))
        ;; SS.A       <-  1;      (* Accessed. *)
        ;; SS.W       <-  1;      (* Read/write data. *)
@@ -424,9 +415,7 @@
 
   :body
 
-  (b* ((ctx 'x86-sysret)
-
-       ;; We can't *call* SYSRET in any mode other than 64-bit mode
+  (b* (;; We can't *call* SYSRET in any mode other than 64-bit mode
        ;; (including compatibility mode), but when it is called from
        ;; the 64-bit mode *without* REX.W, a mode switch to
        ;; compatibility mode is effected.  From then on, the machine
@@ -500,7 +489,7 @@
        ;; CS.Base  <-  0;      (* Flat segment *)
        ;; CS.Limit <- FFFFFH;  (* With 4-KByte granularity, implies a 4-GByte limit *)
        (cs-base-addr 0)
-       (cs-limit #xfffff)
+       (cs-limit #xffffffff) ; this is 32 bits, not 20 bits
        ((the (unsigned-byte 16) cs-attr) (xr :seg-hidden-attr #.*cs* x86))
        ;; CS.A       <- 1;   (* Accessed. *)
        ;; CS.R       <- 1;   (* Execute/read code. *)
@@ -550,7 +539,7 @@
        ;; SS.Base  <- 0;           (* Flat segment *)
        ;; SS.Limit <- FFFFFH;      (* With 4-KByte granularity, implies a 4-GByte limit *)
        (ss-base-addr 0)
-       (ss-limit #xfffff)
+       (ss-limit #xffffffff) ; this is 32 bits, not 20 bits
        ((the (unsigned-byte 16) ss-attr) (xr :seg-hidden-attr #.*ss* x86))
        ;; SS.A       <-  1;      (* Accessed. *)
        ;; SS.W       <-  1;      (* Read/write data. *)

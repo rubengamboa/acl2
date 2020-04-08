@@ -1,5 +1,5 @@
-; ACL2 Version 8.1 -- A Computational Logic for Applicative Common Lisp
-; Copyright (C) 2018, Regents of the University of Texas
+; ACL2 Version 8.2 -- A Computational Logic for Applicative Common Lisp
+; Copyright (C) 2019, Regents of the University of Texas
 
 ; This version of ACL2 is a descendent of ACL2 Version 1.9, Copyright
 ; (C) 1997 Computational Logic, Inc.  See the documentation topic NOTE-2-0.
@@ -31,7 +31,7 @@
 ; apply$-prim, etc., to interpret built-in symbols like CONS and BINARY-+, (ii)
 ; constraining badge-userfn and apply$-userfn which will be connected to
 ; user-defined functions via warrants, and (iii) defining badge, tamep, apply$,
-; and def-warrant in terms of the functions in (i) and (ii).
+; and defwarrant in terms of the functions in (i) and (ii).
 
 ; The paper above explains how an ordinary certified book could be used to
 ; introduce apply$ into an ACL2 without native support for apply$ -- with one
@@ -84,7 +84,7 @@
 ;  books/system/apply/apply.lisp
 
 ; User:
-;  books/projects/apply/apply-lemmas.lisp
+;  books/projects/apply/base.lisp
 ;  books/projects/apply/report.lisp
 
 ; * The Foundations Group preserves the original construction of apply$ by
@@ -92,14 +92,14 @@
 ; First Order Setting'' but in a different symbol package (since functions of
 ; those names are now defined in ACL2).  The subdirectories ex1/ and ex2/
 ; illustrate the claim (proved in the paper) that for any set of functions
-; accepted by def-warrant it is possible to define badge-userfn and
+; accepted by defwarrant it is possible to define badge-userfn and
 ; apply$-userfn so that all warrants are valid.  We regard the Foundation books
 ; as a historic record and thus static; the books correspond to the paper.
 
 ; * The Source Code Group contains the five files that introduce apply$, et al,
 ; into the source code.  The first one listed above, other-events.lisp, just
-; introduces two partially constrained functions, concrete-badge-userfn and
-; concrete-apply$-userfn, that play a role in the implementation of the
+; introduces two partially constrained functions, doppelganger-badge-userfn and
+; doppelganger-apply$-userfn, that play a role in the implementation of the
 ; evaluation theory for apply$.  We do not discuss that file further here since
 ; it is overwhelmingly concerned with events not related to apply$, but we
 ; discuss the concrete functions extensively in apply-raw.lisp.
@@ -125,7 +125,7 @@
 ; time we imagine the support for apply$ in ACL2 will go beyond what is
 ; described in the paper, e.g., we might enlarge or shrink the set of
 ; primitives, extend the syntactic class of tame expressions, or make
-; def-warrant able to handle mutual recursion.
+; defwarrant able to handle mutual recursion.
 
 ; * The Bootstrapping Group contains the definitions of the Source Code group
 ; but also contains the measures and other machinery needed to prove
@@ -231,6 +231,52 @@
              avoid-fns wrld
              ans)))))))
 
+; Note: The following list is used to determine ancestral dependence on
+; apply$-userfn.  But because apply$ calls apply$-userfn, we think it is
+; probably most efficient to look for apply$ and ev$ instead of just
+; apply$-userfn.  Would it be more efficient still to include the loop$ scions
+; in this list?  On the one hand it would save us from exploring them.  On the
+; other, we'd the list would be longer and more often than not we wouldn't find
+; fn on it anyway.  We opt not to include the loop$ scions.
+
+(defconst *apply$-userfn-callers*
+  '(apply$ ev$ apply$-userfn))
+
+(defconst *blacklisted-apply$-fns*
+
+; The functions listed here are not safe to apply, primarily because their
+; behavior differs from their logical definitions.
+
+   '(SYNP                                      ; bad
+     HIDE                                      ; stupid
+     WORMHOLE1                                 ; restricts arguments
+     WORMHOLE-EVAL                             ; restricts arguments
+     SYS-CALL                                  ; bad -- requires trust tag
+     HONS-CLEAR!                               ; bad -- requires trust tag
+     HONS-WASH!                                ; bad -- requires trust tag
+     UNTOUCHABLE-MARKER                        ; bad -- untouchable
+     ))
+
+; At one time we considered disallowing these functions but we now allow them.
+; We list them here just to document that we considered them and concluded that
+; it is ok to apply$ them.
+
+;    MV-LIST                                   ; we now handle multiple values
+;    MAKE-WORMHOLE-STATUS
+;    SET-WORMHOLE-DATA
+;    SET-WORMHOLE-ENTRY-CODE
+;    WORMHOLE-DATA
+;    WORMHOLE-ENTRY-CODE
+;    WORMHOLE-STATUSP
+;    BREAK$
+;    PRINT-CALL-HISTORY
+;    NEVER-MEMOIZE-FN
+;    MEMOIZE-FORM
+;    CLEAR-MEMOIZE-STATISTICS
+;    MEMOIZE-SUMMARY
+;    CLEAR-MEMOIZE-TABLES
+;    CLEAR-MEMOIZE-TABLE
+
 (defun first-order-like-terms-and-out-arities (world)
 
 ; Search the world for every ACL2 primitive function that does not traffic (in
@@ -261,30 +307,7 @@
   (declare (xargs :mode :program))
   (first-order-like-terms-and-out-arities1
    (function-theory :here)
-   `(SYNP                                      ; bad
-     HIDE                                      ; stupid
-     MV-LIST                                   ; restricts arguments
-     WORMHOLE1                                 ; restricts arguments
-     WORMHOLE-EVAL                             ; restricts arguments
-;    MAKE-WORMHOLE-STATUS
-;    SET-WORMHOLE-DATA
-;    SET-WORMHOLE-ENTRY-CODE
-;    WORMHOLE-DATA
-;    WORMHOLE-ENTRY-CODE
-;    WORMHOLE-STATUSP
-     SYS-CALL                                  ; bad -- requires trust tag
-     HONS-CLEAR!                               ; bad -- requires trust tag
-     HONS-WASH!                                ; bad -- requires trust tag
-;    BREAK$
-;    PRINT-CALL-HISTORY
-;    NEVER-MEMOIZE-FN
-;    MEMOIZE-FORM
-;    CLEAR-MEMOIZE-STATISTICS
-;    MEMOIZE-SUMMARY
-;    CLEAR-MEMOIZE-TABLES
-;    CLEAR-MEMOIZE-TABLE
-
-     )
+   *blacklisted-apply$-fns*
    world
    nil))
 
@@ -318,7 +341,7 @@
 
 ; We originally defined the apply$-badge record here.  But it is needed in
 ; warrantp, which is needed in defattach-constraint-rec.
-; (defrec apply$-badge (authorization-flg arity . ilks) nil)
+; (defrec apply$-badge (arity out-arity . ilks) nil)
 
 (defun compute-badge-of-primitives (terms-and-out-arities)
   (declare (xargs :mode :program))
@@ -329,8 +352,8 @@
                   (output-arity (cdr (car terms-and-out-arities))))
              (hons-acons fn
                          (make apply$-badge
-                               :authorization-flg (eql output-arity 1)
                                :arity (length formals)
+                               :out-arity output-arity
                                :ilks t)
                          (compute-badge-of-primitives
                           (cdr terms-and-out-arities)))))))
@@ -356,12 +379,9 @@
 
 (defun apply$-badgep (x)
   (declare (xargs :guard t))
-  (and (consp x)
-       (eq (car x) 'apply$-badge)
-       (consp (cdr x))
-       (booleanp (access apply$-badge x :authorization-flg))
-       (consp (cddr x))
+  (and (weak-apply$-badge-p x)
        (natp (access apply$-badge x :arity))
+       (natp (access apply$-badge x :out-arity))
        (or (eq (access apply$-badge x :ilks) t)
            (and (true-listp (access apply$-badge x :ilks))
                 (equal (len (access apply$-badge x :ilks))
@@ -402,22 +422,25 @@
   (declare (xargs :mode :program))
   (cond
    ((endp falist) (reverse acc)) ; reversing might be unnecessary
-   (t (let ((fn (car (car falist)))
-            (badge (cdr (car falist))))
-        (cond
-         ((equal (access apply$-badge badge :authorization-flg) t)
-          (let ((call `(,fn ,@(n-car-cadr-caddr-etc
-                               (access apply$-badge badge :arity)
-                               'ARGS))))
-            (make-apply$-prim-body-fn
-             (cdr falist)
-             (cons `(,fn ,(if (member-eq fn *EC-CALL-BAD-OPS*)
-                              (if (eq fn 'return-last)
-                                  '(caddr args)
-                                call)
-                            `(ec-call ,call)))
-                   acc))))
-         (t (make-apply$-prim-body-fn (cdr falist) acc)))))))
+   (t (let* ((fn (car (car falist)))
+             (badge (cdr (car falist)))
+             (call1 `(,fn ,@(n-car-cadr-caddr-etc
+                             (access apply$-badge badge :arity)
+                             'ARGS)))
+             (call2 (if (member-eq fn *EC-CALL-BAD-OPS*)
+                        (cond ((eq fn 'return-last)
+                               '(caddr args))
+                              ((eq fn 'mv-list)
+                               '(cadr args))
+                              (t call1))
+                        `(ec-call ,call1)))
+             (call3 (if (int= (access apply$-badge badge :out-arity) 1)
+                        call2
+                        `(mv-list ',(access apply$-badge badge :out-arity)
+                                  ,call2))))
+        (make-apply$-prim-body-fn
+         (cdr falist)
+         (cons `(,fn ,call3) acc))))))
 
 ; It will be necessary to disable the executable-counterpart of break$ when
 ; verifying the guards for apply$-prim, as is done by "make proofs".  It seems
@@ -444,33 +467,42 @@
 
   (cond
    ((endp falist) nil) ; reversing might be unnecessary
-   (t (let ((fn (car (car falist)))
-            (badge (cdr (car falist))))
-        (cond
-         ((equal (access apply$-badge badge :authorization-flg) t)
-          (let ((fn-to-call (cond ((member fn *ec-call-bad-ops*
-                                           :test 'eq)
-                                   fn)
-                                  (t (let ((*1*fn (*1*-symbol fn)))
-                                       (assert (fboundp *1*fn))
-                                       *1*fn)))))
-            (setf (gethash fn ht)
-                  (cons fn-to-call
-                        (access apply$-badge badge :arity)))
-            (make-apply$-prim-body-fn-raw (cdr falist) ht)))
-         (t (make-apply$-prim-body-fn-raw (cdr falist) ht)))))))
+   (t (let* ((fn (car (car falist)))
+             (badge (cdr (car falist)))
+             (fn-to-call
+
+; Fn-to-call is the name of the function we're to call when fn is applied.  It
+; is typically fn itself but maybe *1*fn.
+
+              (cond ((member fn *ec-call-bad-ops*
+                             :test 'eq)
+                     fn)
+                    (t (let ((*1*fn (*1*-symbol fn)))
+                         (assert (fboundp *1*fn))
+                         *1*fn)))))
+        (setf (gethash fn ht)
+              (list* fn-to-call
+                     (access apply$-badge badge :arity)
+                     (access apply$-badge badge :out-arity)))
+        (make-apply$-prim-body-fn-raw (cdr falist) ht)))))
 
 (defun apply$-prim (fn args)
   (cond ((eq fn 'return-last)
          (caddr args))
-        (t (let ((pair (gethash fn *apply$-prim-ht*)))
-             (and pair
-                  (let ((fn2 (car pair))
-                        (arity (cdr pair)))
+        ((eq fn 'mv-list)
+         (cadr args))
+        (t (let ((trip (gethash fn *apply$-prim-ht*)))
+             (and trip
+                  (let ((fn2 (car trip))
+                        (arity (cadr trip))
+                        (out-arity (cddr trip)))
                     (let ((args (if (int= arity (length args))
                                     args
-                                  (take arity args))))
-                      (apply fn2 args))))))))
+                                    (take arity args))))
+                      (if (int= out-arity 1)
+                          (apply fn2 args)
+                          (multiple-value-list (apply fn2 args))))))))))
+
 (defun-*1* apply$-prim (fn args)
   (if (true-listp args) ; guard
       (apply$-prim fn args)
@@ -490,7 +522,6 @@
 (set-raw-mode nil)
 
 (defmacro make-apply$-prim-body ()
-; We ignore primitives whose authorization-flg is nil.
   `(case fn
      ,@(make-apply$-prim-body-fn *badge-prim-falist* nil)
      (otherwise nil)))

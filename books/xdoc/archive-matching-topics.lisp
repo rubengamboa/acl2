@@ -35,6 +35,7 @@
 (include-book "std/util/bstar" :dir :system)
 (include-book "xdoc-error")
 (include-book "std/strings/fast-cat" :dir :system) ;; needed to make string concatenations fast enough.
+(include-book "defxdoc-raw") ;; for all-xdoc-topics
 (program)
 
 (defun remove-bound-topics (x fal acc)
@@ -52,7 +53,9 @@
       (mv (reverse acc) used-fal)
      (b* ((name (cdr (assoc :name (car x))))
           (look (hons-get name fal)))
-       (if look
+       (if (and look
+                (equal (cdr (assoc :from (car x)))
+                       (cdr (assoc :from (cdr look)))))
            (replace-bound-topics
             (cdr x) fal (cons (cdr look) acc)
             (hons-acons name t used-fal))
@@ -87,7 +90,7 @@
                 (declare (xargs :mode :program))
                 (declare (ignorable state))
                 (if (atom x)
-                    acc
+                    (reverse acc)
                   (filter-matching-topics
                    (cdr x) state
                    (let* ((,x (car x))
@@ -98,7 +101,8 @@
                        acc))))))
        (comp t) ; Matt K. mod: seems necessary for Allegro CL
        (make-event
-        (b* ((topics (filter-matching-topics (get-xdoc-table (w state)) state nil))
+        (b* (((er all-topics) (all-xdoc-topics state))
+             (topics (filter-matching-topics all-topics state nil))
              (prev-get-event-table (and (boundp-global 'xdoc-get-event-table state)
                                         (list (@ xdoc-get-event-table))))
              (state (f-put-global 'xdoc-get-event-table

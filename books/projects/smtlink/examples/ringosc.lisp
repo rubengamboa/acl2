@@ -1,3 +1,9 @@
+;; Copyright (C) 2015, University of British Columbia
+;; Written by Yan Peng (May 2019)
+;;
+;; License: A 3-clause BSD license.
+;; See the LICENSE file distributed with ACL2
+
 (in-package "SMT")
 (include-book "inverter")
 ; cert_param: (uses-smtlink)
@@ -92,6 +98,7 @@
        ((unless (ringosc3-one-safe-state r first)) nil))
     (ringosc3-one-safe-trace r rest)))
 
+(acl2::without-waterfall-parallelism ; MattK. mod for ACL2(p)
 (defthm ringosc3-one-safe-lemma
   (implies (and (ringosc3-p r)
                 (any-trace-p tr)
@@ -146,6 +153,7 @@
                                              :level 0)
                              ))
            )))
+)
 
 (defthm ringosc3-one-safe
   (implies (and (ringosc3-p r)

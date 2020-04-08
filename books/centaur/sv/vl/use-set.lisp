@@ -1840,7 +1840,7 @@
          (lsb (lnfix lsb))
          (width (lposfix width))
          (dim1 (car dims))
-         ((vl-range range) (vl-dimension->range dim1))
+         (range (vl-dimension->range dim1))
          (n-entries (vl-range-size range))
          (full-size (* n-entries entry-size))
          ((when (eql entry-size 0)) nil)
@@ -2234,7 +2234,7 @@
                                    (path-scope-of-fields
                                     path-wire-of-fields)))))))
 (fty::deflist addresslist :elt-type address :true-listp t)
-(fty::deflist pathlist :elt-type path :true-listp t)
+(local (fty::deflist pathlist :elt-type path :true-listp t))
 
 (acl2::defsort pathlist-sort (x)
   :comparablep path-p

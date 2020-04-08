@@ -85,14 +85,11 @@
 
   :returns (x86 x86p :hyp (x86p x86))
 
+  :modr/m t
+
   :body
-  (b* ((ctx 'x86-adds?/subs?/muls?/divs?/maxs?/mins?-Op/En-RM)
 
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-
-       ((the (integer 4 8) operand-size)
+  (b* (((the (integer 4 8) operand-size)
         (if (equal sp/dp #.*OP-DP*) 8 4))
        ((the (unsigned-byte 4) xmm-index)
         (reg-index reg rex-byte #.*r*))
@@ -101,7 +98,7 @@
        (p2 (prefixes->seg prefixes))
        (p4? (eql #.*addr-size-override* (prefixes->adr prefixes)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        (inst-ac?
         ;; Exceptions Type 3
@@ -173,14 +170,11 @@
 
   :returns (x86 x86p :hyp (x86p x86))
 
+  :modr/m t
+
   :body
-  (b* ((ctx 'x86-addps/subps/mulps/divps/maxps/minps-Op/En-RM)
 
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-
-       ((the (unsigned-byte 4) xmm-index)
+  (b* (((the (unsigned-byte 4) xmm-index)
         (reg-index reg rex-byte #.*r*))
 
        ((the (unsigned-byte 128) xmm)
@@ -190,7 +184,7 @@
 
        (p4? (eql #.*addr-size-override* (prefixes->adr prefixes)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        (inst-ac?
         ;; Exceptions Type 2
@@ -316,17 +310,11 @@
 
   :returns (x86 x86p :hyp (x86p x86))
 
+  :modr/m t
+
   :body
-  (b* ((ctx 'x86-addpd/subpd/mulpd/divpd/maxpd/minpd-Op/En-RM)
 
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-       (lock (eql #.*lock* (prefixes->lck prefixes)))
-       ((when lock)
-        (!!ms-fresh :lock-prefix prefixes))
-
-       ((the (unsigned-byte 4) xmm-index)
+  (b* (((the (unsigned-byte 4) xmm-index)
         (reg-index reg rex-byte #.*r*))
 
        ((the (unsigned-byte 128) xmm)
@@ -336,7 +324,7 @@
 
        (p4? (eql #.*addr-size-override* (prefixes->adr prefixes)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        (inst-ac?
         ;; Exceptions Type 2
@@ -438,17 +426,11 @@
 
   :returns (x86 x86p :hyp (x86p x86))
 
+  :modr/m t
+
   :body
-  (b* ((ctx 'x86-sqrts?-Op/En-RM)
 
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-       (lock (eql #.*lock* (prefixes->lck prefixes)))
-       ((when lock)
-        (!!ms-fresh :lock-prefix prefixes))
-
-       ((the (integer 4 8) operand-size)
+  (b* (((the (integer 4 8) operand-size)
         (if (equal sp/dp #.*OP-DP*) 8 4))
 
        ((the (unsigned-byte 4) xmm-index)
@@ -458,7 +440,7 @@
 
        (p4? (eql #.*addr-size-override* (prefixes->adr prefixes)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        (inst-ac?
         ;; Exceptions Type 3
@@ -523,24 +505,18 @@
 
   :returns (x86 x86p :hyp (x86p x86))
 
+  :modr/m t
+
   :body
-  (b* ((ctx 'x86-sqrtps-Op/En-RM)
 
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-       (lock (eql #.*lock* (prefixes->lck prefixes)))
-       ((when lock)
-        (!!ms-fresh :lock-prefix prefixes))
-
-       ((the (unsigned-byte 4) xmm-index)
+  (b* (((the (unsigned-byte 4) xmm-index)
         (reg-index reg rex-byte #.*r*))
 
        (p2 (prefixes->seg prefixes))
 
        (p4? (eql #.*addr-size-override* (prefixes->adr prefixes)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        (inst-ac?
         ;; Exceptions Type 2
@@ -655,24 +631,18 @@
 
   :returns (x86 x86p :hyp (x86p x86))
 
+  :modr/m t
+
   :body
-  (b* ((ctx 'x86-sqrtpd-Op/En-RM)
 
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-       (lock (eql #.*lock* (prefixes->lck prefixes)))
-       ((when lock)
-        (!!ms-fresh :lock-prefix prefixes))
-
-       ((the (unsigned-byte 4) xmm-index)
+  (b* (((the (unsigned-byte 4) xmm-index)
         (reg-index reg rex-byte #.*r*))
 
        (p2 (prefixes->seg prefixes))
 
        (p4? (eql #.*addr-size-override* (prefixes->adr prefixes)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        (inst-ac?
         ;; Exceptions Type 2

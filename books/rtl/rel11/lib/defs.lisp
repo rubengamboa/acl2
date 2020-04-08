@@ -28,6 +28,13 @@
   (declare (xargs :guard (real/rationalp x)))
   (- (fl (- x))))
 
+(defund congruent (a b n)
+  (declare (xargs :guard (and (real/rationalp a)
+                              (real/rationalp b)
+                              (real/rationalp n)
+                              (not (= n 0)))))
+  (equal (mod a n) (mod b n)))
+
 (defund chop (x k)
   (declare (xargs :guard (and (real/rationalp x)
                               (integerp k))))
@@ -105,6 +112,8 @@
            l)
     0))
 
+(defnd ui (r) r)
+
 (defund si (r n)
   (declare (xargs :guard (and (integerp r)
                               (natp n))))
@@ -117,6 +126,18 @@
                               (natp n)
                               (integerp r))))
   (bits (si r n) (1- m) 0))
+
+(defund uf (r n m)
+  (declare (xargs :guard (and (natp r)
+                              (natp n)
+                              (natp m))))
+  (* (expt 2 (- m n)) (ui r)))
+
+(defund sf (r n m)
+  (declare (xargs :guard (and (integerp r)
+                              (natp n)
+                              (natp m))))
+  (* (expt 2 (- m n)) (si r n)))
 
 (defnd sgn (x)
   (if (or (not (rationalp x)) (equal x 0))
@@ -193,7 +214,9 @@
 
 (defnd ep () '(t 64 15))
 
-(in-theory (disable (sp) (dp) (ep)))
+(defnd bf () '(nil 8 8))
+
+(in-theory (disable (sp) (dp) (ep) (bf)))
 
 (defund sgnf (x f)
   (declare (xargs :guard (encodingp x f)))

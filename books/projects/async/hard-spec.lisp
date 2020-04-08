@@ -1,10 +1,13 @@
 ;; Copyright (C) 2017, Regents of the University of Texas
-;; Written by Cuong Chau
+;; Written by Cuong Chau (derived from the FM9001 work of Brock and Hunt)
 ;; License: A 3-clause BSD license.  See the LICENSE file distributed with
 ;; ACL2.
 
+;; The ACL2 source code for the FM9001 work is available at
+;; https://github.com/acl2/acl2/tree/master/books/projects/fm9001.
+
 ;; Cuong Chau <ckcuong@cs.utexas.edu>
-;; September 2018
+;; March 2019
 
 (in-package "ADE")
 
@@ -1035,6 +1038,10 @@
 (defthm cadr-v-threefix
   (equal (cadr (v-threefix x))
          (3v-fix (cadr x))))
+
+(defthm caddr-v-threefix
+  (equal (caddr (v-threefix x))
+         (3v-fix (caddr x))))
 
 (defthm append-v-threefix
   (equal (append (v-threefix a)

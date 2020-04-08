@@ -1,5 +1,5 @@
-; ACL2 Version 8.1 -- A Computational Logic for Applicative Common Lisp
-; Copyright (C) 2018, Regents of the University of Texas
+; ACL2 Version 8.2 -- A Computational Logic for Applicative Common Lisp
+; Copyright (C) 2019, Regents of the University of Texas
 
 ; This version of ACL2 is a descendent of ACL2 Version 1.9, Copyright
 ; (C) 1997 Computational Logic, Inc.  See the documentation topic NOTE-2-0.
@@ -51,9 +51,9 @@
 
 (defun dumb-occur (x y)
 
-; This function determines if term x occurs in term y, but does not
-; look for x inside of quotes.  It is thus equivalent to occur if you
-; know that x is not a quotep.
+; This function determines if term x occurs free in term y, but does not look
+; for x inside of quotes.  It is thus equivalent to occur if you know that x is
+; not a quotep.
 
   (cond ((equal x y) t)
         ((variablep y) nil)
@@ -374,15 +374,20 @@
 (defconst *fake-rune-for-anonymous-enabled-rule*
   '(:FAKE-RUNE-FOR-ANONYMOUS-ENABLED-RULE nil))
 
+(defmacro fake-rune-for-anonymous-enabled-rule-p (rune)
+
+; Rather than pay the price of recognizing the
+; *fake-rune-for-anonymous-enabled-rule* perfectly we exploit the fact that no
+; true rune has :FAKE-RUNE-FOR-ANONYMOUS-ENABLED-RULE as its token.
+
+  `(eq (car ,rune) :FAKE-RUNE-FOR-ANONYMOUS-ENABLED-RULE))
+
 (defabbrev push-lemma (rune ttree)
 
 ; This is just (add-to-tag-tree 'lemma rune ttree) and is named in honor of the
-; corresponding act in Nqthm.  We do not record uses of the fake rune.  Rather
-; than pay the price of recognizing the *fake-rune-for-anonymous-enabled-rule*
-; perfectly we exploit the fact that no true rune has
-; :FAKE-RUNE-FOR-ANONYMOUS-ENABLED-RULE as its token.
+; corresponding act in Nqthm.  We do not record uses of the fake rune.
 
-  (cond ((eq (car rune) :FAKE-RUNE-FOR-ANONYMOUS-ENABLED-RULE) ttree)
+  (cond ((fake-rune-for-anonymous-enabled-rule-p rune) ttree)
         (t (add-to-tag-tree 'lemma rune ttree))))
 
 ; Historical Note from the days when tag-trees were constructed using (acons
@@ -766,8 +771,10 @@
    ((endp type-alist) nil)
    ((contains-assumptionp (cddar type-alist))
     (remove-assumption-entries-from-type-alist (cdr type-alist)))
-   (t (cons (car type-alist)
-            (remove-assumption-entries-from-type-alist (cdr type-alist))))))
+   (t (cons-with-hint
+       (car type-alist)
+       (remove-assumption-entries-from-type-alist (cdr type-alist))
+       type-alist))))
 
 (defun force-assumption1
   (rune target term type-alist rewrittenp immediatep ttree)

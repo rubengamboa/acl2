@@ -1,10 +1,13 @@
 ;; Copyright (C) 2017, Regents of the University of Texas
-;; Written by Cuong Chau
+;; Written by Cuong Chau (derived from the FM9001 work of Brock and Hunt)
 ;; License: A 3-clause BSD license.  See the LICENSE file distributed with
 ;; ACL2.
 
+;; The ACL2 source code for the FM9001 work is available at
+;; https://github.com/acl2/acl2/tree/master/books/projects/fm9001.
+
 ;; Cuong Chau <ckcuong@cs.utexas.edu>
-;; October 2018
+;; May 2019
 
 (in-package "ADE")
 
@@ -67,20 +70,38 @@
   (implies (not (member name names))
            (not (assoc-eq-value name (pairlis$ names values)))))
 
+(defthm assoc-eq-value-pairlis$-append-member
+  (implies (member a x)
+           (equal (assoc-eq-value a (pairlis$ (append x y) l))
+                  (assoc-eq-value a (pairlis$ x l)))))
+
+(local
+ (defun assoc-eq-value-pairlis$-append-not-member-induct (x l)
+   (if (atom x)
+       l
+     (assoc-eq-value-pairlis$-append-not-member-induct (cdr x) (cdr l)))))
+
+(defthm assoc-eq-value-pairlis$-append-not-member
+  (implies (not (member a x))
+           (equal (assoc-eq-value a (pairlis$ (append x y) l))
+                  (assoc-eq-value a (pairlis$ y (nthcdr (len x) l)))))
+  :hints (("Goal"
+           :induct (assoc-eq-value-pairlis$-append-not-member-induct x l))))
+
 (defthm assoc-eq-value-update-alist-1
   (implies (and (equal occ-name1 occ-name2)
-                (consp (assoc-eq occ-name2 sts-alist)))
+                (consp (assoc-eq occ-name2 st-alist)))
            (equal (assoc-eq-value occ-name1
-                                  (update-alist occ-name2 sts sts-alist))
-                  sts))
+                                  (update-alist occ-name2 st st-alist))
+                  st))
   :hints (("Goal" :in-theory (enable update-alist))))
 
 (defthm assoc-eq-value-update-alist-2
   (implies (not (equal occ-name1 occ-name2))
            (equal (assoc-eq-value occ-name1
-                                  (update-alist occ-name2 sts sts-alist))
+                                  (update-alist occ-name2 st st-alist))
                   (assoc-eq-value occ-name1
-                                  sts-alist)))
+                                  st-alist)))
   :hints (("Goal" :in-theory (enable update-alist))))
 
 (defthmd assoc-eq-value-nth-pairlis$
@@ -93,9 +114,9 @@
                   (nth n vals))))
 
 (defthm assoc-eq-value-of-si-pairlis$-sis
-  (implies (and (natp m)
+  (implies (and (natp i)
+                (natp m)
                 (posp n)
-                (natp i)
                 (<= m i)
                 (< i (+ m n))
                 (<= n (len vals)))
@@ -176,6 +197,21 @@
            (equal (assoc-eq-values args1 (append (pairlis$ args2 a)
                                                  b))
                   (assoc-eq-values args1 b))))
+
+(defthm assoc-eq-values-pairlis$-append-when-subset
+  (implies (subsetp x y)
+           (equal (assoc-eq-values x (pairlis$ (append y z) l))
+                  (assoc-eq-values x (pairlis$ y (take (len y) l)))))
+  :hints (("Goal" :in-theory (enable pairlis$-of-take))))
+
+(defthm assoc-eq-values-pairlis$-append-when-disjoint
+  (implies
+   (or (disjoint x y)
+       (disjoint y x))
+   (equal (assoc-eq-values x (pairlis$ (append y z) l))
+          (assoc-eq-values x (pairlis$ z (take (len z)
+                                               (nthcdr (len y) l))))))
+  :hints (("Goal" :in-theory (enable disjoint pairlis$-of-take))))
 
 (defthm assoc-eq-values-take-1
   (implies (and (no-duplicatesp l)
@@ -306,9 +342,9 @@
 (in-theory (disable assoc-eq-values))
 
 (defthm assoc-eq-values-of-sis-pairlis$-sis
-  (implies (and (natp m)
+  (implies (and (natp i)
+                (natp m)
                 (natp n)
-                (natp i)
                 (<= m i)
                 (<= (+ i j) (+ m n))
                 (true-listp vals)

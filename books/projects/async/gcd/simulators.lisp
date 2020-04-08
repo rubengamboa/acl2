@@ -4,14 +4,14 @@
 ;; ACL2.
 
 ;; Cuong Chau <ckcuong@cs.utexas.edu>
-;; December 2018
+;; May 2019
 
 (in-package "ADE")
 
-(include-book "comp-gcd")
-(include-book "comp-gcd2")
-(include-book "q10-comp-gcd3")
-(include-book "q10-gcd")
+(include-book "gcd2")
+(include-book "gcd3")
+(include-book "q10-comp-gcd")
+(include-book "q10-gcd1")
 (include-book "../fifo/simulators")
 (include-book "../serial-adder/simulators")
 
@@ -19,477 +19,477 @@
 
 ;;; Simulators for:
 ;;;
-;;; 1. GCD
-;;; 2. COMP-GCD-BODY
-;;; 3. COMP-GCD
-;;; 4. COMP-GCD-BODY2
-;;; 5. COMP-GCD2
+;;; 1. GCD1
+;;; 2. GCD-BODY2
+;;; 3. GCD2
+;;; 4. GCD-BODY3
+;;; 5. GCD3
 ;;; 6. COMP-GCD-COND
-;;; 7. COMP-GCD3
-;;; 8. Q10-GCD
-;;; 9. Q10-COMP-GCD3
+;;; 7. COMP-GCD
+;;; 8. Q10-GCD1
+;;; 9. Q10-COMP-GCD
 
 ;; ======================================================================
 
-(defun v-to-nat-split-lst (seq data-width)
+(defun v-to-nat-split-lst (seq data-size)
     (declare (xargs :guard (and (true-list-listp seq)
-                                (natp data-width))))
+                                (natp data-size))))
     (if (atom seq)
         nil
-      (cons (list (v-to-nat (take data-width (car seq)))
-                  (v-to-nat (nthcdr data-width (car seq))))
-            (v-to-nat-split-lst (cdr seq) data-width))))
+      (cons (list (v-to-nat (take data-size (car seq)))
+                  (v-to-nat (nthcdr data-size (car seq))))
+            (v-to-nat-split-lst (cdr seq) data-size))))
 
-;; 1. GCD
+;; 1. GCD1
 
 (progn
-  (defun gcd$map-to-links (st)
-    (b* ((s (get-field *gcd$s* st))
-         (l0 (get-field *gcd$l0* st))
-         (l1 (get-field *gcd$l1* st))
-         (l2 (get-field *gcd$l2* st)))
+  (defun gcd1$map-to-links (st)
+    (b* ((s (nth *gcd1$s* st))
+         (l0 (nth *gcd1$l0* st))
+         (l1 (nth *gcd1$l1* st))
+         (l2 (nth *gcd1$l2* st)))
       (append (map-to-links1 (list (cons 's s)))
               (map-to-links (list (cons 'l0 l0)
                                   (cons 'l1 l1)
                                   (cons 'l2 l2))))))
 
-  (defun gcd$map-to-links-list (x)
+  (defun gcd1$map-to-links-list (x)
     (if (atom x)
         nil
-      (cons (gcd$map-to-links (car x))
-            (gcd$map-to-links-list (cdr x)))))
+      (cons (gcd1$map-to-links (car x))
+            (gcd1$map-to-links-list (cdr x)))))
 
-  (defund gcd$st-gen (data-width)
-    (declare (xargs :guard (natp data-width)))
+  (defund gcd1$st-gen (data-size)
+    (declare (xargs :guard (natp data-size)))
     (b* ((full '(t))
          (empty '(nil))
-         (invalid-data (make-list (* 2 data-width) :initial-element '(x))))
+         (invalid-data (make-list (* 2 data-size) :initial-element '(x))))
       (list (list full '(nil))
             (list empty invalid-data)
             (list empty invalid-data)
             (list empty invalid-data))))
 
-  (defund gcd$ins-and-st-test (data-width n state)
-    (declare (xargs :guard (and (natp data-width)
+  (defund gcd1$ins-and-st-test (data-size n state)
+    (declare (xargs :guard (and (natp data-size)
                                 (natp n))
                     :verify-guards nil
                     :stobjs state))
-    (b* ((num-signals (gcd$ins-len data-width))
+    (b* ((num-signals (gcd1$ins-len data-size))
          ((mv inputs-seq state)
           (signal-vals-gen num-signals n state nil))
-         (st (gcd$st-gen data-width)))
-      (mv (and (gcd$input-format-n inputs-seq data-width n)
-               (gcd$valid-st st data-width)
-               (gcd$inv st))
+         (st (gcd1$st-gen data-size)))
+      (mv (and (gcd1$input-format-n inputs-seq data-size n)
+               (gcd1$valid-st st data-size)
+               (gcd1$inv st))
           state)))
 
   (local
-   (defthm gcd$ins-and-st-test-ok
-     (gcd$ins-and-st-test 4 10 state)))
+   (defthm gcd1$ins-and-st-test-ok
+     (gcd1$ins-and-st-test 4 10 state)))
 
-  (defund gcd$sim (data-width n state)
-    (declare (xargs :guard (and (natp data-width)
+  (defund gcd1$sim (data-size n state)
+    (declare (xargs :guard (and (natp data-size)
                                 (natp n))
                     :verify-guards nil
                     :stobjs state))
-    (b* ((num-signals (gcd$ins-len data-width))
+    (b* ((num-signals (gcd1$ins-len data-size))
          ((mv inputs-seq state)
           (signal-vals-gen num-signals n state nil))
-         (st (gcd$st-gen data-width)))
+         (st (gcd1$st-gen data-size)))
       (mv (pretty-list
            (remove-dup-neighbors
-            (gcd$map-to-links-list
-             (de-sim-trace (si 'gcd data-width)
+            (gcd1$map-to-links-list
+             (de-sim-trace (si 'gcd1 data-size)
                            inputs-seq
                            st
-                           (gcd$netlist data-width))))
+                           (gcd1$netlist data-size))))
            0)
           state)))
 
-  (defund gcd$in-out-sim (data-width n state)
-    (declare (xargs :guard (and (natp data-width)
+  (defund gcd1$in-out-sim (data-size n state)
+    (declare (xargs :guard (and (natp data-size)
                                 (natp n))
                     :verify-guards nil
                     :stobjs state))
-    (b* ((num-signals (gcd$ins-len data-width))
+    (b* ((num-signals (gcd1$ins-len data-size))
          ((mv inputs-seq state)
           (signal-vals-gen num-signals n state nil))
-         (st (gcd$st-gen data-width)))
+         (st (gcd1$st-gen data-size)))
       (mv
        (append
         (list (cons 'in-seq
                     (v-to-nat-split-lst
-                     (gcd$in-seq inputs-seq st data-width n)
-                     data-width)))
+                     (gcd1$in-seq inputs-seq st data-size n)
+                     data-size)))
         (list (cons 'out-seq
                     (v-to-nat-lst
-                     (gcd$out-seq inputs-seq st data-width n)))))
+                     (gcd1$out-seq inputs-seq st data-size n)))))
        state)))
   )
 
-;; 2. COMP-GCD-BODY
+;; 2. GCD-BODY2
 
 (progn
-  (defun comp-gcd-body$map-to-links (st)
-    (b* ((l0 (get-field *comp-gcd-body$l0* st))
-         (l1 (get-field *comp-gcd-body$l1* st))
-         (l2 (get-field *comp-gcd-body$l2* st)))
+  (defun gcd-body2$map-to-links (st)
+    (b* ((l0 (nth *gcd-body2$l0* st))
+         (l1 (nth *gcd-body2$l1* st))
+         (l2 (nth *gcd-body2$l2* st)))
       (map-to-links (list (cons 'l0 l0)
                           (cons 'l1 l1)
                           (cons 'l2 l2)))))
 
-  (defun comp-gcd-body$map-to-links-list (x)
+  (defun gcd-body2$map-to-links-list (x)
     (if (atom x)
         nil
-      (cons (comp-gcd-body$map-to-links (car x))
-            (comp-gcd-body$map-to-links-list (cdr x)))))
+      (cons (gcd-body2$map-to-links (car x))
+            (gcd-body2$map-to-links-list (cdr x)))))
 
-  (defund comp-gcd-body$st-gen (data-width)
-    (declare (xargs :guard (natp data-width)))
+  (defund gcd-body2$st-gen (data-size)
+    (declare (xargs :guard (natp data-size)))
     (b* ((empty '(nil))
-         (invalid-data (make-list data-width :initial-element '(x)))
-         (invalid-data2 (make-list (* 2 data-width) :initial-element '(x))))
+         (invalid-data (make-list data-size :initial-element '(x)))
+         (invalid-data2 (make-list (* 2 data-size) :initial-element '(x))))
       (list (list empty invalid-data2)
             (list empty invalid-data)
             (list empty invalid-data))))
 
-  (defund comp-gcd-body$ins-and-st-test (data-width n state)
-    (declare (xargs :guard (and (natp data-width)
+  (defund gcd-body2$ins-and-st-test (data-size n state)
+    (declare (xargs :guard (and (natp data-size)
                                 (natp n))
                     :verify-guards nil
                     :stobjs state))
-    (b* ((num-signals (comp-gcd-body$ins-len data-width))
+    (b* ((num-signals (gcd-body2$ins-len data-size))
          ((mv inputs-seq state)
           (signal-vals-gen num-signals n state nil))
-         (st (comp-gcd-body$st-gen data-width)))
-      (mv (and (comp-gcd-body$input-format-n inputs-seq data-width n)
-               (comp-gcd-body$valid-st st data-width)
-               (comp-gcd-body$inv st))
+         (st (gcd-body2$st-gen data-size)))
+      (mv (and (gcd-body2$input-format-n inputs-seq data-size n)
+               (gcd-body2$valid-st st data-size)
+               (gcd-body2$inv st))
           state)))
 
   (local
-   (defthm comp-gcd-body$ins-and-st-test-ok
-     (comp-gcd-body$ins-and-st-test 4 10 state)))
+   (defthm gcd-body2$ins-and-st-test-ok
+     (gcd-body2$ins-and-st-test 4 10 state)))
 
-  (defund comp-gcd-body$sim (data-width n state)
-    (declare (xargs :guard (and (natp data-width)
+  (defund gcd-body2$sim (data-size n state)
+    (declare (xargs :guard (and (natp data-size)
                                 (natp n))
                     :verify-guards nil
                     :stobjs state))
-    (b* ((num-signals (comp-gcd-body$ins-len data-width))
+    (b* ((num-signals (gcd-body2$ins-len data-size))
          ((mv inputs-seq state)
           (signal-vals-gen num-signals n state nil))
-         (st (comp-gcd-body$st-gen data-width)))
+         (st (gcd-body2$st-gen data-size)))
       (mv (pretty-list
            (remove-dup-neighbors
-            (comp-gcd-body$map-to-links-list
-             (de-sim-trace (si 'comp-gcd-body data-width)
+            (gcd-body2$map-to-links-list
+             (de-sim-trace (si 'gcd-body2 data-size)
                            inputs-seq
                            st
-                           (comp-gcd-body$netlist data-width))))
+                           (gcd-body2$netlist data-size))))
            0)
           state)))
 
-  (defund comp-gcd-body$in-out-sim (data-width n state)
-    (declare (xargs :guard (and (natp data-width)
+  (defund gcd-body2$in-out-sim (data-size n state)
+    (declare (xargs :guard (and (natp data-size)
                                 (natp n))
                     :verify-guards nil
                     :stobjs state))
-    (b* ((num-signals (comp-gcd-body$ins-len data-width))
+    (b* ((num-signals (gcd-body2$ins-len data-size))
          ((mv inputs-seq state)
           (signal-vals-gen num-signals n state nil))
-         (st (comp-gcd-body$st-gen data-width)))
+         (st (gcd-body2$st-gen data-size)))
       (mv
        (append
         (list (cons 'in-seq
                     (v-to-nat-split-lst
-                     (comp-gcd-body$in-seq inputs-seq st data-width n)
-                     data-width)))
+                     (gcd-body2$in-seq inputs-seq st data-size n)
+                     data-size)))
         (list (cons 'out-seq
                     (v-to-nat-lst
-                     (comp-gcd-body$out-seq inputs-seq st data-width n)))))
+                     (gcd-body2$out-seq inputs-seq st data-size n)))))
        state)))
   )
 
-;; 3. COMP-GCD
+;; 3. GCD2
 
 (progn
-  (defun comp-gcd$map-to-links (st)
-    (b* ((s (get-field *comp-gcd$s* st))
-         (l0 (get-field *comp-gcd$l0* st))
-         (l1 (get-field *comp-gcd$l1* st))
-         (l2 (get-field *comp-gcd$l2* st))
-         (body (get-field *comp-gcd$body* st)))
+  (defun gcd2$map-to-links (st)
+    (b* ((s (nth *gcd2$s* st))
+         (l0 (nth *gcd2$l0* st))
+         (l1 (nth *gcd2$l1* st))
+         (l2 (nth *gcd2$l2* st))
+         (body (nth *gcd2$body* st)))
       (append (map-to-links1 (list (cons 's s)))
               (map-to-links (list (cons 'l0 l0)
                                   (cons 'l1 l1)))
-              (list (cons 'body (comp-gcd-body$map-to-links body)))
+              (list (cons 'body (gcd-body2$map-to-links body)))
               (map-to-links (list (cons 'l2 l2))))))
 
-  (defun comp-gcd$map-to-links-list (x)
+  (defun gcd2$map-to-links-list (x)
     (if (atom x)
         nil
-      (cons (comp-gcd$map-to-links (car x))
-            (comp-gcd$map-to-links-list (cdr x)))))
+      (cons (gcd2$map-to-links (car x))
+            (gcd2$map-to-links-list (cdr x)))))
 
-  (defund comp-gcd$st-gen (data-width)
-    (declare (xargs :guard (natp data-width)))
+  (defund gcd2$st-gen (data-size)
+    (declare (xargs :guard (natp data-size)))
     (b* ((full '(t))
          (empty '(nil))
-         (invalid-data (make-list (* 2 data-width) :initial-element '(x)))
-         (body (comp-gcd-body$st-gen data-width)))
+         (invalid-data (make-list (* 2 data-size) :initial-element '(x)))
+         (body (gcd-body2$st-gen data-size)))
       (list (list full '(nil))
             (list empty invalid-data)
             (list empty invalid-data)
             (list empty invalid-data)
             body)))
 
-  (defund comp-gcd$ins-and-st-test (data-width n state)
-    (declare (xargs :guard (and (natp data-width)
+  (defund gcd2$ins-and-st-test (data-size n state)
+    (declare (xargs :guard (and (natp data-size)
                                 (natp n))
                     :verify-guards nil
                     :stobjs state))
-    (b* ((num-signals (comp-gcd$ins-len data-width))
+    (b* ((num-signals (gcd2$ins-len data-size))
          ((mv inputs-seq state)
           (signal-vals-gen num-signals n state nil))
-         (st (comp-gcd$st-gen data-width)))
-      (mv (and (comp-gcd$input-format-n inputs-seq data-width n)
-               (comp-gcd$valid-st st data-width)
-               (comp-gcd$inv st data-width))
+         (st (gcd2$st-gen data-size)))
+      (mv (and (gcd2$input-format-n inputs-seq data-size n)
+               (gcd2$valid-st st data-size)
+               (gcd2$inv st data-size))
           state)))
 
   (local
-   (defthm comp-gcd$ins-and-st-test-ok
-     (comp-gcd$ins-and-st-test 4 10 state)))
+   (defthm gcd2$ins-and-st-test-ok
+     (gcd2$ins-and-st-test 4 10 state)))
 
-  (defund comp-gcd$sim (data-width n state)
-    (declare (xargs :guard (and (natp data-width)
+  (defund gcd2$sim (data-size n state)
+    (declare (xargs :guard (and (natp data-size)
                                 (natp n))
                     :verify-guards nil
                     :stobjs state))
-    (b* ((num-signals (comp-gcd$ins-len data-width))
+    (b* ((num-signals (gcd2$ins-len data-size))
          ((mv inputs-seq state)
           (signal-vals-gen num-signals n state nil))
-         (st (comp-gcd$st-gen data-width)))
+         (st (gcd2$st-gen data-size)))
       (mv (pretty-list
            (remove-dup-neighbors
-            (comp-gcd$map-to-links-list
-             (de-sim-trace (si 'comp-gcd data-width)
+            (gcd2$map-to-links-list
+             (de-sim-trace (si 'gcd2 data-size)
                            inputs-seq
                            st
-                           (comp-gcd$netlist data-width))))
+                           (gcd2$netlist data-size))))
            0)
           state)))
 
-  (defund comp-gcd$in-out-sim (data-width n state)
-    (declare (xargs :guard (and (natp data-width)
+  (defund gcd2$in-out-sim (data-size n state)
+    (declare (xargs :guard (and (natp data-size)
                                 (natp n))
                     :verify-guards nil
                     :stobjs state))
-    (b* ((num-signals (comp-gcd$ins-len data-width))
+    (b* ((num-signals (gcd2$ins-len data-size))
          ((mv inputs-seq state)
           (signal-vals-gen num-signals n state nil))
-         (st (comp-gcd$st-gen data-width)))
+         (st (gcd2$st-gen data-size)))
       (mv
        (append
         (list (cons 'in-seq
                     (v-to-nat-split-lst
-                     (comp-gcd$in-seq inputs-seq st data-width n)
-                     data-width)))
+                     (gcd2$in-seq inputs-seq st data-size n)
+                     data-size)))
         (list (cons 'out-seq
                     (v-to-nat-lst
-                     (comp-gcd$out-seq inputs-seq st data-width n)))))
+                     (gcd2$out-seq inputs-seq st data-size n)))))
        state)))
   )
 
-;; 4. COMP-GCD-BODY2
+;; 4. GCD-BODY3
 
 (progn
-  (defun comp-gcd-body2$map-to-links (st)
-    (b* ((l0 (get-field *comp-gcd-body2$l0* st))
-         (l1 (get-field *comp-gcd-body2$l1* st))
-         (l2 (get-field *comp-gcd-body2$l2* st))
-         (sub (get-field *comp-gcd-body2$sub* st)))
+  (defun gcd-body3$map-to-links (st)
+    (b* ((l0 (nth *gcd-body3$l0* st))
+         (l1 (nth *gcd-body3$l1* st))
+         (l2 (nth *gcd-body3$l2* st))
+         (sub (nth *gcd-body3$sub* st)))
       (append (map-to-links (list (cons 'l0 l0)))
               (list (cons 'sub (serial-sub$map-to-links sub)))
               (map-to-links (list (cons 'l1 l1)
                                   (cons 'l2 l2))))))
 
-  (defun comp-gcd-body2$map-to-links-list (x)
+  (defun gcd-body3$map-to-links-list (x)
     (if (atom x)
         nil
-      (cons (comp-gcd-body2$map-to-links (car x))
-            (comp-gcd-body2$map-to-links-list (cdr x)))))
+      (cons (gcd-body3$map-to-links (car x))
+            (gcd-body3$map-to-links-list (cdr x)))))
 
-  (defund comp-gcd-body2$st-gen (data-width cnt-width)
-    (declare (xargs :guard (and (natp data-width)
-                                (posp cnt-width))))
+  (defund gcd-body3$st-gen (data-size cnt-size)
+    (declare (xargs :guard (and (natp data-size)
+                                (posp cnt-size))))
     (b* ((empty '(nil))
-         (invalid-data (make-list data-width :initial-element '(x)))
-         (invalid-data2 (make-list (* 2 data-width) :initial-element '(x)))
-         (sub (serial-sub$st-gen data-width cnt-width)))
+         (invalid-data (make-list data-size :initial-element '(x)))
+         (invalid-data2 (make-list (* 2 data-size) :initial-element '(x)))
+         (sub (serial-sub$st-gen data-size cnt-size)))
       (list (list empty invalid-data2)
             (list empty invalid-data)
             (list empty invalid-data)
             sub)))
 
-  (defund comp-gcd-body2$ins-and-st-test (data-width cnt-width n state)
-    (declare (xargs :guard (and (natp data-width)
-                                (posp cnt-width)
+  (defund gcd-body3$ins-and-st-test (data-size cnt-size n state)
+    (declare (xargs :guard (and (natp data-size)
+                                (posp cnt-size)
                                 (natp n))
                     :verify-guards nil
                     :stobjs state))
-    (b* ((num-signals (comp-gcd-body2$ins-len data-width))
+    (b* ((num-signals (gcd-body3$ins-len data-size))
          ((mv inputs-seq state)
           (signal-vals-gen num-signals n state nil))
-         (st (comp-gcd-body2$st-gen data-width cnt-width)))
-      (mv (and (comp-gcd-body2$input-format-n inputs-seq data-width n)
-               (comp-gcd-body2$valid-st st data-width cnt-width)
-               (comp-gcd-body2$inv st data-width))
+         (st (gcd-body3$st-gen data-size cnt-size)))
+      (mv (and (gcd-body3$input-format-n inputs-seq data-size n)
+               (gcd-body3$valid-st st data-size cnt-size)
+               (gcd-body3$inv st data-size))
           state)))
 
   (local
-   (defthm comp-gcd-body2$ins-and-st-test-ok
-     (comp-gcd-body2$ins-and-st-test 4 3 10 state)))
+   (defthm gcd-body3$ins-and-st-test-ok
+     (gcd-body3$ins-and-st-test 4 3 10 state)))
 
-  (defund comp-gcd-body2$sim (data-width cnt-width n state)
-    (declare (xargs :guard (and (natp data-width)
-                                (posp cnt-width)
+  (defund gcd-body3$sim (data-size cnt-size n state)
+    (declare (xargs :guard (and (natp data-size)
+                                (posp cnt-size)
                                 (natp n))
                     :verify-guards nil
                     :stobjs state))
-    (b* ((num-signals (comp-gcd-body2$ins-len data-width))
+    (b* ((num-signals (gcd-body3$ins-len data-size))
          ((mv inputs-seq state)
           (signal-vals-gen num-signals n state nil))
-         (st (comp-gcd-body2$st-gen data-width cnt-width)))
+         (st (gcd-body3$st-gen data-size cnt-size)))
       (mv (pretty-list
            (remove-dup-neighbors
-            (comp-gcd-body2$map-to-links-list
-             (de-sim-trace (si 'comp-gcd-body2 data-width)
+            (gcd-body3$map-to-links-list
+             (de-sim-trace (si 'gcd-body3 data-size)
                            inputs-seq
                            st
-                           (comp-gcd-body2$netlist data-width cnt-width))))
+                           (gcd-body3$netlist data-size cnt-size))))
            0)
           state)))
 
-  (defund comp-gcd-body2$in-out-sim (data-width cnt-width n state)
-    (declare (xargs :guard (and (natp data-width)
-                                (posp cnt-width)
+  (defund gcd-body3$in-out-sim (data-size cnt-size n state)
+    (declare (xargs :guard (and (natp data-size)
+                                (posp cnt-size)
                                 (natp n))
                     :verify-guards nil
                     :stobjs state))
-    (b* ((num-signals (comp-gcd-body2$ins-len data-width))
+    (b* ((num-signals (gcd-body3$ins-len data-size))
          ((mv inputs-seq state)
           (signal-vals-gen num-signals n state nil))
-         (st (comp-gcd-body2$st-gen data-width cnt-width)))
+         (st (gcd-body3$st-gen data-size cnt-size)))
       (mv
        (append
         (list (cons 'in-seq
                     (v-to-nat-split-lst
-                     (comp-gcd-body2$in-seq
-                      inputs-seq st data-width cnt-width n)
-                     data-width)))
+                     (gcd-body3$in-seq
+                      inputs-seq st data-size cnt-size n)
+                     data-size)))
         (list (cons 'out-seq
                     (v-to-nat-lst
-                     (comp-gcd-body2$out-seq
-                      inputs-seq st data-width cnt-width n)))))
+                     (gcd-body3$out-seq
+                      inputs-seq st data-size cnt-size n)))))
        state)))
   )
 
-;; 5. COMP-GCD2
+;; 5. GCD3
 
 (progn
-  (defun comp-gcd2$map-to-links (st)
-    (b* ((s (get-field *comp-gcd2$s* st))
-         (l0 (get-field *comp-gcd2$l0* st))
-         (l1 (get-field *comp-gcd2$l1* st))
-         (l2 (get-field *comp-gcd2$l2* st))
-         (body (get-field *comp-gcd2$body* st)))
+  (defun gcd3$map-to-links (st)
+    (b* ((s (nth *gcd3$s* st))
+         (l0 (nth *gcd3$l0* st))
+         (l1 (nth *gcd3$l1* st))
+         (l2 (nth *gcd3$l2* st))
+         (body (nth *gcd3$body* st)))
       (append (map-to-links1 (list (cons 's s)))
               (map-to-links (list (cons 'l0 l0)
                                   (cons 'l1 l1)))
-              (list (cons 'body (comp-gcd-body2$map-to-links body)))
+              (list (cons 'body (gcd-body3$map-to-links body)))
               (map-to-links (list (cons 'l2 l2))))))
 
-  (defun comp-gcd2$map-to-links-list (x)
+  (defun gcd3$map-to-links-list (x)
     (if (atom x)
         nil
-      (cons (comp-gcd2$map-to-links (car x))
-            (comp-gcd2$map-to-links-list (cdr x)))))
+      (cons (gcd3$map-to-links (car x))
+            (gcd3$map-to-links-list (cdr x)))))
 
-  (defund comp-gcd2$st-gen (data-width cnt-width)
-    (declare (xargs :guard (and (natp data-width)
-                                (posp cnt-width))))
+  (defund gcd3$st-gen (data-size cnt-size)
+    (declare (xargs :guard (and (natp data-size)
+                                (posp cnt-size))))
     (b* ((full '(t))
          (empty '(nil))
-         (invalid-data (make-list (* 2 data-width) :initial-element '(x)))
-         (body (comp-gcd-body2$st-gen data-width cnt-width)))
+         (invalid-data (make-list (* 2 data-size) :initial-element '(x)))
+         (body (gcd-body3$st-gen data-size cnt-size)))
       (list (list full '(nil))
             (list empty invalid-data)
             (list empty invalid-data)
             (list empty invalid-data)
             body)))
 
-  (defund comp-gcd2$ins-and-st-test (data-width cnt-width n state)
-    (declare (xargs :guard (and (natp data-width)
-                                (posp cnt-width)
+  (defund gcd3$ins-and-st-test (data-size cnt-size n state)
+    (declare (xargs :guard (and (natp data-size)
+                                (posp cnt-size)
                                 (natp n))
                     :verify-guards nil
                     :stobjs state))
-    (b* ((num-signals (comp-gcd2$ins-len data-width))
+    (b* ((num-signals (gcd3$ins-len data-size))
          ((mv inputs-seq state)
           (signal-vals-gen num-signals n state nil))
-         (st (comp-gcd2$st-gen data-width cnt-width)))
-      (mv (and (comp-gcd2$input-format-n inputs-seq data-width n)
-               (comp-gcd2$valid-st st data-width cnt-width)
-               (comp-gcd2$inv st data-width))
+         (st (gcd3$st-gen data-size cnt-size)))
+      (mv (and (gcd3$input-format-n inputs-seq data-size n)
+               (gcd3$valid-st st data-size cnt-size)
+               (gcd3$inv st data-size))
           state)))
 
   (local
-   (defthm comp-gcd2$ins-and-st-test-ok
-     (comp-gcd2$ins-and-st-test 4 3 10 state)))
+   (defthm gcd3$ins-and-st-test-ok
+     (gcd3$ins-and-st-test 4 3 10 state)))
 
-  (defund comp-gcd2$sim (data-width cnt-width n state)
-    (declare (xargs :guard (and (natp data-width)
-                                (posp cnt-width)
+  (defund gcd3$sim (data-size cnt-size n state)
+    (declare (xargs :guard (and (natp data-size)
+                                (posp cnt-size)
                                 (natp n))
                     :verify-guards nil
                     :stobjs state))
-    (b* ((num-signals (comp-gcd2$ins-len data-width))
+    (b* ((num-signals (gcd3$ins-len data-size))
          ((mv inputs-seq state)
           (signal-vals-gen num-signals n state nil))
-         (st (comp-gcd2$st-gen data-width cnt-width)))
+         (st (gcd3$st-gen data-size cnt-size)))
       (mv (pretty-list
            (remove-dup-neighbors
-            (comp-gcd2$map-to-links-list
-             (de-sim-trace (si 'comp-gcd2 data-width)
+            (gcd3$map-to-links-list
+             (de-sim-trace (si 'gcd3 data-size)
                            inputs-seq
                            st
-                           (comp-gcd2$netlist data-width cnt-width))))
+                           (gcd3$netlist data-size cnt-size))))
            0)
           state)))
 
-  (defund comp-gcd2$in-out-sim (data-width cnt-width n state)
-    (declare (xargs :guard (and (natp data-width)
-                                (posp cnt-width)
+  (defund gcd3$in-out-sim (data-size cnt-size n state)
+    (declare (xargs :guard (and (natp data-size)
+                                (posp cnt-size)
                                 (natp n))
                     :verify-guards nil
                     :stobjs state))
-    (b* ((num-signals (comp-gcd2$ins-len data-width))
+    (b* ((num-signals (gcd3$ins-len data-size))
          ((mv inputs-seq state)
           (signal-vals-gen num-signals n state nil))
-         (st (comp-gcd2$st-gen data-width cnt-width)))
+         (st (gcd3$st-gen data-size cnt-size)))
       (mv
        (append
         (list (cons 'in-seq
                     (v-to-nat-split-lst
-                     (comp-gcd2$in-seq
-                      inputs-seq st data-width cnt-width n)
-                     data-width)))
+                     (gcd3$in-seq
+                      inputs-seq st data-size cnt-size n)
+                     data-size)))
         (list (cons 'out-seq
                     (v-to-nat-lst
-                     (comp-gcd2$out-seq
-                      inputs-seq st data-width cnt-width n)))))
+                     (gcd3$out-seq
+                      inputs-seq st data-size cnt-size n)))))
        state)))
   )
 
@@ -497,12 +497,12 @@
 
 (progn
   (defun comp-gcd-cond$map-to-links (st)
-    (b* ((a0 (get-field *comp-gcd-cond$a0* st))
-         (b0 (get-field *comp-gcd-cond$b0* st))
-         (a1 (get-field *comp-gcd-cond$a1* st))
-         (b1 (get-field *comp-gcd-cond$b1* st))
-         (q2 (get-field *comp-gcd-cond$q2* st))
-         (q3 (get-field *comp-gcd-cond$q3* st)))
+    (b* ((a0 (nth *comp-gcd-cond$a0* st))
+         (b0 (nth *comp-gcd-cond$b0* st))
+         (a1 (nth *comp-gcd-cond$a1* st))
+         (b1 (nth *comp-gcd-cond$b1* st))
+         (q2 (nth *comp-gcd-cond$q2* st))
+         (q3 (nth *comp-gcd-cond$q3* st)))
       (append (map-to-links (list (cons 'a0 a0)
                                   (cons 'b0 b0)))
               (cons (cons 'q2 (queue2$map-to-links q2))
@@ -516,29 +516,29 @@
       (cons (comp-gcd-cond$map-to-links (car x))
             (comp-gcd-cond$map-to-links-list (cdr x)))))
 
-  (defund comp-gcd-cond$st-gen (data-width)
-    (declare (xargs :guard (natp data-width)))
+  (defund comp-gcd-cond$st-gen (data-size)
+    (declare (xargs :guard (natp data-size)))
     (b* ((empty '(nil))
-         (invalid-data (make-list data-width :initial-element '(x)))
-         (q2 (queue2$st-gen data-width))
-         (q3 (queue3$st-gen data-width)))
+         (invalid-data (make-list data-size :initial-element '(x)))
+         (q2 (queue2$st-gen data-size))
+         (q3 (queue3$st-gen data-size)))
       (list (list empty invalid-data)
             (list empty invalid-data)
             (list empty invalid-data)
             (list empty invalid-data)
             q2 q3)))
 
-  (defund comp-gcd-cond$ins-and-st-test (data-width n state)
-    (declare (xargs :guard (and (natp data-width)
+  (defund comp-gcd-cond$ins-and-st-test (data-size n state)
+    (declare (xargs :guard (and (natp data-size)
                                 (natp n))
                     :verify-guards nil
                     :stobjs state))
-    (b* ((num-signals (comp-gcd-cond$ins-len data-width))
+    (b* ((num-signals (comp-gcd-cond$ins-len data-size))
          ((mv inputs-seq state)
           (signal-vals-gen num-signals n state nil))
-         (st (comp-gcd-cond$st-gen data-width)))
-      (mv (and (comp-gcd-cond$input-format-n inputs-seq data-width n)
-               (comp-gcd-cond$valid-st st data-width)
+         (st (comp-gcd-cond$st-gen data-size)))
+      (mv (and (comp-gcd-cond$input-format-n inputs-seq data-size n)
+               (comp-gcd-cond$valid-st st data-size)
                (comp-gcd-cond$inv st))
           state)))
 
@@ -546,301 +546,301 @@
    (defthm comp-gcd-cond$ins-and-st-test-ok
      (comp-gcd-cond$ins-and-st-test 4 10 state)))
 
-  (defund comp-gcd-cond$sim (data-width n state)
-    (declare (xargs :guard (and (natp data-width)
+  (defund comp-gcd-cond$sim (data-size n state)
+    (declare (xargs :guard (and (natp data-size)
                                 (natp n))
                     :verify-guards nil
                     :stobjs state))
-    (b* ((num-signals (comp-gcd-cond$ins-len data-width))
+    (b* ((num-signals (comp-gcd-cond$ins-len data-size))
          ((mv inputs-seq state)
           (signal-vals-gen num-signals n state nil))
-         (st (comp-gcd-cond$st-gen data-width)))
+         (st (comp-gcd-cond$st-gen data-size)))
       (mv (pretty-list
            (remove-dup-neighbors
             (comp-gcd-cond$map-to-links-list
-             (de-sim-trace (si 'comp-gcd-cond data-width)
+             (de-sim-trace (si 'comp-gcd-cond data-size)
                            inputs-seq
                            st
-                           (comp-gcd-cond$netlist data-width))))
+                           (comp-gcd-cond$netlist data-size))))
            0)
           state)))
 
-  (defund comp-gcd-cond$in-out-sim (data-width n state)
-    (declare (xargs :guard (and (natp data-width)
+  (defund comp-gcd-cond$in-out-sim (data-size n state)
+    (declare (xargs :guard (and (natp data-size)
                                 (natp n))
                     :verify-guards nil
                     :stobjs state))
-    (b* ((num-signals (comp-gcd-cond$ins-len data-width))
+    (b* ((num-signals (comp-gcd-cond$ins-len data-size))
          ((mv inputs-seq state)
           (signal-vals-gen num-signals n state nil))
-         (st (comp-gcd-cond$st-gen data-width)))
+         (st (comp-gcd-cond$st-gen data-size)))
       (mv
        (append
         (list (cons 'in-seq
                     (v-to-nat2-lst
-                     (comp-gcd-cond$in-seq inputs-seq st data-width n))))
+                     (comp-gcd-cond$in-seq inputs-seq st data-size n))))
         (list (cons 'out-seq
                     (v-to-nat-lst
-                     (comp-gcd-cond$out-seq inputs-seq st data-width n)))))
+                     (comp-gcd-cond$out-seq inputs-seq st data-size n)))))
        state)))
   )
 
-;; 7. COMP-GCD3
+;; 7. COMP-GCD
 
 (progn
-  (defun comp-gcd3$map-to-links (st)
-    (b* ((s (get-field *comp-gcd3$s* st))
-         (l0 (get-field *comp-gcd3$l0* st))
-         (l1 (get-field *comp-gcd3$l1* st))
-         (l2 (get-field *comp-gcd3$l2* st))
-         (br (get-field *comp-gcd3$br* st)))
+  (defun comp-gcd$map-to-links (st)
+    (b* ((s (nth *comp-gcd$s* st))
+         (l0 (nth *comp-gcd$l0* st))
+         (l1 (nth *comp-gcd$l1* st))
+         (l2 (nth *comp-gcd$l2* st))
+         (br (nth *comp-gcd$br* st)))
       (append (map-to-links1 (list (cons 's s)))
               (map-to-links (list (cons 'l0 l0)
                                   (cons 'l1 l1)
                                   (cons 'l2 l2)))
               (list (cons 'br (comp-gcd-cond$map-to-links br))))))
 
-  (defun comp-gcd3$map-to-links-list (x)
+  (defun comp-gcd$map-to-links-list (x)
     (if (atom x)
         nil
-      (cons (comp-gcd3$map-to-links (car x))
-            (comp-gcd3$map-to-links-list (cdr x)))))
+      (cons (comp-gcd$map-to-links (car x))
+            (comp-gcd$map-to-links-list (cdr x)))))
 
-  (defund comp-gcd3$st-gen (data-width)
-    (declare (xargs :guard (natp data-width)))
+  (defund comp-gcd$st-gen (data-size)
+    (declare (xargs :guard (natp data-size)))
     (b* ((full '(t))
          (empty '(nil))
-         (invalid-data (make-list (* 2 data-width) :initial-element '(x)))
-         (br (comp-gcd-cond$st-gen data-width)))
+         (invalid-data (make-list (* 2 data-size) :initial-element '(x)))
+         (br (comp-gcd-cond$st-gen data-size)))
       (list (list full '(nil))
             (list empty invalid-data)
             (list empty invalid-data)
             (list empty invalid-data)
             br)))
 
-  (defund comp-gcd3$ins-and-st-test (data-width n state)
-    (declare (xargs :guard (and (natp data-width)
+  (defund comp-gcd$ins-and-st-test (data-size n state)
+    (declare (xargs :guard (and (natp data-size)
                                 (natp n))
                     :verify-guards nil
                     :stobjs state))
-    (b* ((num-signals (comp-gcd3$ins-len data-width))
+    (b* ((num-signals (comp-gcd$ins-len data-size))
          ((mv inputs-seq state)
           (signal-vals-gen num-signals n state nil))
-         (st (comp-gcd3$st-gen data-width)))
-      (mv (and (comp-gcd3$input-format-n inputs-seq data-width n)
-               (comp-gcd3$valid-st st data-width)
-               (comp-gcd3$inv st))
+         (st (comp-gcd$st-gen data-size)))
+      (mv (and (comp-gcd$input-format-n inputs-seq data-size n)
+               (comp-gcd$valid-st st data-size)
+               (comp-gcd$inv st))
           state)))
 
   (local
-   (defthm comp-gcd3$ins-and-st-test-ok
-     (comp-gcd3$ins-and-st-test 4 10 state)))
+   (defthm comp-gcd$ins-and-st-test-ok
+     (comp-gcd$ins-and-st-test 4 10 state)))
 
-  (defund comp-gcd3$sim (data-width n state)
-    (declare (xargs :guard (and (natp data-width)
+  (defund comp-gcd$sim (data-size n state)
+    (declare (xargs :guard (and (natp data-size)
                                 (natp n))
                     :verify-guards nil
                     :stobjs state))
-    (b* ((num-signals (comp-gcd3$ins-len data-width))
+    (b* ((num-signals (comp-gcd$ins-len data-size))
          ((mv inputs-seq state)
           (signal-vals-gen num-signals n state nil))
-         (st (comp-gcd3$st-gen data-width)))
+         (st (comp-gcd$st-gen data-size)))
       (mv (pretty-list
            (remove-dup-neighbors
-            (comp-gcd3$map-to-links-list
-             (de-sim-trace (si 'comp-gcd3 data-width)
+            (comp-gcd$map-to-links-list
+             (de-sim-trace (si 'comp-gcd data-size)
                            inputs-seq
                            st
-                           (comp-gcd3$netlist data-width))))
+                           (comp-gcd$netlist data-size))))
            0)
           state)))
 
-  (defund comp-gcd3$in-out-sim (data-width n state)
-    (declare (xargs :guard (and (natp data-width)
+  (defund comp-gcd$in-out-sim (data-size n state)
+    (declare (xargs :guard (and (natp data-size)
                                 (natp n))
                     :verify-guards nil
                     :stobjs state))
-    (b* ((num-signals (comp-gcd3$ins-len data-width))
+    (b* ((num-signals (comp-gcd$ins-len data-size))
          ((mv inputs-seq state)
           (signal-vals-gen num-signals n state nil))
-         (st (comp-gcd3$st-gen data-width)))
+         (st (comp-gcd$st-gen data-size)))
       (mv
        (append
         (list (cons 'in-seq
                     (v-to-nat-split-lst
-                     (comp-gcd3$in-seq inputs-seq st data-width n)
-                     data-width)))
+                     (comp-gcd$in-seq inputs-seq st data-size n)
+                     data-size)))
         (list (cons 'out-seq
                     (v-to-nat-lst
-                     (comp-gcd3$out-seq inputs-seq st data-width n)))))
+                     (comp-gcd$out-seq inputs-seq st data-size n)))))
        state)))
   )
 
-;; 8. Q10-GCD
+;; 8. Q10-GCD1
 
 (progn
-  (defun q10-gcd$map-to-links (st)
-    (b* ((l   (get-field *q10-gcd$l* st))
-         (q10 (get-field *q10-gcd$q10* st))
-         (gcd (get-field *q10-gcd$gcd* st)))
+  (defun q10-gcd1$map-to-links (st)
+    (b* ((l   (nth *q10-gcd1$l* st))
+         (q10 (nth *q10-gcd1$q10* st))
+         (gcd1 (nth *q10-gcd1$gcd1* st)))
       (append (list (cons 'q10 (queue10$map-to-links q10)))
               (map-to-links (list (cons 'l l)))
-              (list (cons 'gcd (gcd$map-to-links gcd))))))
+              (list (cons 'gcd1 (gcd1$map-to-links gcd1))))))
 
-  (defun q10-gcd$map-to-links-list (x)
+  (defun q10-gcd1$map-to-links-list (x)
     (if (atom x)
         nil
-      (cons (q10-gcd$map-to-links (car x))
-            (q10-gcd$map-to-links-list (cdr x)))))
+      (cons (q10-gcd1$map-to-links (car x))
+            (q10-gcd1$map-to-links-list (cdr x)))))
 
-  (defund q10-gcd$st-gen (data-width)
-    (declare (xargs :guard (natp data-width)))
+  (defund q10-gcd1$st-gen (data-size)
+    (declare (xargs :guard (natp data-size)))
     (b* ((empty '(nil))
-         (invalid-data (make-list (* 2 data-width) :initial-element '(x)))
-         (q10 (queue10$st-gen (* 2 data-width)))
-         (gcd (gcd$st-gen data-width)))
-      (list (list empty invalid-data) q10 gcd)))
+         (invalid-data (make-list (* 2 data-size) :initial-element '(x)))
+         (q10 (queue10$st-gen (* 2 data-size)))
+         (gcd1 (gcd1$st-gen data-size)))
+      (list (list empty invalid-data) q10 gcd1)))
 
-  (defund q10-gcd$ins-and-st-test (data-width n state)
-    (declare (xargs :guard (and (natp data-width)
+  (defund q10-gcd1$ins-and-st-test (data-size n state)
+    (declare (xargs :guard (and (natp data-size)
                                 (natp n))
                     :verify-guards nil
                     :stobjs state))
-    (b* ((num-signals (q10-gcd$ins-len data-width))
+    (b* ((num-signals (q10-gcd1$ins-len data-size))
          ((mv inputs-seq state)
           (signal-vals-gen num-signals n state nil))
-         (st (q10-gcd$st-gen data-width)))
-      (mv (and (q10-gcd$input-format-n inputs-seq data-width n)
-               (q10-gcd$valid-st st data-width)
-               (q10-gcd$inv st))
+         (st (q10-gcd1$st-gen data-size)))
+      (mv (and (q10-gcd1$input-format-n inputs-seq data-size n)
+               (q10-gcd1$valid-st st data-size)
+               (q10-gcd1$inv st))
           state)))
 
   (local
-   (defthm q10-gcd$ins-and-st-test-ok
-     (q10-gcd$ins-and-st-test 4 10 state)))
+   (defthm q10-gcd1$ins-and-st-test-ok
+     (q10-gcd1$ins-and-st-test 4 10 state)))
 
-  (defund q10-gcd$sim (data-width n state)
-    (declare (xargs :guard (and (natp data-width)
+  (defund q10-gcd1$sim (data-size n state)
+    (declare (xargs :guard (and (natp data-size)
                                 (natp n))
                     :verify-guards nil
                     :stobjs state))
-    (b* ((num-signals (q10-gcd$ins-len data-width))
+    (b* ((num-signals (q10-gcd1$ins-len data-size))
          ((mv inputs-seq state)
           (signal-vals-gen num-signals n state nil))
-         (st (q10-gcd$st-gen data-width)))
+         (st (q10-gcd1$st-gen data-size)))
       (mv (pretty-list
            (remove-dup-neighbors
-            (q10-gcd$map-to-links-list
-             (de-sim-trace (si 'q10-gcd data-width)
+            (q10-gcd1$map-to-links-list
+             (de-sim-trace (si 'q10-gcd1 data-size)
                            inputs-seq
                            st
-                           (q10-gcd$netlist data-width))))
+                           (q10-gcd1$netlist data-size))))
            0)
           state)))
 
-  (defund q10-gcd$in-out-sim (data-width n state)
-    (declare (xargs :guard (and (natp data-width)
+  (defund q10-gcd1$in-out-sim (data-size n state)
+    (declare (xargs :guard (and (natp data-size)
                                 (natp n))
                     :verify-guards nil
                     :stobjs state))
-    (b* ((num-signals (q10-gcd$ins-len data-width))
+    (b* ((num-signals (q10-gcd1$ins-len data-size))
          ((mv inputs-seq state)
           (signal-vals-gen num-signals n state nil))
-         (st (q10-gcd$st-gen data-width)))
+         (st (q10-gcd1$st-gen data-size)))
       (mv
        (append
         (list (cons 'in-seq
                     (v-to-nat-split-lst
-                     (q10-gcd$in-seq inputs-seq st data-width n)
-                     data-width)))
+                     (q10-gcd1$in-seq inputs-seq st data-size n)
+                     data-size)))
         (list (cons 'out-seq
                     (v-to-nat-lst
-                     (q10-gcd$out-seq inputs-seq st data-width n)))))
+                     (q10-gcd1$out-seq inputs-seq st data-size n)))))
        state)))
   )
 
-;; 9. Q10-COMP-GCD3
+;; 9. Q10-COMP-GCD
 
 (progn
-  (defun q10-comp-gcd3$map-to-links (st)
-    (b* ((l   (get-field *q10-comp-gcd3$l* st))
-         (q10 (get-field *q10-comp-gcd3$q10* st))
-         (comp-gcd3 (get-field *q10-comp-gcd3$comp-gcd3* st)))
+  (defun q10-comp-gcd$map-to-links (st)
+    (b* ((l   (nth *q10-comp-gcd$l* st))
+         (q10 (nth *q10-comp-gcd$q10* st))
+         (comp-gcd (nth *q10-comp-gcd$comp-gcd* st)))
       (append (list (cons 'q10 (queue10$map-to-links q10)))
               (map-to-links (list (cons 'l l)))
-              (list (cons 'comp-gcd3 (comp-gcd3$map-to-links comp-gcd3))))))
+              (list (cons 'comp-gcd (comp-gcd$map-to-links comp-gcd))))))
 
-  (defun q10-comp-gcd3$map-to-links-list (x)
+  (defun q10-comp-gcd$map-to-links-list (x)
     (if (atom x)
         nil
-      (cons (q10-comp-gcd3$map-to-links (car x))
-            (q10-comp-gcd3$map-to-links-list (cdr x)))))
+      (cons (q10-comp-gcd$map-to-links (car x))
+            (q10-comp-gcd$map-to-links-list (cdr x)))))
 
-  (defund q10-comp-gcd3$st-gen (data-width)
-    (declare (xargs :guard (natp data-width)))
+  (defund q10-comp-gcd$st-gen (data-size)
+    (declare (xargs :guard (natp data-size)))
     (b* ((empty '(nil))
-         (invalid-data (make-list (* 2 data-width) :initial-element '(x)))
-         (q10 (queue10$st-gen (* 2 data-width)))
-         (comp-gcd3 (comp-gcd3$st-gen data-width)))
-      (list (list empty invalid-data) q10 comp-gcd3)))
+         (invalid-data (make-list (* 2 data-size) :initial-element '(x)))
+         (q10 (queue10$st-gen (* 2 data-size)))
+         (comp-gcd (comp-gcd$st-gen data-size)))
+      (list (list empty invalid-data) q10 comp-gcd)))
 
-  (defund q10-comp-gcd3$ins-and-st-test (data-width n state)
-    (declare (xargs :guard (and (natp data-width)
+  (defund q10-comp-gcd$ins-and-st-test (data-size n state)
+    (declare (xargs :guard (and (natp data-size)
                                 (natp n))
                     :verify-guards nil
                     :stobjs state))
-    (b* ((num-signals (q10-comp-gcd3$ins-len data-width))
+    (b* ((num-signals (q10-comp-gcd$ins-len data-size))
          ((mv inputs-seq state)
           (signal-vals-gen num-signals n state nil))
-         (st (q10-comp-gcd3$st-gen data-width)))
-      (mv (and (q10-comp-gcd3$input-format-n inputs-seq data-width n)
-               (q10-comp-gcd3$valid-st st data-width)
-               (q10-comp-gcd3$inv st))
+         (st (q10-comp-gcd$st-gen data-size)))
+      (mv (and (q10-comp-gcd$input-format-n inputs-seq data-size n)
+               (q10-comp-gcd$valid-st st data-size)
+               (q10-comp-gcd$inv st))
           state)))
 
   (local
-   (defthm q10-comp-gcd3$ins-and-st-test-ok
-     (q10-comp-gcd3$ins-and-st-test 4 10 state)))
+   (defthm q10-comp-gcd$ins-and-st-test-ok
+     (q10-comp-gcd$ins-and-st-test 4 10 state)))
 
-  (defund q10-comp-gcd3$sim (data-width n state)
-    (declare (xargs :guard (and (natp data-width)
+  (defund q10-comp-gcd$sim (data-size n state)
+    (declare (xargs :guard (and (natp data-size)
                                 (natp n))
                     :verify-guards nil
                     :stobjs state))
-    (b* ((num-signals (q10-comp-gcd3$ins-len data-width))
+    (b* ((num-signals (q10-comp-gcd$ins-len data-size))
          ((mv inputs-seq state)
           (signal-vals-gen num-signals n state nil))
-         (st (q10-comp-gcd3$st-gen data-width)))
+         (st (q10-comp-gcd$st-gen data-size)))
       (mv (pretty-list
            (remove-dup-neighbors
-            (q10-comp-gcd3$map-to-links-list
-             (de-sim-trace (si 'q10-comp-gcd3 data-width)
+            (q10-comp-gcd$map-to-links-list
+             (de-sim-trace (si 'q10-comp-gcd data-size)
                            inputs-seq
                            st
-                           (q10-comp-gcd3$netlist data-width))))
+                           (q10-comp-gcd$netlist data-size))))
            0)
           state)))
 
-  (defund q10-comp-gcd3$in-out-sim (data-width n state)
-    (declare (xargs :guard (and (natp data-width)
+  (defund q10-comp-gcd$in-out-sim (data-size n state)
+    (declare (xargs :guard (and (natp data-size)
                                 (natp n))
                     :verify-guards nil
                     :stobjs state))
-    (b* ((num-signals (q10-comp-gcd3$ins-len data-width))
+    (b* ((num-signals (q10-comp-gcd$ins-len data-size))
          ((mv inputs-seq state)
           (signal-vals-gen num-signals n state nil))
-         (st (q10-comp-gcd3$st-gen data-width)))
+         (st (q10-comp-gcd$st-gen data-size)))
       (mv
        (append
         (list
          (cons 'in-seq
                (v-to-nat-split-lst
-                (q10-comp-gcd3$in-seq inputs-seq st data-width n)
-                data-width)))
+                (q10-comp-gcd$in-seq inputs-seq st data-size n)
+                data-size)))
         (list
          (cons 'out-seq
                (v-to-nat-lst
-                (q10-comp-gcd3$out-seq inputs-seq st data-width n)))))
+                (q10-comp-gcd$out-seq inputs-seq st data-size n)))))
        state)))
   )
 

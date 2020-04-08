@@ -1,6 +1,6 @@
-; Bitcoin Library -- Base58 Encoding and Decoding
+; Bitcoin Library
 ;
-; Copyright (C) 2018 Kestrel Institute (http://www.kestrel.edu)
+; Copyright (C) 2019 Kestrel Institute (http://www.kestrel.edu)
 ;
 ; License: A 3-clause BSD license. See the LICENSE file distributed with ACL2.
 ;
@@ -10,14 +10,11 @@
 
 (in-package "BITCOIN")
 
-(include-book "centaur/fty/top" :dir :system)
-(include-book "kestrel/utilities/digits-any-base/pow2-8" :dir :system)
-(include-book "kestrel/utilities/xdoc/constructors" :dir :system)
-(include-book "kestrel/utilities/xdoc/defxdoc-plus" :dir :system)
-(include-book "std/lists/index-of" :dir :system)
+(include-book "kestrel/std/util/deffixer" :dir :system)
+(include-book "kestrel/utilities/lists/index-of-theorems" :dir :system)
 (include-book "std/util/defval" :dir :system)
 
-(local (include-book "library-extensions"))
+(include-book "bytes")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -25,7 +22,7 @@
   :parents (bitcoin)
   :short "Base58 encoding and decoding."
   :long
-  (xdoc::topapp
+  (xdoc::topstring
    (xdoc::p
     "Base58 encoding is described in
      <a href=\"https://en.bitcoin.it/wiki/Base58Check_encoding\"
@@ -44,13 +41,14 @@
 (defval *base58-characters*
   :short "List of characters used in Base58 encoding."
   :long
-  "<p>
-   These characters are listed in the table in
-   <a href=\"https://en.bitcoin.it/wiki/Base58Check_encoding#Base58_symbol_chart\"
-   >Section `Base58 symbol chart' of Page `Base58Check encoding' of [Wiki]</a>,
-   along with their corresponding values in base 58.
-   This list is ordered according to increasing values.
-   </p>"
+  (xdoc::topstring
+   (xdoc::p
+    "These characters are listed in the table in "
+    (xdoc::a
+     :href "https://en.bitcoin.it/wiki/Base58Check_encoding#Base58_symbol_chart"
+      "Section `Base58 symbol chart' of Page `Base58Check encoding' of [Wiki]")
+    ", along with their corresponding values in base 58.
+     This list is ordered according to increasing values."))
   (explode "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz")
   ///
 
@@ -63,9 +61,8 @@
 (defval *base58-zero*
   :short "Character that encodes 0 in the Base58 encoding."
   :long
-  "<p>
-   This is the first character of @(tsee *base58-characters*).
-   </p>"
+  (xdoc::topstring-p
+   "This is the first character of @(tsee *base58-characters*).")
   (car *base58-characters*)
   ///
 
@@ -85,25 +82,22 @@
              (characterp x))
     :rule-classes :compound-recognizer))
 
-(define base58-character-fix ((x base58-characterp))
-  :returns (fixed-x base58-characterp)
+(std::deffixer base58-character-fix
+  :pred base58-characterp
+  :body-fix *base58-zero*
   :parents (base58-character)
-  :short "Fixer for @(tsee base58-character)."
-  (mbe :logic (if (base58-characterp x) x *base58-zero*)
-       :exec x)
-  ///
+  :short "Fixer for @(tsee base58-character).")
 
-  (more-returns
-   (fixed-x characterp :rule-classes :type-prescription))
-
-  (defrule base58-character-fix-when-base58-characterp
-    (implies (base58-characterp x)
-             (equal (base58-character-fix x) x))))
+(defsection base58-character-fix-ext
+  :extension base58-character-fix
+  (defret characterp-of-base58-character-fix
+    (characterp fixed-x)
+    :rule-classes :type-prescription))
 
 (defsection base58-character
   :short "Base58 characters."
   :long
-  (xdoc::topp
+  (xdoc::topstring-p
    "These are the characters in @(tsee *base58-characters*).")
   (fty::deffixtype base58-character
     :pred base58-characterp
@@ -118,6 +112,7 @@
   :short "True lists of Base58 characters."
   :elt-type base58-character
   :true-listp t
+  :elementp-of-nil nil
   :pred base58-character-listp
   ///
 
@@ -178,7 +173,7 @@
 (defsection base58-value
   :short "Base58 values."
   :long
-  (xdoc::topp
+  (xdoc::topstring-p
    "These are digits in base 58.")
   (fty::deffixtype base58-value
     :pred base58-valuep
@@ -193,6 +188,7 @@
   :short "True lists of Base58 values."
   :elt-type base58-value
   :true-listp t
+  :elementp-of-nil nil
   :pred base58-value-listp
   ///
 
@@ -242,7 +238,7 @@
                  :hints (("Goal" :in-theory (enable base58-value-fix))))
   :short "Turn a Base58 value into the corresponding character."
   :long
-  (xdoc::topp
+  (xdoc::topstring-p
    "The correspondence is given
     in the table
     in Section `Base58 symbol chart'
@@ -261,12 +257,12 @@
                                                    base58-characterp))))
   :short "Turn a Base58 character into the corresponding value."
   :long
-  (xdoc::topp
+  (xdoc::topstring-p
    "This is the inverse of @(tsee base58-val=>char).")
   (index-of (base58-character-fix char) *base58-characters*)
   :hooks (:fix))
 
-(defsection base58-val<=>char-inversion-theorems
+(defsection base58-val<=>char-inverses-theorems
   :parents (base58-val=>char base58-char=>val)
   :short "@(tsee base58-val=>char) and @(tsee base58-char=>val)
           are mutual inverses."
@@ -331,7 +327,7 @@
            (repeat n (base58-char=>val char)))
     :enable (base58-chars=>vals repeat)))
 
-(defsection base58-vals<=>chars-inversion-theorems
+(defsection base58-vals<=>chars-inverses-theorems
   :parents (base58-vals=>chars base58-chars=>vals)
   :short "@(tsee base58-vals=>chars) and @(tsee base58-chars=>vals)
           are mutual inverses."
@@ -348,12 +344,12 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define base58-encode ((bytes ubyte8-listp))
+(define base58-encode ((bytes byte-listp))
   :returns (chars base58-character-listp)
   :short "Turn a list of bytes into
           the corresponding list of Base58 characters."
   :long
-  (xdoc::topapp
+  (xdoc::topstring
    (xdoc::p
     "This is described in bullets 4, 5, and 6 in
      <a href=\"https://en.bitcoin.it/wiki/Base58Check_encoding#Creating_a_Base58Check_string\"
@@ -381,40 +377,33 @@
      to a true list of natural numbers, not to a true list of bytes.
      Thus, we use an @(tsee mbe) there,
      so that the encoding function fixes its input to a true list of bytes."))
-  (b* ((nat (bendian=>nat 256 bytes))
+  (b* ((nat (bebytes=>nat bytes))
        (vals (nat=>bendian* 58 nat))
        (number-of-zeros (- (len bytes)
                            (len (trim-bendian*
-                                 (mbe :logic (ubyte8-list-fix bytes)
+                                 (mbe :logic (byte-list-fix bytes)
                                       :exec bytes)))))
        (chars (append (repeat number-of-zeros *base58-zero*)
                       (base58-vals=>chars vals))))
     chars)
   :guard-hints (("Goal"
                  :in-theory
-                 (enable
-                  acl2::unsigned-byte-listp-rewrite-dab-digit-listp
-                  acl2::ubyte8-listp-rewrite-unsigned-byte-listp
-                  base58-value-listp-rewrite-dab-digit-listp-58)))
+                 (enable base58-value-listp-rewrite-dab-digit-listp-58)))
+  :hooks (:fix)
   ///
-
-  (fty::deffixequiv base58-encode
-    :hints (("Goal"
-             :in-theory
-             (enable acl2::ubyte8-list-fix-rewrite-dab-digit-list-fix-256))))
 
   (defruled base58-encode-same-natural-number
     (equal (bendian=>nat 58 (base58-chars=>vals (base58-encode bytes)))
-           (bendian=>nat 256 bytes))
+           (bebytes=>nat bytes))
     :enable (acl2::bendian=>nat-of-append
              base58-value-listp-rewrite-dab-digit-listp-58)))
 
 (define base58-decode ((chars base58-character-listp))
-  :returns (bytes ubyte8-listp)
+  :returns (bytes byte-listp)
   :short "Turn a list of Base58 characters
           into the corresponding list of bytes."
   :long
-  (xdoc::topapp
+  (xdoc::topstring
    (xdoc::p
     "This is not explicitly described in [Wiki] or [MB],
      but is, implicitly, the inverse of encoding.")
@@ -446,7 +435,7 @@
        (number-of-zeros (- (len vals)
                            (len (trim-bendian* vals))))
        (bytes (append (repeat number-of-zeros 0)
-                      (nat=>bendian* 256 nat))))
+                      (nat=>bebytes* nat))))
     bytes)
   :hooks (:fix)
   :guard-hints (("Goal"
@@ -455,25 +444,24 @@
   ///
 
   (defruled base58-decode-same-natural-number
-    (equal (bendian=>nat 256 (base58-decode chars))
+    (equal (bebytes=>nat (base58-decode chars))
            (bendian=>nat 58 (base58-chars=>vals chars)))
-    :enable acl2::bendian=>nat-of-append))
+    :enable acl2::bebytes=>nat-of-append))
 
-(defsection base58-encode/decode-inversion-theorems
+(defsection base58-encode/decode-inverses-theorems
   :parents (base58-encode base58-decode)
   :short "@(tsee base58-encode) and @(tsee base58-decode)
           are mutual inverses."
 
   (defrule base58-decode-of-base58-encode
     (equal (base58-decode (base58-encode bytes))
-           (ubyte8-list-fix bytes))
+           (byte-list-fix bytes))
     :enable (base58-encode
              base58-decode
              base58-value-list-fix-rewrite-dab-digit-list-fix-58
-             acl2::bendian=>nat-of-append
-             acl2::ubyte8-list-fix-rewrite-dab-digit-list-fix-256)
+             acl2::bendian=>nat-of-append)
     :use (:instance acl2::append-of-repeat-and-trim-bendian*
-          (acl2::digits (ubyte8-list-fix bytes)))
+          (acl2::digits (byte-list-fix bytes)))
     :disable acl2::append-of-repeat-and-trim-bendian*
     :prep-books ((include-book "arithmetic/top" :dir :system)))
 
@@ -482,7 +470,7 @@
            (base58-character-list-fix chars))
     :enable (base58-encode
              base58-decode
-             acl2::bendian=>nat-of-append
+             acl2::bebytes=>nat-of-append
              dab-digit-list-fix-58-rewrite-base58-value-list-fix)
     :use ((:instance acl2::append-of-repeat-and-trim-bendian*
            (acl2::digits (base58-chars=>vals chars)))

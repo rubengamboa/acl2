@@ -9,7 +9,7 @@
 ; load in the expander book.
 
 (include-book "misc/expander" :dir :system)
-
+(include-book "acl2s/acl2s-size" :dir :system)
 
 ; load in Peter's hacker stuff.  we use at least three things from this:
 ; - add several keys to the acl2-defaults-table
@@ -21,6 +21,17 @@
 (progn+all-ttags-allowed
  (include-book "hacking/all" :dir :system :ttags :all))
 (subsume-ttags-since-defttag)
+
+; From ACL2 source file defthm.lisp, utilities.lisp
+(defun fix-pkg (pkg)
+  (declare (xargs :guard (and (or (null pkg) (stringp pkg))
+                              (not (equal pkg "")))))
+  (if (and pkg (not (equal pkg *main-lisp-package-name*)))
+      pkg
+    "ACL2"))
+
+(defmacro fix-intern$ (name pkg)
+  `(intern$ ,name (fix-pkg ,pkg)))
 
 ;;; Legacy doc strings replaced Nov. 2014 by the corresponding
 ;;; auto-generated defxdoc form in the last part of this file.
@@ -441,11 +452,11 @@
 
     ;;  ~c[Ccm-cs] limits which CCMs are compared using the theorem
     ;;  prover. Consider again the ~c[ack] example in the documentation for
-    ;;  ~il[CCG]. All we needed was to compare the value of ~c[(acl2-count x)]
-    ;;  before and after the recursive call and the value of ~c[(acl2-count y)]
+    ;;  ~il[CCG]. All we needed was to compare the value of ~c[(acl2s-size x)]
+    ;;  before and after the recursive call and the value of ~c[(acl2s-size y)]
     ;;  before and after the recursive call. We would learn nothing, and waste
-    ;;  time with the theorem prover if we compared ~c[(acl2-count x)] to
-    ;;  ~c[(acl2-count y)]. However, other times, it is important to compare CCMs
+    ;;  time with the theorem prover if we compared ~c[(acl2s-size x)] to
+    ;;  ~c[(acl2s-size y)]. However, other times, it is important to compare CCMs
     ;;  with each other, for example, when arguments are permuted, or we are
     ;;  dealing with a mutual recursion.
 
@@ -464,9 +475,9 @@
     ;;      (1+ (f (cdr x)))))
     ;;  ~ev[]
     ;;  Now consider the case where ~c[m1] and ~c[m2] are both the measure
-    ;;  ~c[(acl2-count x)]. Then if we look at the recursive call ~c[(f (cdr x))]
+    ;;  ~c[(acl2s-size x)]. Then if we look at the recursive call ~c[(f (cdr x))]
     ;;  in the body of ~c[f], then ~c[m2'] is the result of replacing ~c[x] with
-    ;;  ~c[(cdr x)] in ~c[m2], i.e., ~c[(acl2-count (cdr x))].
+    ;;  ~c[(cdr x)] in ~c[m2], i.e., ~c[(acl2s-size (cdr x))].
 
     ;;  If ~c[ccm-cs] is ~c[:EQUAL] we will compare ~c[m1] to
     ;;  ~c[m2] if ~c[v1] and ~c[v2] are equal. If ~c[value] is ~c[:ALL] we will
@@ -497,16 +508,16 @@
 
     ;;  Clearly this is terminating. If we choose a measure of ~c[(nfix x)] we
     ;;  know that if ~c[x] is a positive integer, ~c[(nfix (- x 2))] is less than
-    ;;  ~c[(nfix x)]. But consider the measure ~c[(acl2-count x)]. The strange
-    ;;  thing here is that if ~c[x] is 1, then ~c[(acl2-count (- x 2))] is
-    ;;  ~c[(acl2-count -1)], which is 1, i.e. the ~c[acl2-count] of ~c[x]. So, the
+    ;;  ~c[(nfix x)]. But consider the measure ~c[(acl2s-size x)]. The strange
+    ;;  thing here is that if ~c[x] is 1, then ~c[(acl2s-size (- x 2))] is
+    ;;  ~c[(acl2s-size -1)], which is 1, i.e. the ~c[acl2s-size] of ~c[x]. So, the
     ;;  fact that we know that ~c[x] is a positive integer is not enough to show
     ;;  that this measure decreases. But notice that if ~c[x] is 1, we will recur
     ;;  just one more time. So, if we consider what happens when we move from the
     ;;  recursive call back to itself. In this case we know
     ;; ~c[(and (not (zp x)) (not (zp (- x 2))))].
     ;;  Under these conditions, it is trivial for ACL2 to prove that
-    ;;  ~c[(acl2-count (- x 2))] is always less than ~c[(acl2-count x)].
+    ;;  ~c[(acl2s-size (- x 2))] is always less than ~c[(acl2s-size x)].
 
     ;;  However, this can make the CCG analysis much more expensive, since
     ;;  information about how values change from step to step are done on a
@@ -1450,7 +1461,7 @@
                         collect (accg-find-ccmf accg (car p) (cadr p)))))
     (pprogn
      (fms "Producing counter-example, including simplifying rulers in order to ~
-           maximize the reabability of the counter-example."
+           maximize the readability of the counter-example."
           nil
           *standard-co*
           state nil)
@@ -1861,7 +1872,7 @@
          * Set the :don't-guess-ccms flag to t. Sometimes CCG analysis ~
            guesses too many CCMs which leads to excessive prover ~
            queries. This will eliminate *all* CCMs other than the ~
-           acl2-count of each formal.~|~%~
+           acl2s-size of each formal.~|~%~
          * Do you see a variable that you don't think is relevant to the ~
            termination proof? In that case, us the :ignore-formals flag ~
            to tell the CCG analysis to throw out CCMs that contain that ~
@@ -1875,8 +1886,9 @@
 (defun-raw time-left (stop-time ctx state)
   (let ((now (get-internal-run-time)))
     (if (< now stop-time)
-        (value (/ (- stop-time now)
-                  (coerce internal-time-units-per-second 'float)))
+        (value (rationalize
+                (/ (- stop-time now)
+                   (coerce internal-time-units-per-second 'float))))
       (time-er ctx))))
 
 (defun-raw time-check (stop-time ctx state)
@@ -2216,9 +2228,9 @@
 
 (defun-raw ccg-formal-sizes (formals)
   ;; given a list of formals, this function returns a list of
-  ;; expressions to calculate the acl2-count of each formal.
+  ;; expressions to calculate the acl2s-size of each formal.
   (loop for x in formals
-        collect `(acl2-count ,x)))
+        collect `(acl2s-size ,x)))
 
 (defun-raw ccg-add-zp-ccm (r formals ccms)
   ;; if an expression, r -- which will generally correspond to one of
@@ -2269,8 +2281,8 @@ x-y+1, but instead it guessed y-x+1. Now, looking at the code
 below, notice the how p is defined in the let*. That definition
 essentially orders the args based on the term order, so we lose
 the information about how they were compared. This is not a good
-idea. In many cases, it might be fine because acl2-count is
-robust, eg, acl2-count -10 = 10, but in this case the ccm we
+idea. In many cases, it might be fine because acl2s-size is
+robust, eg, acl2s-size -10 = 10, but in this case the ccm we
 guess does not decrease and cgen finds a counterexample. So, I
 don't understand why the term order is used here at all. I
 rewrote just this case in my updated version of ccg, below.
@@ -2284,10 +2296,10 @@ e2-e1+1.
   ;; the expressions in a ruler -- is one of the following forms, we
   ;; add the corresponding expression to the ccms:
   ;;
-  ;; * (< 0 e2) --> (acl2-count e2)
-  ;; * (< e1 e2) --> (acl2-count (- e2 e1))
-  ;; * (not (< e1 0)) --> (1+ (acl2-count e1))
-  ;; * (not (< e1 e2)) --> (1+ (acl2-count (- e1 e2)))
+  ;; * (< 0 e2) --> (acl2s-size e2)
+  ;; * (< e1 e2) --> (acl2s-size (- e2 e1))
+  ;; * (not (< e1 0)) --> (1+ (acl2s-size e1))
+  ;; * (not (< e1 e2)) --> (1+ (acl2s-size (- e1 e2)))
   (declare (ignore formals))
   (cond ((atom r) ccms)
         ((or (eq (car r) '<)
@@ -2301,7 +2313,7 @@ e2-e1+1.
            (cond ((and (quotep arg1) (quotep arg2))
                   ccms)
                  ((not (or (quotep arg1) (quotep arg2)))
-                  (cons `(acl2-count (binary-+ '1
+                  (cons `(acl2s-size (binary-+ '1
                                                (binary-+ ,arg2
                                                          (unary-- ,arg1))))
                         ccms))
@@ -2310,14 +2322,14 @@ e2-e1+1.
                                (eql (unquote arg1) 1))
                            (variablep arg2))
                       ccms
-                    (cons `(acl2-count (binary-+ (quote ,(- 1 (unquote arg1))) ,arg2))
+                    (cons `(acl2s-size (binary-+ (quote ,(- 1 (unquote arg1))) ,arg2))
                           ccms)))
                  ((and (quotep arg2) (acl2-numberp (unquote arg2)))
                   (if (and (or (eql (unquote arg2) 0)
                                (eql (unquote arg2) 1))
                            (variablep arg1))
                       ccms
-                    (cons `(acl2-count (binary-+ (quote ,(- 1 (unquote arg2))) ,arg1))
+                    (cons `(acl2s-size (binary-+ (quote ,(- 1 (unquote arg2))) ,arg1))
                           ccms)))
                  (t
                   ccms))))
@@ -2330,10 +2342,10 @@ e2-e1+1.
   ;; the expressions in a ruler -- is one of the following forms, we
   ;; add the corresponding expression to the ccms:
   ;;
-  ;; * (< 0 e2) --> (acl2-count e2)
-  ;; * (< e1 e2) --> (acl2-count (- e2 e1))
-  ;; * (not (< e1 0)) --> (1+ (acl2-count e1))
-  ;; * (not (< e1 e2)) --> (1+ (acl2-count (- e1 e2)))
+  ;; * (< 0 e2) --> (acl2s-size e2)
+  ;; * (< e1 e2) --> (acl2s-size (- e2 e1))
+  ;; * (not (< e1 0)) --> (1+ (acl2s-size e1))
+  ;; * (not (< e1 e2)) --> (1+ (acl2s-size (- e1 e2)))
   (declare (ignore formals))
   (cond ((atom r) ccms)
         ((or (eq (car r) '<)
@@ -2351,11 +2363,11 @@ e2-e1+1.
                   ccms)
                  ((not (or (quotep arg1) (quotep arg2)))
                   (if not?
-                      (cons `(acl2-count (binary-+ '1
+                      (cons `(acl2s-size (binary-+ '1
                                                    (binary-+ ,rarg1
                                                              (unary-- ,rarg2))))
                             ccms)
-                    (cons `(acl2-count  (binary-+ '1
+                    (cons `(acl2s-size  (binary-+ '1
                                                   (binary-+ ,rarg2
                                                             (unary-- ,rarg1))))
                           ccms)))
@@ -2364,14 +2376,14 @@ e2-e1+1.
                                (eql (unquote arg1) 1))
                            (variablep arg2))
                       ccms
-                    (cons `(acl2-count (binary-+ (quote ,(- 1 (unquote arg1))) ,arg2))
+                    (cons `(acl2s-size (binary-+ (quote ,(- 1 (unquote arg1))) ,arg2))
                           ccms)))
                  ((and (quotep arg2) (acl2-numberp (unquote arg2)))
                   (if (and (or (eql (unquote arg2) 0)
                                (eql (unquote arg2) 1))
                            (variablep arg1))
                       ccms
-                    (cons `(acl2-count (binary-+ (quote ,(- 1 (unquote arg2))) ,arg1))
+                    (cons `(acl2s-size (binary-+ (quote ,(- 1 (unquote arg2))) ,arg1))
                           ccms)))
                  (t
                   ccms))))
@@ -2389,7 +2401,7 @@ e2-e1+1.
     ccms))
 
 (defun-raw accg-guess-ccms-for-node (node)
-  ;; given a node, guesses ccms beyond the basic acl2-count of the
+  ;; given a node, guesses ccms beyond the basic acl2s-size of the
   ;; formals.
   (let ((ccms nil)
         (rulers (accg-node-ruler node))
@@ -2417,12 +2429,12 @@ e2-e1+1.
                                              :test #'equal
                                              :key #'de-propagate)))))
 
-;; when we guess ccms beyond the basic acl2-count of the formals of a
+;; when we guess ccms beyond the basic acl2s-size of the formals of a
 ;; function, we need to propagate the ccms throughout the accg. for
 ;; example, suppose we have two functions, f and g, such that f
 ;; contains the call (g x y) when (not (zp (- y x))) and g always
 ;; calls (f (1+ x) y). then f will get assigned the ccm (- y x), but g
-;; will only have (acl2-count x) and (acl2-count y). in this
+;; will only have (acl2s-size x) and (acl2s-size y). in this
 ;; situation, there will be no way to tell that (- y x) decreases each
 ;; time through the loop. we need some sort of "place-holder" to keep
 ;; track of the value of (- y x) when we are in the function g. the
@@ -2553,9 +2565,9 @@ e2-e1+1.
                              (aref ccms i))))
     ;; next, we propagate the ccms and then partition them by
     ;; function. finally, we set the ccm list of each node to be the
-    ;; non-trivial ccms for the function plus the acl2-count of each
+    ;; non-trivial ccms for the function plus the acl2s-size of each
     ;; formal of the parent function and the sum of all the formal
-    ;; acl2-counts (if there is more than one formal).
+    ;; acl2s-sizes (if there is more than one formal).
      (accg-propagate-ccms
       (ccg-remove-duplicate-ccms ccms)
       accg
@@ -4758,11 +4770,12 @@ e2-e1+1.
                               (stringp pkg)
                               (natp i)
                               (plist-worldp wrld))))
-  (let ((name (intern$ (coerce (append char-lst
-                                       `(#\_)
-                                       (explode-nonnegative-integer i 10 nil))
-                               'string)
-                       pkg)))
+  (let ((name (fix-intern$
+               (coerce (append char-lst
+                               `(#\_)
+                               (explode-nonnegative-integer i 10 nil))
+                       'string)
+               pkg)))
     (cond ((new-namep name wrld) (mv name i))
           (t (ccg-counter-example-fn-name1 char-lst pkg (1+ i) wrld)))))
 
@@ -5901,15 +5914,15 @@ e2-e1+1.
              (?-ccm-lstp (cdr lst))))))
 
 (defun ccg-redundant-measure-for-defunp (def justification wrld)
-  (let ((name (car def))
-        (measure0 (if justification
-                      (access justification
-                              justification
-                              :measure)
-                    nil))
-        (measures (fetch-dcl-field :measure
-                                   (butlast (cddr def)
-                                            1))))
+  (let* ((name (car def))
+         (measure0 (if justification
+                       (access justification
+                               justification
+                               :measure)
+                     nil))
+         (dcls (butlast (cddr def) 1))
+         (measures (fetch-dcl-field :measure dcls)))
+
     (cond ((and (consp measure0)
                 (eq (car measure0) :?))
            (if (and (consp measures)
@@ -5954,11 +5967,21 @@ e2-e1+1.
            (let ((subset (access justification justification :subset))
                  (ccms-lst (fetch-dcl-field :consider-only-ccms
                                             (butlast (cddr def) 1))))
-             (if (and (consp ccms-lst)
-                      (null (cdr ccms-lst))
-                      (?-ccm-lstp (car ccms-lst))
-                      (set-equalp-eq (all-vars1-lst (car ccms-lst) nil)
-                                     subset))
+
+; Pete: Fri Aug 16 EDT 2019: Added the (null ccms-lst) case
+; below. This seems reasonable because we know that the existing
+; measured subset works, and this defun is not claiming some different
+; measured subset, so there's no difference between the case we're in
+; and the case where the user identified the exact justification in
+; the world. I need to come back to this later to make sure I'm not
+; missing something.
+               
+             (if (or (null ccms-lst)
+                     (and (consp ccms-lst)
+                          (null (cdr ccms-lst))
+                          (?-ccm-lstp (car ccms-lst))
+                          (set-equalp-eq (all-vars1-lst (car ccms-lst) nil)
+                                         subset)))
                  'redundant
                (msg "A redundant definition using CCG termination must use ~
                      the xarg :consider-only-ccms to declare a list of CCMs ~
@@ -6013,13 +6036,18 @@ e2-e1+1.
                                                ld-skip-proofsp
                                                def-lst
                                                wrld)
-  (let ((ans (redundant-or-reclassifying-defunsp0 defun-mode
-                                                  symbol-class
-                                                  ld-skip-proofsp
-                                                  nil
-                                                  def-lst
-                                                  wrld)))
-    (cond ((or (consp ans) ;; a message
+  (let* ((dcls (butlast (cddar def-lst) 1))
+         (termination-method (fetch-dcl-field :termination-method dcls))
+         (use-acl2p (and (consp termination-method)
+                         (eq (car termination-method) :measure)))
+         (ans (redundant-or-reclassifying-defunsp0 defun-mode
+                                                   symbol-class
+                                                   ld-skip-proofsp
+                                                   use-acl2p
+                                                   def-lst
+                                                   wrld)))
+    (cond ((or use-acl2p
+               (consp ans) ;; a message
                (not (eq ans 'redundant))
 
 ; the following 2 are a negation of the conditions for checking measures in
@@ -6030,7 +6058,7 @@ e2-e1+1.
 ; there would have been an error or the new definitions would be
 ; reclassifications). Keep this in sync with the conditions for checking
 ; measures in redundant-or-reclassifying-defunsp.
-
+               
                (not (eq defun-mode :logic))
                ld-skip-proofsp)
            ans)
@@ -7002,7 +7030,25 @@ e2-e1+1.
 ; use the standard state and error primitives and so it returns 3 and lists
 ; together the three "real" answers.
 
- (let ((wrld1 (putprop-recursivep-lst names bodies wrld)))
+  (prog2$
+
+; [Note: With the introduction of loop$-recursion into ACL2 we had to modify
+; this code to stop it from accepting defuns exhibiting loop$ recursion.  The
+; check is conservative but meant to be fast.  JSM 23 Jan, 2020.]
+
+   (choke-on-loop$-recursion nil
+                             names
+                             (car bodies) ; irrelevant if names not singleton
+                             'ccg-put-induction-info)
+   (let ((wrld1 (putprop-recursivep-lst nil nil names bodies wrld)))
+
+; Pete: Putprop-recursivep-lst now takes the new loop$-recursion-checkedp and
+; loop$-recursion arguments, which if nil will mean a hard error is signalled
+; if putprop-recursivep-lst detects recursion inside loop$ bodies.  See the
+; Essay on Choking on Loop$ Recursion.  Basically, the question is whether you
+; want to extend ccg to handle such recursion (and then change the two flags
+; appropriately) or leave them as is and suffer errors if ccg is called on
+; functions that use loop$ recursion.
 
 ; The put above stores a note on each function symbol as to whether it is
 ; recursive or not.  An important question arises: have we inadventently
@@ -7011,66 +7057,72 @@ e2-e1+1.
 ; care about properties such as 'recursivep.  However, we make use of this
 ; property below to decide if we need to prove termination.
 
-    (cond ((and (null (cdr names))
-                (null (getprop (car names) 'recursivep nil
-                               'current-acl2-world wrld1)))
+     (cond ((and (null (cdr names))
+                 (null (getprop (car names) 'recursivep nil
+                                'current-acl2-world wrld1)))
 
 ; If only one function is being defined and it is non-recursive, we can quit.
 ; But we have to store the symbol-class and we have to print out the admission
 ; message with prove-termination so the rest of our processing is uniform.
 
-           (er-let*
-            ((tuple (prove-termination-non-recursive names bodies mp rel hints otf-flg big-mutrec
-                                                     ctx ens wrld1 state)))
-            (value (cons nil tuple))))
-          (t
-           (let ((t-machines (termination-machines names bodies ruler-extenders-lst)))
-             (er-let*
-              ((wrld1 (update-w
+            (er-let*
+                ((tuple (prove-termination-non-recursive names bodies mp rel hints otf-flg big-mutrec
+                                                         ctx ens wrld1 state)))
+              (value (cons nil tuple))))
+           (t
+            (let ((t-machines (termination-machines nil nil
+; loop$-recursion-checkedp and loop$-recursion declared value = nil
+                                                    names
+                                                    nil ; = arglists
+; when loop$-recursion-checkedp = nil, arglists is irrelevant
+                                                    bodies ruler-extenders-lst)))
+              (er-let*
+                  ((wrld1 (update-w
 
 ; Sol Swords sent an example in which a clause-processor failed during a
 ; termination proof.  That problem goes away if we install the world, which we
 ; do by making the following binding.
 
-                       t ; formerly big-mutrec
-                       wrld1))
-              (quadruple
-               (if (eq term-method :measure)
-                   (er-let* ((triple (prove-termination-recursive
-                                      names arglists
-                                      measures
-                                      t-machines
-                                      mp rel hints otf-flg bodies
-                                      measure-debug
-                                      ctx ens wrld1 state)))
-                     (value (cons :measure triple)))
-                 (ccg-prove-termination-recursive names arglists
-                                                  measures
-                                                  ccms
-                                                  ruler-extenders-lst
-                                                  t-machines
-                                                  mp rel
-                                                  verbose
-                                                  time-limit
-                                                  hierarchy
-                                                  otf-flg bodies
-                                                  ctx ens wrld1 state))))
+                           t ; formerly big-mutrec
+                           wrld1))
+                   (quadruple
+                    (if (eq term-method :measure)
+                        (er-let* ((triple (prove-termination-recursive
+                                           names arglists
+                                           measures
+                                           t-machines
+                                           mp rel hints otf-flg bodies
+                                           measure-debug
+                                           ctx ens wrld1 state)))
+                          (value (cons :measure triple)))
+                        (ccg-prove-termination-recursive names arglists
+                                                         measures
+                                                         ccms
+                                                         ruler-extenders-lst
+                                                         t-machines
+                                                         mp rel
+                                                         verbose
+                                                         time-limit
+                                                         hierarchy
+                                                         otf-flg bodies
+                                                         ctx ens wrld1 state))))
                 ;;(progn
-                  ;;(print quadruple)
-               ;; (prog2$
-               ;;  (cw "~%DEBUG:: quadruple = ~x0~%~%" quadruple)
-               (let* ((term-method (car quadruple))
-                      (col (cadr quadruple))
-                      (measure-alist (caddr quadruple))
-                      (ttree (cdddr quadruple)))
-                 (er-let*
-                     ((tuple (put-induction-info-recursive names arglists
-                                                           col ttree
-                                                           measure-alist t-machines
-                                                           ruler-extenders-lst
-                                                           bodies mp rel wrld1
-                                                           state)))
-                   (value (cons term-method tuple))))))))))
+                ;;(print quadruple)
+                ;; (prog2$
+                ;;  (cw "~%DEBUG:: quadruple = ~x0~%~%" quadruple)
+                (let* ((term-method (car quadruple))
+                       (col (cadr quadruple))
+                       (measure-alist (caddr quadruple))
+                       (ttree (cdddr quadruple)))
+                  (er-let*
+                      ((tuple (put-induction-info-recursive nil ; loop$-recursion
+                                                            names arglists
+                                                            col ttree
+                                                            measure-alist t-machines
+                                                            ruler-extenders-lst
+                                                            bodies mp rel wrld1
+                                                            state)))
+                    (value (cons term-method tuple)))))))))))
 
 (defun defun-redundant-get-ccms (fives wrld)
   ;; gets the CCMs installed into the world for a given set of function definitions.
@@ -7269,7 +7321,7 @@ e2-e1+1.
          ruler-extenders-lst mp rel
          verbose time-limit hierarchy ;ccg
          hints guard-hints std-hints
-         otf-flg guard-debug measure-debug bodies symbol-class
+         otf-flg guard-debug guard-simplify measure-debug bodies symbol-class
          normalizeps split-types-terms new-lambda$-alist-pairs
          non-executablep
          #+:non-standard-analysis std-p
@@ -7312,6 +7364,7 @@ e2-e1+1.
          std-hints
          otf-flg
          guard-debug
+         guard-simplify
          bodies
          symbol-class
          normalizeps
@@ -7437,10 +7490,11 @@ e2-e1+1.
                 (measure-debug (nth 22 tuple))
                 (split-types-terms (nth 23 tuple))
                 (new-lambda$-alist-pairs (nth 24 tuple))
-                (ccms (nth 25 tuple))
-                (verbose (nth 26 tuple))
-                (time-limit (nth 27 tuple))
-                (hierarchy (nth 28 tuple)))
+                (guard-simplify (nth 25 tuple))
+                (ccms (nth 26 tuple))
+                (verbose (nth 27 tuple))
+                (time-limit (nth 28 tuple))
+                (hierarchy (nth 29 tuple)))
             (er-let*
              ((pair (ccg-defuns-fn0
                      names
@@ -7462,6 +7516,7 @@ e2-e1+1.
                      std-hints
                      otf-flg
                      guard-debug
+                     guard-simplify
                      measure-debug
                      bodies
                      symbol-class
@@ -7508,6 +7563,20 @@ e2-e1+1.
 ; redefine defuns-fn to "be" (call) ccg-defuns-fn.
 ;
 ; redefun is provided by my hacker stuff. -Peter
+
+; Matt K. mod, 2/5/2020: Starting with recent changes to store translate
+; cert-data in a .cert file, we can get warnings
+;   ".Fast alist discipline violated in HONS-GET."
+; for the redefinitions of defuns-fn and defstobj-fn below.  I don't know why,
+; but I believe that these are the only such new warnings when running the
+; "everything" regression suite; and the fact that we're redefining defuns-fn
+; make it rather unsurprising to me that we see such warnings.  So I'll simply
+; turn them off!  Of course, anyone maintaining ACL2s who would like to get to
+; the bottom of this is welcome to do so!
+; Note that we must temporarily go into logic mode so that we don't skip the
+; local event below.  (We want it to be local so that we don't export its
+; effect.)
+(logic) (local (set-slow-alist-action nil)) (program)
 
 (redefun defuns-fn (def-lst state event-form #+:non-standard-analysis std-p)
          (ccg-defuns-fn def-lst state event-form #+:non-standard-analysis std-p))
@@ -7561,9 +7630,9 @@ e2-e1+1.
 
  <p>ACL2 cannot automatically prove the termination of @('ack') using its
   measure-based termination proof. In order to admit the function, the user
-  must supply a measure. An example measure is @('(make-ord 1 (1+ (acl2-count
-  y)) (acl2-count x))'), which is equivalent to the ordinal @('w * (1+
-  (acl2-count y)) + (acl2-count x)'), where @('w') is the first infinite
+  must supply a measure. An example measure is @('(make-ord 1 (1+ (acl2s-size
+  y)) (acl2s-size x))'), which is equivalent to the ordinal @('w * (1+
+  (acl2s-size y)) + (acl2s-size x)'), where @('w') is the first infinite
   ordinal.</p>
 
  <p>The CCG analysis, on the other hand, automatically proves termination as
@@ -7593,7 +7662,7 @@ e2-e1+1.
  heuristics for guessing appropriate measures. However, there is a mechanism
  for supplying measures to the CCG analysis if you need to see @(see
  CCG-XARGS). In our example, the CCG analysis will guess the measures
- @('(acl2-count x)'), @('(acl2-count y)'), and @('(+ (acl2-count x) (acl2-count
+ @('(acl2s-size x)'), @('(acl2s-size y)'), and @('(+ (acl2s-size x) (acl2s-size
  y))'). This last one turns out to be unimportant for the termination
  proof. However, note that the first two of these measures are components of
  the ordinal measure that we gave ACL2 to prove termination earlier. As one
@@ -7606,14 +7675,14 @@ e2-e1+1.
  measure compares to another across recursive calls.</p>
 
  <p>In our example, note that when the recursive call of the context 1 is made,
- the new value of @('(acl2-count x)') is less than the original value of
- @('(acl2-count x)'). More formally, we can prove the following:</p>
+ the new value of @('(acl2s-size x)') is less than the original value of
+ @('(acl2s-size x)'). More formally, we can prove the following:</p>
 
  @({
   (implies (and (not (zp x))
                 (not (zp y)))
-           (o< (acl2-count (1- x))
-               (acl2-count x)))
+           (o< (acl2s-size (1- x))
+               (acl2s-size x)))
  })
 
  <p>For those of you that are familiar with measure-based termination proofs in
@@ -7624,13 +7693,13 @@ e2-e1+1.
  @({
   (implies (and (not (zp x))
                 (not (zp y)))
-           (o<= (acl2-count y)
-                (acl2-count y)))
+           (o<= (acl2s-size y)
+                (acl2s-size y)))
  })
 
  <p>That is, @('y') stays the same across this recursive call. For the other
- context, we similarly note that @('(acl2-count y)') is decreasing. However, we
- can say nothing about the value of @('(acl2-count x)'). The CCG algorithm does
+ context, we similarly note that @('(acl2s-size y)') is decreasing. However, we
+ can say nothing about the value of @('(acl2s-size x)'). The CCG algorithm does
  this analysis using queries to the theorem prover that are carefully
  restricted to limit prover time.</p>
 
@@ -7651,15 +7720,15 @@ e2-e1+1.
 
  <p>For our example, consider two kinds of infinite paths through our CCG:
  those that visit context 2 infinitely often, and those that don't. In the
- first case, we know that @('(acl2-count y)') is never increasing, since a
+ first case, we know that @('(acl2s-size y)') is never increasing, since a
  visit to context 1 does not change the value of @('y'), and a visit to context
- 2 decreases the value of @('(acl2-count y)'). Furthermore, since we visit
- context 2 infinitely often, we know that @('(acl2-count y)') is infinitely
+ 2 decreases the value of @('(acl2s-size y)'). Furthermore, since we visit
+ context 2 infinitely often, we know that @('(acl2s-size y)') is infinitely
  decreasing along this path. Therefore, we have met the criteria for proving no
  such path is a valid computation. In the case in which we do not visit context
  2 infinitely often, there must be a value @('N') such that we do not visit
  context 2 any more after the @('N')th context in the path. After this, we must
- only visit context 1, which always decreases the value of @('(acl2-count
+ only visit context 1, which always decreases the value of @('(acl2s-size
  x)'). Therefore, no such path can be a valid computation. Since all infinite
  paths through our CCG either visit context 2 infinitely often or not, we have
  proven termination. This analysis of the local data in the global context is
@@ -7863,11 +7932,11 @@ analysis."
  to keep them from taking too long. Of course, the trade-off is that, the more
  we limit ACL2's prover, the less powerful it becomes.</p>
 
- <p>@('Pt') can be @(':built-in-clauses'), which tells ACL2 to use only <see
- topic='@(url acl2::broken-link)'>built-in-clauses</see> analysis. This is a
- very fast, and surprisingly powerful proof technique. For example, the
- definition of Ackermann's function given in the documentation for @(see CCG)
- is solved using only this proof technique.</p>
+ <p>@('Pt') can be @(':built-in-clauses'), which tells ACL2 to use only @(see
+ built-in-clause)s analysis. This is a very fast, and surprisingly powerful
+ proof technique. For example, the definition of Ackermann's function given in
+ the documentation for @(see CCG) is solved using only this proof
+ technique.</p>
 
  <p>@('Pt') can also be of the form @('(:induction-depth n)'), where @('n') is
  a natural number. This uses the full theorem prover, but limits it in two
@@ -7881,10 +7950,10 @@ analysis."
 
  <p>@('Ccm-cs') limits which CCMs are compared using the theorem
  prover. Consider again the @('ack') example in the documentation for @(see
- CCG). All we needed was to compare the value of @('(acl2-count x)') before and
- after the recursive call and the value of @('(acl2-count y)') before and after
+ CCG). All we needed was to compare the value of @('(acl2s-size x)') before and
+ after the recursive call and the value of @('(acl2s-size y)') before and after
  the recursive call. We would learn nothing, and waste time with the theorem
- prover if we compared @('(acl2-count x)') to @('(acl2-count y)'). However,
+ prover if we compared @('(acl2s-size x)') to @('(acl2s-size y)'). However,
  other times, it is important to compare CCMs with each other, for example,
  when arguments are permuted, or we are dealing with a mutual recursion.</p>
 
@@ -7905,9 +7974,9 @@ analysis."
  })
 
  <p>Now consider the case where @('m1') and @('m2') are both the measure
- @('(acl2-count x)'). Then if we look at the recursive call @('(f (cdr x))') in
+ @('(acl2s-size x)'). Then if we look at the recursive call @('(f (cdr x))') in
  the body of @('f'), then @('m2'') is the result of replacing @('x') with
- @('(cdr x)') in @('m2'), i.e., @('(acl2-count (cdr x))').</p>
+ @('(cdr x)') in @('m2'), i.e., @('(acl2s-size (cdr x))').</p>
 
  <p>If @('ccm-cs') is @(':EQUAL') we will compare @('m1') to @('m2') if @('v1')
  and @('v2') are equal. If @('value') is @(':ALL') we will compare @('m1') to
@@ -7938,15 +8007,15 @@ analysis."
 
  <p>Clearly this is terminating. If we choose a measure of @('(nfix x)') we
  know that if @('x') is a positive integer, @('(nfix (- x 2))') is less than
- @('(nfix x)'). But consider the measure @('(acl2-count x)'). The strange thing
- here is that if @('x') is 1, then @('(acl2-count (- x 2))') is @('(acl2-count
- -1)'), which is 1, i.e. the @('acl2-count') of @('x'). So, the fact that we
+ @('(nfix x)'). But consider the measure @('(acl2s-size x)'). The strange thing
+ here is that if @('x') is 1, then @('(acl2s-size (- x 2))') is @('(acl2s-size
+ -1)'), which is 1, i.e. the @('acl2s-size') of @('x'). So, the fact that we
  know that @('x') is a positive integer is not enough to show that this measure
  decreases. But notice that if @('x') is 1, we will recur just one more
  time. So, if we consider what happens when we move from the recursive call
  back to itself. In this case we know @('(and (not (zp x)) (not (zp (- x
  2))))').  Under these conditions, it is trivial for ACL2 to prove that
- @('(acl2-count (- x 2))') is always less than @('(acl2-count x)').
+ @('(acl2s-size (- x 2))') is always less than @('(acl2s-size x)').
 
  However, this can make the CCG analysis much more expensive, since information
  about how values change from step to step are done on a per-edge, rather than

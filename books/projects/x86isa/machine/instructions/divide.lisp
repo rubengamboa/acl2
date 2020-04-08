@@ -78,7 +78,9 @@
   :returns (x86 x86p :hyp (x86p x86)
 		:hints (("Goal" :in-theory (e/d () (force (force))))))
 
+
   :guard (equal (modr/m->reg modr/m) 6)
+
   :guard-hints (("Goal" :in-theory (e/d () ((tau-system)))))
 
   :long
@@ -91,21 +93,19 @@
       DIV r/m32: \(EDX:EAX div r/m8\), EDX := Remainder, EAX := Quotient<br/>
       DIV r/m64: \(RDX:RAX div r/m8\), RDX := Remainder, RAX := Quotient<br/></p>"
 
+  :modr/m t
+
   :body
 
-  (b* ((ctx 'x86-div)
-
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-
-       (p2 (prefixes->seg prefixes))
+  (b* ((p2 (prefixes->seg prefixes))
        (p4? (equal #.*addr-size-override* (prefixes->adr prefixes)))
 
        (select-byte-operand (equal opcode #xF6))
        ((the (integer 1 8) reg/mem-size)
-	(select-operand-size proc-mode select-byte-operand rex-byte nil prefixes x86))
+	(select-operand-size
+         proc-mode select-byte-operand rex-byte nil prefixes nil nil nil x86))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        (inst-ac? t)
        ((mv flg0
@@ -201,6 +201,7 @@
 		:hints (("Goal" :in-theory (e/d () (force (force))))))
 
   :guard (equal (modr/m->reg modr/m) 7)
+
   :guard-hints (("Goal" :in-theory (e/d () ((tau-system)))))
 
   :long
@@ -214,21 +215,19 @@
      IDIV r/m32: \(EDX:EAX div r/m8\), EDX := Remainder, EAX := Quotient <br/>
      IDIV r/m64: \(RDX:RAX div r/m8\), RDX := Remainder, RAX := Quotient</p>"
 
+  :modr/m t
+
   :body
 
-  (b* ((ctx 'x86-idiv)
-
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-
-       (p2 (prefixes->seg prefixes))
+  (b* ((p2 (prefixes->seg prefixes))
        (p4? (equal #.*addr-size-override* (prefixes->adr prefixes)))
 
        (select-byte-operand (equal opcode #xF6))
        ((the (integer 1 8) reg/mem-size)
-	(select-operand-size proc-mode select-byte-operand rex-byte nil prefixes x86))
+	(select-operand-size
+         proc-mode select-byte-operand rex-byte nil prefixes nil nil nil x86))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        (inst-ac? t)
        ((mv flg0

@@ -35,7 +35,6 @@
 (include-book "centaur/fty/fixequiv" :dir :system)
 (include-book "centaur/fty/basetypes" :dir :system)
 (local (include-book "std/basic/arith-equivs" :dir :system))
-(local (include-book "misc/assert" :dir :system))
 (local (include-book "arithmetic"))
 (local (std::add-default-post-define-hook :fix))
 
@@ -165,8 +164,8 @@ HTML.</p>")
        :exec
        (- tabsize
           (the unsigned-byte (rem col tabsize))))
-  :prepwork
-  ((local (include-book "arithmetic-3/floor-mod/floor-mod" :dir :system))))
+  :prepwork ((local (include-book "ihs/quotient-remainder-lemmas" :dir :system))
+             (local (in-theory (disable rem)))))
 
 (define html-encode-next-col
   :parents (html-encode-push)
@@ -280,5 +279,3 @@ characters."
   (b* ((x (mbe :logic (str-fix x) :exec x))
        ((mv ?col acc) (html-encode-string-aux x 0 (length x) 0 tabsize nil)))
     (rchars-to-string acc)))
-
-

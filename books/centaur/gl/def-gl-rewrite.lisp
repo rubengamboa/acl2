@@ -100,11 +100,18 @@
 
 
 
+(defun add-gl-rewrite-fn (rune world)
+  (declare (xargs :mode :program))
+  (b* ((rune (if (symbolp rune) `(:rewrite ,rune) rune))
+       (rules (collect-lemmas-for-rune rune world))
+       ((unless rules)
+        (er hard 'add-gl-rewrite-fn "No rules found for rune ~x0." rune)))
+    `(table gl-rewrite-rules nil
+            (alist-add-gl-rules ',rules (table-alist 'gl-rewrite-rules world))
+            :clear)))
+
 (defmacro add-gl-rewrite (rune)
-  `(table gl-rewrite-rules
-          nil
-          (alist-add-gl-rewrite ',rune (table-alist 'gl-rewrite-rules world) world)
-          :clear))
+  `(make-event (add-gl-rewrite-fn ',rune (w state))))
 
 
 
@@ -133,11 +140,18 @@
 
 
 
+(defun remove-gl-rewrite-fn (rune world)
+  (declare (xargs :mode :program))
+  (b* ((rune (if (symbolp rune) `(:rewrite ,rune) rune))
+       (rules (collect-lemmas-for-rune rune world))
+       ((unless rules)
+        (er hard 'remove-gl-rewrite-fn "No rules found for rune ~x0." rune)))
+    `(table gl-rewrite-rules nil
+            (alist-remove-gl-rules ',rules (table-alist 'gl-rewrite-rules world))
+            :clear)))
+
 (defmacro remove-gl-rewrite (rune)
-  `(table gl-rewrite-rules
-          nil
-          (alist-remove-gl-rewrite ',rune (table-alist 'gl-rewrite-rules world) world)
-          :clear))
+  `(make-event (remove-gl-rewrite-fn ',rune (w state))))
 
 
 
@@ -246,7 +260,7 @@ symbol:</p>
 
 @({
 (cdr (assoc-eq 'gl::run-gified
-	       (table-alist 'gl::latest-greatest-gl-clause-proc (w state))))
+               (table-alist 'gl::latest-greatest-gl-clause-proc (w state))))
 })
 
 <p>For example, this function symbol is 'gl::glcp-run-gified immediately after

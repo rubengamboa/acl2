@@ -224,7 +224,7 @@
                                            (cons (car formals) deleted-formals)))
         ((member (car formals) deleted-formals)
          (lambda-remove-redundant-bindings (cdr formals) (cdr actuals) deleted-formals))
-        (t 
+        (t
          (b* (((mv rest-f rest-a)
                (lambda-remove-redundant-bindings (cdr formals) (cdr actuals) deleted-formals)))
            (mv (cons (car formals) rest-f)
@@ -317,118 +317,6 @@
 
 
 
-(defines simple-free-vars-acc
-  (define simple-free-vars-acc ((x pseudo-termp)
-                                (bound-vars symbol-listp)
-                                (acc symbol-listp))
-    :returns (vars symbol-listp :hyp :guard)
-    :verify-guards nil
-    (cond ((atom x)
-           (if (and x (mbt (symbolp x))
-                    (not (member-eq x bound-vars)))
-               (add-to-set-eq x acc)
-             acc))
-          ((eq (car x) 'quote) acc)
-          (t (simple-free-vars-lst-acc (cdr x) bound-vars acc))))
-  (define simple-free-vars-lst-acc ((x pseudo-term-listp)
-                                    (bound-vars symbol-listp)
-                                    (acc symbol-listp))
-    :returns (vars symbol-listp :hyp :guard)
-    (if (atom x)
-        acc
-      (simple-free-vars-lst-acc (cdr x)
-                                bound-vars
-                                (simple-free-vars-acc
-                                 (car x) bound-vars acc))))
-  ///
-  (verify-guards simple-free-vars-acc))
-
-
-(defines simple-free-vars
-  :verify-guards nil
-  :flag-local nil
-  (define simple-free-vars ((x pseudo-termp)
-                            (bound-vars symbol-listp))
-    :returns (vars symbol-listp :hyp :guard)
-    (mbe :logic (cond ((atom x)
-                       (and x
-                            (mbt (symbolp x))
-                            (not (member-eq x bound-vars))
-                            (list x)))
-                      ((null x) nil)
-                      ((eq (car x) 'quote) nil)
-                      (t (simple-free-vars-lst (cdr x) bound-vars)))
-         :exec (simple-free-vars-acc x bound-vars nil)))
-  (define simple-free-vars-lst ((x pseudo-term-listp)
-                                (bound-vars symbol-listp))
-    :returns (vars symbol-listp :hyp :guard)
-    (mbe :logic (if (atom x)
-                    nil
-                  (union-eq (simple-free-vars-lst (cdr x) bound-vars)
-                            (simple-free-vars (car x) bound-vars)))
-         :exec (simple-free-vars-lst-acc x bound-vars nil)))
-  ///
-
-
-  (local (defun-sk simple-free-vars-acc-is-simple-free-vars-sk (x bound-vars)
-           (forall acc
-                   (equal (simple-free-vars-acc x bound-vars acc)
-                          (union-eq (simple-free-vars x bound-vars) acc)))
-           :rewrite :direct))
-  (local (defun-sk simple-free-vars-lst-acc-is-simple-free-vars-lst-sk (x bound-vars)
-           (forall acc
-                   (equal (simple-free-vars-lst-acc x bound-vars acc)
-                          (union-eq (simple-free-vars-lst x bound-vars) acc)))
-           :rewrite :direct))
-  (local (in-theory (disable simple-free-vars-acc-is-simple-free-vars-sk
-                             simple-free-vars-lst-acc-is-simple-free-vars-lst-sk)))
-
-  (local
-   (defthm-simple-free-vars-flag
-     (defthm simple-free-vars-acc-is-simple-free-vars-lemma
-       (simple-free-vars-acc-is-simple-free-vars-sk x bound-vars)
-       :hints ((and stable-under-simplificationp
-                    `(:expand (,(car (last clause))
-                               (simple-free-vars x bound-vars)
-                               (:free (acc) (simple-free-vars-acc x bound-vars acc))
-                               (:free (acc) (simple-free-vars-acc nil bound-vars acc))))))
-       :flag simple-free-vars
-       :rule-classes nil)
-     (defthm simple-free-vars-lst-acc-is-simple-free-vars-lst-lemma
-       (simple-free-vars-lst-acc-is-simple-free-vars-lst-sk x bound-vars)
-       :hints ((and stable-under-simplificationp
-                    `(:expand (,(car (last clause))
-                               (simple-free-vars-lst x bound-vars)
-                               (:free (acc) (simple-free-vars-lst-acc x bound-vars acc))))))
-       :flag simple-free-vars-lst
-       :rule-classes nil)))
-
-  (defthm simple-free-vars-acc-is-simple-free-vars
-    (equal (simple-free-vars-acc x bound-vars acc)
-           (union-eq (simple-free-vars x bound-vars) acc))
-    :hints (("goal" :use simple-free-vars-acc-is-simple-free-vars-lemma)))
-  (defthm simple-free-vars-lst-acc-is-simple-free-vars-lst
-    (equal (simple-free-vars-lst-acc x bound-vars acc)
-           (union-eq (simple-free-vars-lst x bound-vars) acc))
-    :hints (("goal" :use simple-free-vars-lst-acc-is-simple-free-vars-lst-lemma)))
-
-  (local (defthm union-equal-nil
-           (implies (true-listp x)
-                    (equal (union-equal x nil) x))))
-
-  (verify-guards simple-free-vars)
-
-  (defthm-simple-free-vars-flag
-    (defthm simple-free-vars-in-terms-of-simple-term-vars
-      (equal (simple-free-vars x bound-vars)
-             (set-difference-eq (simple-term-vars x) bound-vars))
-      :hints ('(:expand ((simple-term-vars x))))
-      :flag simple-free-vars)
-    (defthm simple-free-vars-lst-in-terms-of-simple-term-vars
-      (equal (simple-free-vars-lst x bound-vars)
-             (set-difference-eq (simple-term-vars-lst x) bound-vars))
-      :hints ('(:expand ((simple-term-vars-lst x))))
-      :flag simple-free-vars-lst)))
 
 
 (define lambda-nest-to-bindinglist ((x pseudo-termp))
@@ -518,7 +406,7 @@
            (not (intersectp (set-difference-eq a b) b))
            :hints(("Goal" :in-theory (enable intersectp)))))
 
-  
+
   (local (defun lambda-nest-to-bindinglist-correct-ind (x a)
            (b* (((when (or (atom x)
                            (eq (car x) 'quote)
@@ -548,7 +436,7 @@
 
 
 (local (include-book "std/lists/take" :dir :system))
-(local (in-theory (disable take-redefinition)))
+(local (in-theory (disable take)))
 
 (define bindinglist-free-vars ((x bindinglist-p))
   :verify-guards nil
@@ -592,7 +480,7 @@
            (equal (unify-ev x a1)
                   (unify-ev x a2)))
   :hints (("goal" :use ((:functional-instance base-ev-when-eval-alists-agree
-                         (base-ev unify-ev) (base-ev-lst unify-ev-lst)))
+                         (base-ev unify-ev) (base-ev-list unify-ev-lst)))
            :in-theory (enable unify-ev-of-fncall-args))))
 
 (defthm unify-ev-lst-when-eval-alists-agree
@@ -600,9 +488,9 @@
                 (subsetp (simple-term-vars-lst x) vars))
            (equal (unify-ev-lst x a1)
                   (unify-ev-lst x a2)))
-  :hints (("goal" :use ((:functional-instance base-ev-lst-when-eval-alists-agree
-                         (base-ev unify-ev) (base-ev-lst unify-ev-lst))))))
-  
+  :hints (("goal" :use ((:functional-instance base-ev-list-when-eval-alists-agree
+                         (base-ev unify-ev) (base-ev-list unify-ev-lst))))))
+
 
 
 
@@ -639,7 +527,7 @@
                   (equal (pairlis$ vars (unify-ev-lst vals a))
                          (pairlis$ vars (unify-ev-lst vals b))))
          :hints(("Goal" :induct (pairlis$ vars vals)
-                 :in-theory (enable pairlis$ acl2::take-redefinition simple-term-vars-lst)))))
+                 :in-theory (enable pairlis$ acl2::take simple-term-vars-lst)))))
 
 
 (defthm unify-ev-bindinglist-when-eval-alists-agree-on-free-vars
@@ -778,7 +666,7 @@
   (local (defthm pairlis$-of-unify-ev-lst-take
            (equal (pairlis$ vars (unify-ev-lst (take (len vars) vals) a))
                   (pairlis$ vars (unify-ev-lst vals a)))
-           :hints(("Goal" :in-theory (enable pairlis$ acl2::take-redefinition)
+           :hints(("Goal" :in-theory (enable pairlis$ acl2::take)
                    :induct (pairlis$ vars vals)))))
 
   (defret bindinglist-to-lambda-nest-correct
@@ -805,7 +693,7 @@
                          (vars (simple-term-vars ,(hq rest-body)))
                          (a1 ,(hq impl-alist))
                          (a2  ,(hq spec-alist))))))))))
-    
+
 
 (define bindinglist-to-lambda-nest-aux ((x bindinglist-p)
                                         (body pseudo-termp))
@@ -929,11 +817,3 @@
        '(value-triple :ok)
      (er hard? 'check-b*-binderst-to-bindinglist
          "Check failed!~%"))))
-
-
-
-                       
-                       
-       
-
-         

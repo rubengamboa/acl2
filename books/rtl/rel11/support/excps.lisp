@@ -980,12 +980,12 @@
 ;; result and the updated FPSCR.
 
 ;; ARM-BINARY-SPEC is based on two auxiliary functions: ARM-BINARY-PRE-COMP returns
-;; an optional value and an updated FPSCR, and ARM-BINARY-COMP returns a value 
+;; an optional value and an updated FPSCR, and ARM-BINARY-COMP returns a value
 ;; an updated FPSCR.
 
 ;; ARM-BINARY-PRE-COMP calls ARM-BINARY-PRE-COMP-EXCP, which detects pre-computation
 ;; exceptions, and ARM-BINARY-PRE-COMP-VAL, which may compute a value.  If the value
-;; is NIL, then the computation proceeds by calling ARM-BINARY-COMP, and if non-NIL, 
+;; is NIL, then the computation proceeds by calling ARM-BINARY-COMP, and if non-NIL,
 ;; the operation is terminated and that value is returned.
 
 ;; ARM-BINARY-COMP either returns an infinity or decodes the operands and computes the
@@ -1048,10 +1048,10 @@
                       (cond-set-flag (idc) fpscr)
                     fpscr))
             (mv a b fpscr))
-    (mv a b 
+    (mv a b
         (arm-binary-pre-comp-val op a b fpscr f)
         (arm-binary-pre-comp-excp op a b fpscr f))))
-    
+
 (defun arm-post-comp (u fpscr f)
   (declare (xargs :guard (and (real/rationalp u)
                               (not (= u 0))
@@ -1288,6 +1288,7 @@
         (mv result fpscr)
       (arm-fma-comp a b c fpscr f))))
 
+;;--------------------------------------------------------------------------------
 
 (defun arm-fscale-pre-comp (a fpscr f)
   (declare (xargs :guard (and (encodingp a f)
@@ -1298,14 +1299,14 @@
               (mv (zencode (sgnf a f) f)
                   (cond-set-flag (idc) fpscr))
             (mv a fpscr))
-    (mv a 
+    (mv a
         (if (nanp a f)
             (process-nan a fpscr f)
           ())
         (if (snanp a f)
             (cond-set-flag (ioc) fpscr)
           fpscr))))
-    
+
 (defun arm-fscale-comp (a b fpscr f)
   (declare (xargs :guard (and (encodingp a f)
                               (natp b)
@@ -1327,3 +1328,58 @@
     (if result
         (mv result fpscr)
       (arm-fscale-comp a b fpscr f))))
+
+;;--------------------------------------------------------------------------------
+
+;; Odd-round a non-zero value u and encode in the SP format, with overflow
+;; resulting in an infinity and underflow resulting in a zero:
+
+(defund bf-post-comp (u)
+  (let ((sgnf (if (< u 0) 1 0))
+	(r (rto u 24)))
+    (if (> (abs r) (lpn (sp)))
+   	(iencode sgnf (sp))
+      (if (< (abs u) (spn (sp)))
+	  (zencode sgnf (sp))
+	(nencode r (sp))))))
+
+;; SP product of 2 BF operands.  Note that in the case of a normal result,
+;; the product is 16-exact so no rounding is required:
+
+(defund bfmul16-spec (a b)
+  (let ((sgnr (logxor (sgnf a (bf)) (sgnf b (bf)))))
+    (if (or (nanp a (bf))
+	    (nanp b (bf))
+	    (and (infp a (bf))
+		 (or (zerp b (bf)) (denormp b (bf))))
+	    (and (infp b (bf))
+		 (or (zerp a (bf)) (denormp a (bf)))))
+        (indef (sp))
+      (if (or (infp a (bf)) (infp b (bf)))
+	  (iencode sgnr (sp))
+        (if (or (zerp a (bf)) (denormp a (bf))
+		(zerp b (bf)) (denormp b (bf)))
+	    (zencode sgnr (sp))
+	  (bf-post-comp (* (ndecode a (bf)) (ndecode b (bf)))))))))
+
+;; SP sum of 2 SP operands:
+
+(defund bfadd32-spec (a b)
+  (let* ((sgna (sgnf a (sp)))
+	 (sgnb (sgnf b (sp)))
+	 (aval (if (or (zerp a (sp)) (denormp a (sp))) 0 (ndecode a (sp))))
+	 (bval (if (or (zerp b (sp)) (denormp b (sp))) 0 (ndecode b (sp))))
+	 (u (+ aval bval)))
+    (if (or (nanp a (sp))
+	    (nanp b (sp))
+	    (and (infp a (sp)) (infp b (sp)) (not (= sgna sgnb))))
+        (indef (sp))
+      (if (infp a (sp))
+	  a
+	(if (infp b (sp))
+	    b
+	  (if (= u 0)
+	      (if (= sgna sgnb)
+	          (zencode sgna (sp))
+	        (zencode 0 (sp)))		
+	    (bf-post-comp u)))))))

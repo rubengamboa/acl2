@@ -350,6 +350,14 @@
     (defthm consp-of-assoc-equal-of-ex-args->fn-lvls-of-ex-args-p
       (implies (and (ex-args-p x) (assoc-equal foo (ex-args->fn-lvls x)))
                (consp (assoc-equal foo (ex-args->fn-lvls x)))))
+
+    (defthm last-<=
+      (<= (acl2-count (last x))
+          (acl2-count x)))
+
+    (defthm last-pseudo-term-list-is-pseudo-term-list
+      (implies (pseudo-term-listp x)
+               (pseudo-term-listp (last x))))
     )
 
   (local (in-theory (enable expand-measure)))
@@ -358,7 +366,7 @@
     (set-well-founded-relation l<)
     (local (in-theory (e/d
                        ()
-                       (ACL2::PSEUDO-LAMBDAP-WHEN-PSEUDO-TERMP
+                       (ACL2::PSEUDO-LAMBDAP-OF-CAR-WHEN-PSEUDO-TERMP
                         ACL2::SUBSETP-CONS-2
                         CONSP-OF-SYM-NAT-ALIST-FIX
                         DEFAULT-CDR
@@ -393,14 +401,20 @@
     ;; 2. change update-fn-lvls function so that old items are not deleted and update the measure function
     ;; 3. clean the code in a more structured way - treat lambdas in another function
     ;; 4. clean up the above encapsulated theorems, maybe in another file
-    (define expand ((expand-args ex-args-p) (fty-info fty-info-alist-p) state)
+    (define expand ((expand-args ex-args-p) (fty-info fty-info-alist-p)
+                    (abs symbol-listp) state)
       :parents (function-expansion)
       :returns (expanded-result ex-outs-p)
       :measure (expand-measure expand-args)
       :verify-guards nil
       :hints
       (("Goal"
-        :use ((:instance sum-lvls-decrease-after-update
+        :in-theory (e/d ()
+                        (last-<=
+                         sum-lvls-decrease-after-update))
+        :use ((:instance last-<=
+                         (x (cdr (car (ex-args->term-lst expand-args)))))
+              (:instance sum-lvls-decrease-after-update
                          (fn (car (car (ex-args->term-lst expand-args))))
                          (fn-lvls (ex-args->fn-lvls expand-args))))))
       (b* ((expand-args (ex-args-fix expand-args))
@@ -414,13 +428,13 @@
            ;; then recurse on the rest of the list
            ((if (symbolp term))
             (b* ((rest-res (expand (change-ex-args a :term-lst rest) fty-info
-                                   state))
+                                   abs state))
                  ((ex-outs o) rest-res))
               (make-ex-outs :expanded-term-lst (cons term o.expanded-term-lst)
                             :expanded-fn-lst o.expanded-fn-lst)))
            ((if (equal (car term) 'quote))
             (b* ((rest-res (expand (change-ex-args a :term-lst rest) fty-info
-                                   state))
+                                   abs state))
                  ((ex-outs o) rest-res))
               (make-ex-outs :expanded-term-lst (cons term o.expanded-term-lst)
                             :expanded-fn-lst o.expanded-fn-lst)))
@@ -435,14 +449,14 @@
                   (expand (change-ex-args a
                                           :term-lst (list (lambda-body
                                                            fn-call)))
-                          fty-info state))
+                          fty-info abs state))
                  ((ex-outs b) body-res)
                  (lambda-body (car b.expanded-term-lst))
                  (actuals-res
                   (expand (change-ex-args a
                                           :term-lst fn-actuals
                                           :expand-lst b.expanded-fn-lst)
-                          fty-info state))
+                          fty-info abs state))
                  ((ex-outs ac) actuals-res)
                  (lambda-actuals ac.expanded-term-lst)
                  ((unless (mbt (equal (len lambda-formals) (len lambda-actuals))))
@@ -452,7 +466,7 @@
                   (expand (change-ex-args a
                                           :term-lst rest
                                           :expand-lst ac.expanded-fn-lst)
-                          fty-info state))
+                          fty-info abs state))
                  ((ex-outs r) rest-res))
               (make-ex-outs :expanded-term-lst (cons lambda-fn r.expanded-term-lst)
                             :expanded-fn-lst r.expanded-fn-lst)))
@@ -474,19 +488,35 @@
                    (make-ex-outs :expanded-term-lst a.term-lst :expanded-fn-lst a.expand-lst)))
                  (basic-function (member-equal fn-call *SMT-basics*))
                  (flex? (fncall-of-flextype fn-call fty-info))
+                 (abs? (member-equal fn-call abs))
                  (lvl-item (assoc-equal fn-call a.fn-lvls))
                  (extract-res (meta-extract-formula fn-call state))
-                 ((if (or basic-function flex?
-                          (<= a.wrld-fn-len 0) (and lvl-item (zp (cdr lvl-item)))
-                          (equal extract-res ''t)))
+                 ((if (equal fn-call 'return-last))
                   (b* ((actuals-res
-                        (expand (change-ex-args a :term-lst fn-actuals)
-                                fty-info state))
+                        (expand (change-ex-args a :term-lst (last fn-actuals))
+                                fty-info abs state))
                        ((ex-outs ac) actuals-res)
                        (rest-res
                         (expand (change-ex-args a :term-lst rest
                                                 :expand-lst ac.expanded-fn-lst)
-                                fty-info state))
+                                fty-info abs state))
+                       ((ex-outs r) rest-res))
+                    (make-ex-outs
+                     :expanded-term-lst (cons
+                                         (car ac.expanded-term-lst)
+                                         r.expanded-term-lst)
+                     :expanded-fn-lst r.expanded-fn-lst)))
+                 ((if (or basic-function flex? abs?
+                          (<= a.wrld-fn-len 0) (and lvl-item (zp (cdr lvl-item)))
+                          (equal extract-res ''t)))
+                  (b* ((actuals-res
+                        (expand (change-ex-args a :term-lst fn-actuals)
+                                fty-info abs state))
+                       ((ex-outs ac) actuals-res)
+                       (rest-res
+                        (expand (change-ex-args a :term-lst rest
+                                                :expand-lst ac.expanded-fn-lst)
+                                fty-info abs state))
                        ((ex-outs r) rest-res))
                     (make-ex-outs :expanded-term-lst (cons (cons fn-call ac.expanded-term-lst) r.expanded-term-lst)
 
@@ -505,7 +535,7 @@
                   (prog2$
                    (er hard? 'SMT-goal-generator=>expand "meta-extract-formula returning a non-pseudo-term for ~q0The body is ~q1" fn-call body)
                    (make-ex-outs :expanded-term-lst a.term-lst :expanded-fn-lst a.expand-lst)))
-                 (- (cw "SMT-goal-generator=>Expanding ... ~q0" fn-call))
+                 ;; (- (cw "SMT-goal-generator=>Expanding ... ~q0" fn-call))
                  ;; Adding function symbol into expand-lst
                  (updated-expand-lst
                   (if (assoc-equal term a.expand-lst)
@@ -516,7 +546,7 @@
                                           :fn-lvls (cons `(,fn-call . 0) a.fn-lvls)
                                           :wrld-fn-len (1- a.wrld-fn-len)
                                           :expand-lst updated-expand-lst)
-                          fty-info state))
+                          fty-info abs state))
                  ((ex-outs b) body-res)
                  ;; Expand function
                  (expanded-lambda-body (car b.expanded-term-lst))
@@ -524,7 +554,7 @@
                  (actuals-res
                   (expand (change-ex-args a :term-lst fn-actuals
                                           :expand-lst b.expanded-fn-lst)
-                          fty-info state))
+                          fty-info abs state))
                  ((ex-outs ac) actuals-res)
                  (expanded-term-list ac.expanded-term-lst)
                  ((unless (equal (len formals) (len expanded-term-list)))
@@ -534,7 +564,7 @@
                  (rest-res
                   (expand (change-ex-args a :term-lst rest
                                           :expand-lst ac.expanded-fn-lst)
-                          fty-info state))
+                          fty-info abs state))
                  ((ex-outs r) rest-res))
               (make-ex-outs :expanded-term-lst (cons `(,expanded-lambda ,@expanded-term-list) r.expanded-term-lst)
                             :expanded-fn-lst r.expanded-fn-lst)))
@@ -549,12 +579,12 @@
            ((if (zp (cdr lvl-item)))
             (b* ((actuals-res
                   (expand (change-ex-args a :term-lst fn-actuals)
-                          fty-info state))
+                          fty-info abs state))
                  ((ex-outs ac) actuals-res)
                  (rest-res
                   (expand (change-ex-args a :term-lst rest
                                           :expand-lst ac.expanded-fn-lst)
-                          fty-info state))
+                          fty-info abs state))
                  ((ex-outs r) rest-res))
               (make-ex-outs :expanded-term-lst (cons (cons fn-call ac.expanded-term-lst) r.expanded-term-lst)
 
@@ -573,7 +603,7 @@
             (prog2$
              (er hard? 'SMT-goal-generator=>expand "meta-extract-formula returning a non-pseudo-term for ~q0The body is ~q1" fn-call body)
              (make-ex-outs :expanded-term-lst a.term-lst :expanded-fn-lst a.expand-lst)))
-           (- (cw "SMT-goal-generator=>Expanding ... ~q0" fn-call))
+           ;; (- (cw "SMT-goal-generator=>Expanding ... ~q0" fn-call))
            (updated-expand-lst
             (if (assoc-equal term a.expand-lst)
                 a.expand-lst (cons `(,term . ,term) a.expand-lst)))
@@ -582,14 +612,14 @@
             (expand (change-ex-args a :term-lst (list body)
                                     :fn-lvls new-fn-lvls
                                     :expand-lst updated-expand-lst)
-                    fty-info state))
+                    fty-info abs state))
            ((ex-outs b) body-res)
            (expanded-lambda-body (car b.expanded-term-lst))
            (expanded-lambda `(lambda ,formals ,expanded-lambda-body))
            (actuals-res
             (expand (change-ex-args a :term-lst fn-actuals
                                     :expand-lst b.expanded-fn-lst)
-                    fty-info state))
+                    fty-info abs state))
            ((ex-outs ac) actuals-res)
            (expanded-term-list ac.expanded-term-lst)
            ((unless (equal (len formals) (len expanded-term-list)))
@@ -599,7 +629,7 @@
            (rest-res
             (expand (change-ex-args a :term-lst rest
                                     :expand-lst ac.expanded-fn-lst)
-                    fty-info state))
+                    fty-info abs state))
            ((ex-outs r) rest-res))
         (make-ex-outs :expanded-term-lst (cons `(,expanded-lambda ,@expanded-term-list) r.expanded-term-lst)
                       :expanded-fn-lst r.expanded-fn-lst))
@@ -639,7 +669,7 @@
                           CONSP-OF-SYM-NAT-ALIST-FIX
                           ACL2::SYMBOL-LISTP-WHEN-NOT-CONSP
                           ACL2::PSEUDO-LAMBDA-LISTP-WHEN-NOT-CONSP
-                          ACL2::PSEUDO-LAMBDAP-WHEN-PSEUDO-TERMP
+                          ACL2::PSEUDO-LAMBDAP-OF-CAR-WHEN-PSEUDO-TERMP
                           CONSP-WHEN-MEMBER-EQUAL-OF-SYM-NAT-ALISTP
                           SYM-NAT-ALISTP-OF-CDR-WHEN-SYM-NAT-ALISTP
                           ACL2::PSEUDO-LAMBDAP-OF-NTH-WHEN-PSEUDO-LAMBDA-LISTP
@@ -679,7 +709,6 @@
 (define generate-fty-types-top ((hints smtlink-hint-p)
                                 (flextypes-table alistp))
   :returns (updated-hints smtlink-hint-p)
-  :guard-debug t
   (b* ((hints (smtlink-hint-fix hints))
        ((smtlink-hint h) hints)
        ((unless (alistp flextypes-table)) h)
@@ -688,7 +717,6 @@
                                 h.fty-info nil nil))
        (fty-types (reverse ordered-acc)))
     (change-smtlink-hint h :fty-types fty-types)))
-
 
 ;; -----------------------------------------------------------------
 ;;       Define evaluators
@@ -729,7 +757,7 @@
                                          :fn-lst fn-lst
                                          :fn-lvls fn-lvls
                                          :wrld-fn-len wrld-fn-len)
-                                        h.fty-info state)))
+                                        h.fty-info h.abs state)))
        ((ex-outs e) expand-result)
        (expanded-G (car e.expanded-term-lst))
        ;; generate expand hint
@@ -751,7 +779,7 @@
   :returns (subgoal-lst pseudo-term-list-listp)
   (b* (((unless (pseudo-term-listp cl)) nil)
        ((unless (smtlink-hint-p smtlink-hint))
-        (list (remove-hint-please cl)))
+        (list cl))
        (G (disjoin cl))
        (hinted-expanded-G
         (smtlink-hint->expanded-clause-w/-hint smtlink-hint))
@@ -759,7 +787,7 @@
        (main-hint (hint-pair->hints hinted-expanded-G))
        ;; generate first clause
        (next-cp (cdr (assoc-equal 'expand *SMT-architecture*)))
-       ((if (null next-cp)) (list (remove-hint-please cl)))
+       ((if (null next-cp)) (list cl))
        (the-hint
         `(:clause-processor (,next-cp clause ',smtlink-hint)))
        (cl0 `((hint-please ',the-hint) ,expanded-G))
@@ -769,18 +797,10 @@
     `(,cl0 ,cl1)))
 
 (defmacro expand-cp (clause hint)
-  `(expand-cp-fn clause (expand-cp-helper (remove-hint-please ,clause) ,hint state)))
+  `(expand-cp-fn clause (expand-cp-helper ,clause ,hint state)))
 
 ;; proving correctness of the expansion clause processor
 (local (in-theory (enable expand-cp-fn)))
-
-(defthm correctness-of-remove-hint-please-with-ev-expand-cp
-  (implies (and (pseudo-term-listp cl)
-                (alistp b))
-           (iff (ev-expand-cp (disjoin (remove-hint-please cl)) b)
-                (ev-expand-cp (disjoin cl) b)))
-  :hints (("Goal"
-           :in-theory (enable hint-please remove-hint-please) )))
 
 (defthm correctness-of-expand-cp
   (implies (and (pseudo-term-listp cl)

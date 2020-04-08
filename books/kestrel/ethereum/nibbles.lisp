@@ -1,6 +1,6 @@
-; Ethereum Library -- Nibbles
+; Ethereum Library
 ;
-; Copyright (C) 2018 Kestrel Institute (http://www.kestrel.edu)
+; Copyright (C) 2019 Kestrel Institute (http://www.kestrel.edu)
 ;
 ; License: A 3-clause BSD license. See the LICENSE file distributed with ACL2.
 ;
@@ -10,7 +10,7 @@
 
 (in-package "ETHEREUM")
 
-(include-book "kestrel/utilities/fixbytes/defbytelist" :dir :system)
+(include-book "kestrel/fty/nibble-list" :dir :system)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -18,41 +18,20 @@
   :parents (basics)
   :short "Nibbles."
   :long
-  (xdoc::topp
-   "[YP:C] describes @($\\mathbb{Y}$) as the set of nibbles,
-    which consist of 4 bits."))
-
-(fty::defbyte 4
-  :type nibble
-  :pred nibblep
-  :parents (nibbles)
-  :description "nibbles")
+  (xdoc::topstring
+   (xdoc::p
+    "[YP:C] describes @($\\mathbb{Y}$) as the set of sequences of nibbles,
+     i.e. half bytes.
+     [YP] does not use any specific symbol for the set of nibbles
+     (unlike @($\\mathbb{O}$) for the set of bytes [YP:B]).
+     We use the library type @(tsee nibble) to model the set of nibbles.")))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defxdoc nibble-arrays
+(defsection nibble-arrays
   :parents (basics)
   :short "Nibble arrays."
   :long
-  (xdoc::topp
-   "[YP] does not use any specific symbol for nibble arrays
-    (unlike for byte arrays),
-    but nibble arrays are used in [YP],
-    e.g. @($y$) [YP:(190), YP:(191)] turns map keys as byte arrays
-    into map keys as nibble arrays.
-    We use true lists of @(see nibbles)
-    to model nibble arrays in our Ethereum model,
-    analogously to our model of
-    <see topic='@(url byte-arrays)'>byte arrays</see>."))
-
-(fty::defbytelist nibble
-  :pred nibble-listp
-  :parents (nibble-arrays))
-
-(defsection nibble-list-fix-ext
-  :extension nibble-list-fix
-
-  (defrule nibble-list-fix-of-rcons
-    (equal (nibble-list-fix (rcons nibble nibbles))
-           (rcons (nibble-fix nibble) (nibble-list-fix nibbles)))
-    :enable rcons))
+  (xdoc::topstring-p
+   "[YP:C] describes @($\\mathbb{Y}$) as the set of sequences of nibbles.
+    We use the library type @(see nibble-list) to model nibble arrays."))

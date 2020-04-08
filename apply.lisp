@@ -1,5 +1,5 @@
-; ACL2 Version 8.1 -- A Computational Logic for Applicative Common Lisp
-; Copyright (C) 2018, Regents of the University of Texas
+; ACL2 Version 8.2 -- A Computational Logic for Applicative Common Lisp
+; Copyright (C) 2019, Regents of the University of Texas
 
 ; This version of ACL2 is a descendent of ACL2 Version 1.9, Copyright
 ; (C) 1997 Computational Logic, Inc.  See the documentation topic NOTE-2-0.
@@ -42,7 +42,7 @@
 ; 4. Executable Versions of BADGE and TAMEP
 ;    Define :PROGRAM mode functions to recover the badge of a previously
 ;    warranted function and to determine whether expressions, etc., are tame.
-;    These functions will be used by def-warrant to infer badges which
+;    These functions will be used by defwarrant to infer badges which
 ;    maintains a data structure containing previously inferred badges.
 
 ; 5. BADGER and the Badge-Table
@@ -57,18 +57,20 @@
 ;    discuss BADGER.  These properties are not immediately obvious from the
 ;    defun of GUESS-ILKS-ALIST because it is iterative and is full of error
 ;    messages.  To state this theorem we will define the :LOGIC mode function
-;    CHECK-ILKS.  But this work is not done in the source file.  It is only
-;    done during the :acl2-devel certification of the books/system/apply/
-;    books.  We leave the essay here to remind us that guess-ilks-alist is
-;    really known to imply properties (b)-(e).
+;    CHECK-ILKS.  But the sources and the model differ in when they they do
+;    this.  In the sources, we just leave the essay to remind us that
+;    guess-ilks-alist is known to imply properties (b)-(e) and we don't
+;    actually define CHECK-ILKS.  That is done during :acl2-devel, during
+;    certification of books/system/apply.  In the model, we define CHECK-ILKS
+;    and do the proof, but only locally.
 
 ; 7. Functional Equivalence
 ;    Define the functional equivalence relation and prove that it is a
-;    congruence relation for APPLY$.  Def-warrant will prove the appropriate
+;    congruence relation for APPLY$.  Defwarrant will prove the appropriate
 ;    congruence rules for each :FN formal of newly badged functions.
 
-; 8. DEF-WARRANT
-;    Define DEF-WARRANT.
+; 8. DEFWARRANT
+;    Define DEFWARRANT.
 
 ; 9. DEFUN$
 ;    Define DEFUN$.
@@ -84,68 +86,32 @@
 
 ; However, we have removed that from the sources because we are not yet
 ; convinced it is a good way to address the problem of rewriting equivalent
-; LAMBDAs.  We plan to experiment with solutions in the user-maintained books.
-; As of Version_8.0, our best shot is in
-; books/projects/apply/apply-lemmas.lisp, but this may change.
+; lambda objects.  We plan to experiment with solutions in the user-maintained
+; books.  As of Version_8.0, our best shot is in books/projects/apply/base.lisp
+; (formerly apply-lemmas.lisp), but this may change.
+
+; The next two items are not reflected in the model except as noted below.
 
 ; 11. The Defattach
 ;     We attach ``magic'' functions to badge-userfn and apply$-userfn to
 ;     support top-level evaluation of ground apply$ expressions.  These magic
-;     functions are defined in the source file apply-raw.lisp.
+;     functions are defined in the source file apply-raw.lisp.  This is done in
+;     the ACL2 sources but not in the model of apply$.  (However, other files
+;     in the model work demonstrate the attachments and carry out the requisite
+;     proofs.)
+
+; 12. Loop$ Scions
+;     Define the loop$ scions.  See the Essay on LOOP$ in translate.lisp.
+;     (This is not done in the model, just the sources.)
 
 ; Note: With the exception of the events immediately below (which are needed by
 ; the raw Lisp definitions of the *1* function for apply$-lambda), this entire
 ; file is processed only in pass 2, fundamentally because apply$-primp and
 ; apply$-prim are only defined in pass 2.
 
-(defun apply$-lambda-guard (fn args)
-
-; This function provides the guard for a lambda application.  It implies
-; (true-listp args), in support of guard verification for the apply$
-; mutual-recursion.  It also guarantees that if we have a good lambda, then we
-; can avoid checking in the raw Lisp definition of apply$-lambda that the arity
-; of fn (the length of its formals) equals the length of args.
-
-; We were a bit on the fence regarding whether to incorporate this change.  On
-; the positive side: in one test involving trivial computation on a list of
-; length 10,000,000, we found a 13% speedup.  But one thing that gave us pause
-; is that the following test showed no speedup at all -- in fact it seemed to
-; show a consistent slowdown, though probably well under 1%.  (In one trio of
-; runs the average was 6.56 seconds for the old ACL2 and 6.58 for the new.)
-
-;   cd books/system/tests/
-;   acl2
-;   (include-book "apply-timings")
-;   ; Get a function with a guard of t:
-;   (with-output
-;     :off event
-;     (encapsulate
-;       ()
-;       (local (in-theory (disable (:e ap4))))
-;       (defun ap4-10M ()
-;         (declare (xargs :guard t))
-;         (ap4 *10m*
-;              *good-lambda1* *good-lambda2* *good-lambda3* *good-lambda4*
-;              0))))
-;   (time$ (ap4-10M))
-
-; But we decided that a stronger guard would be more appropriate, in part
-; because that's really the idea of guards, in part because more user bugs
-; could be caught, and in part because this would likely need to be part of the
-; guards in support of a loop macro.
-
-  (declare (xargs :guard t :mode :logic))
-  (and (consp fn)
-       (consp (cdr fn))
-       (true-listp args)
-       (equal (len (cadr fn)) ; (cadr fn) = (lambda-object-formals fn), here.
-              (length args))))
-
-(defun apply$-guard (fn args)
-  (declare (xargs :guard t :mode :logic))
-  (if (atom fn)
-      (true-listp args)
-    (apply$-lambda-guard fn args)))
+; The definitions of apply$-lambda-guard and apply$-guard were here at one
+; time, but have been moved so that they precede the definition of
+; ev-fncall-rec-logical.
 
 (when-pass-2
 
@@ -176,24 +142,25 @@
 
 ; These functions are defined for speed, not clarity.  Aside from the obvious
 ; logical requirements of tameness -- roughly speaking, every function is
-; either tame or is a mapping function supplied with quoted tame functions in
-; the right places -- we want (tamep x) to imply that x is either a symbol or a
-; true-listp and to imply that every function call in x is supplied with the
+; either tame or is tame when supplied with quoted tame functions in the right
+; argument positions.  We want (tamep x) to imply that x is either a symbol or
+; a true-listp and to imply that every function call in x is supplied with the
 ; right number of arguments (at least with respect to the arities reported by
 ; badge), and we want tamep guard verified with a guard of t.
 
 (defabbrev tamep-lambdap (fn)
 
-; Fn is allegedly a lambda object.  We know it's a consp!  We check that it
-; has just enough structure to allow guard checking of the tamep clique.  This
-; does not actually assure us that the LAMBDA is well formed.  We don't check,
-; for example, that the lambda formals are distinct or that the lambda-body is
-; a termp with no other free vars.  The weakness of this definition just means
-; that apply$ and ev$ assign meaning to some LAMBDA applications that ACL2
-; would reject.  That's ok as long as we don't try to evaluate those
-; applications directly, e.g., by compiling them.  Finally, we define this as
-; an abbreviation because we use it several times in the tamep clique and don't
-; want to introduce another function into the mutual recursion.
+; Fn is allegedly a lambda object.  We know it's a consp!  We check that it has
+; just enough structure to allow guard checking of the tamep clique.  This does
+; not actually assure us that the lambda object is well formed.  We don't
+; check, for example, that the lambda formals are distinct or that the
+; lambda-body is a termp with no other free vars.  The weakness of this
+; definition just means that apply$ and ev$ assign meaning to some lambda
+; object applications that ACL2 would reject.  That's ok as long as we don't
+; try to evaluate those applications directly, e.g., by compiling them.
+; Finally, we define this as an abbreviation because we use it several times in
+; the tamep clique and don't want to introduce another function into the mutual
+; recursion.
 
 ; See executable-tamep-lambdap for a discussion of an executable version of
 ; this ``function,'' including an equivalent alternative definition using
@@ -306,16 +273,15 @@
 ; cheaper version of this test that works (in the sense that allows both the
 ; termination and guard proofs) would be (if (symbolp (car args)) (not
 ; (member-eq (car args) '(apply$ ev$))) (consp (car args))) though that is less
-; succinct and might actually ruin the doppelganger construction in the
-; foundational work of books/projects/apply-model/ (we haven't tried) because
-; in that construction there are other symbols besides APPLY$ and EV$ you can't
-; apply.  But the reason we keep the full blown tamep-functionp test is more
-; aesthetic: it makes the tameness conditions in the ``warrant for apply$''
-; (which doesn't actually exist but which is embodied in the lemma
-; apply$-APPLY$ proved in books/projects/apply/apply-lemmas.lisp) exactly
-; analogous to the tameness conditions for user-defined mapping functions like
-; COLLECT.  There is a similar ``warrant for ev$'' embodied in the apply-lemma
-; apply$-EV$.
+; succinct and might actually ruin the doppelganger construction in the model
+; (we haven't tried) because in that construction there are other symbols
+; besides APPLY$ and EV$ you can't apply.  But the reason we keep the full
+; blown tamep-functionp test is more aesthetic: it makes the tameness
+; conditions in the ``warrant for apply$'' (which doesn't actually exist but
+; which is embodied in the lemma apply$-APPLY$ proved in
+; books/projects/apply/base.lisp) exactly analogous to the tameness conditions
+; for user-defined mapping functions like COLLECT.  There is a similar
+; ``warrant for ev$'' embodied in apply$-EV$.
 
     (if (tamep-functionp (car args))
         (ec-call (APPLY$ (car args) (cadr args)))
@@ -383,8 +349,8 @@
 ; but puts non-syntactic requirements on the args.
 
 ; So we have decided to go with :guard t, except for apply$ where we insist
-; (true-listp args) and apply$-lambda where we additionally know that fn is a
-; cons.
+; (true-listp args) and apply$-lambda where we additionally know that fn and
+; args satisfy the pretty weak (apply$-guard fn args).
 
 ; Essay on Applying APPLY$
 
@@ -400,6 +366,11 @@
 ;       nil
 ;       (cons (apply$ fn (car lst))
 ;             (collect* (cdr lst) fn))))
+
+; Warning: Don't confuse these symbols with the loop$ scions collect$ and
+; collect$+ which take the fn argument first.  We define these symbols this way
+; here merely for historical reasons: they're defined that way in the original
+; apply$ paper.
 
 ; (thm ; [1]
 ;  (implies (apply$-warrant-collect)
@@ -494,30 +465,31 @@
 
 ; The only reason we define APPLY$-LAMBDA is so that we can attach a concrete
 ; executable counterpart to it in the ACL2 source code.  We'd prefer not to
-; have the function occur in our proofs and so we will always expand it away
-; (see apply$-lambda-opener in books/projects/apply/apply-lemmas.lisp).
+; have the function occur in our proofs and so we will always expand it away.
+; (See apply$-lambda-opener in books/projects/apply/base.lisp).
 
 ; About the definition of EV$:
 
-; In books/projects/apply/apply-lemmas.lisp we we prove a simpler version of
-; the defun of EV$, conditioned by the hypothesis that x is tamep.  (This
-; simpler definition, called ev$-def is LOCAL to that book but is used to prove
-; ev$-opener which embodies the definition in an effective way.)  So why do we
-; define EV$ as we do above?  In the two clauses dealing with calls of APPLY$
-; and EV$ we apply$ the relevant function symbol rather than just calling it,
-; e.g., we write (apply$ 'apply$ ...)  instead of (apply$ ...).  We do it this
-; way so that we can more easily prove that in all cases, ev$ handles function
-; calls by calling apply$ on the ev$-list of the arguments.  But note that we
-; don't write it quite that way because we need to prove termination.  That is,
-; instead of calling ev$-list we actually write an explicit list of the two
-; arguments (list (cadr (cadr x)) (EV$ (caddr x) a)).  Note in particular that
-; we do not ev$ the first argument but just take its cadr!  This ensures
-; termination and is equivalent to (ev$ (cadr x) a) PROVIDED the argument is
-; tame, because tameness guarantees that the first argument is quoted!  Note
-; also that we could have called (ev$-list (cdr x) a) had we known (cdr x) was
-; suitably tame but that would require admitting this clique as a reflexive
-; function: the fact that (ev$ (cadr x) a) is smaller than (cadr x) when (cadr
-; x) is tame requires reasoning about ev$ before it is admitted.
+; In books/projects/apply/base.lisp (and in the model) we prove a simpler
+; version of the defun of EV$, conditioned by the hypothesis that x is tamep.
+; (This simpler definition, called ev$-def is LOCAL to that book but is used to
+; prove ev$-opener which embodies the definition in an effective way.)  So why
+; do we define EV$ as we do above?  In the two clauses dealing with calls of
+; APPLY$ and EV$ we apply$ the relevant function symbol rather than just
+; calling it, e.g., we write (apply$ 'apply$ ...)  instead of (apply$ ...).  We
+; do it this way so that we can more easily prove that in all cases, ev$
+; handles function calls by calling apply$ on the ev$-list of the arguments.
+; But note that we don't write it quite that way because we need to prove
+; termination.  That is, instead of calling ev$-list we actually write an
+; explicit list of the two arguments (list (cadr (cadr x)) (EV$ (caddr x) a)).
+; Note in particular that we do not ev$ the first argument but just take its
+; cadr!  This ensures termination and is equivalent to (ev$ (cadr x) a)
+; PROVIDED the argument is tame, because tameness guarantees that the first
+; argument is quoted!  Note also that we could have called (ev$-list (cdr x) a)
+; had we known (cdr x) was suitably tame but that would require admitting this
+; clique as a reflexive function: the fact that (ev$ (cadr x) a) is smaller
+; than (cadr x) when (cadr x) is tame requires reasoning about ev$ before it is
+; admitted.
 
 #-acl2-devel
 (in-theory (disable badge
@@ -526,11 +498,11 @@
 ; -----------------------------------------------------------------
 ; 4. Executable Versions of BADGE and TAMEP
 
-; In order to infer badges of new functions as will be done in def-warrant we
+; In order to infer badges of new functions as will be done in defwarrant we
 ; must be able to determine the badges of already-badged functions.  Similarly,
 ; we must be able to determine that certain quoted expressions are tame.  So we
 ; define executable versions of badge and tamep that look at data structures
-; maintained by def-warrant.
+; maintained by defwarrant.
 
 ; At one time the definitions were here for executable-badge,
 ; executable-tamep-lambdap, executable-tamep, executable-tamep-functionp, and
@@ -542,17 +514,13 @@
 
 ; Recall (from constraints.lisp) that three categories of functions have
 ; badges: the ~800 apply$ primitives, the 6 apply$ boot functions, and all the
-; user-defined functions on which def-warrant succeeded.  The last category of
+; user-defined functions on which defwarrant succeeded.  The last category of
 ; badges are stored in the badge-table under the key :badge-userfn-structure.
 ; Given a function fn, (executable-badge fn wrld), defined above in this file,
 ; returns the badge, or nil.  We are here primarily interested in the
-; badge-table, which is maintained by def-warrant.  Recall also that having a
-; badge and having a warrant are two different things.  Fn can have a badge but
-; no warrant.  If fn's badge has :authorization-flg nil, it has no warrant; if
-; the :authorization-flg is t, it has a warrant named APPLY$-WARRANT-fn.
-; Def-warrant infers badges (and builds warrants with them) by recursively
-; inspecting the body of defun'd functions.  It uses executable-badge to
-; acquire badges of subroutines.
+; badge-table, which is maintained by defwarrant.  defwarrant infers badges
+; (and builds warrants with them) by recursively inspecting the body of defun'd
+; functions.  It uses executable-badge to acquire badges of subroutines.
 
 ; Here are some terms we use below:
 
@@ -563,34 +531,32 @@
 ;  mechanism uses two more pseudo-ilks, :unknown and :unknown*, which never get
 ;  out of that inference mechanism and should not be confused with ilks.
 
-; ilks: a true list of ilk (or pseudo-ilk) symbols or T denoting a list of as
-;  many NILs as we'll need.  The ilks associated with a function symbol fn with
-;  formals v1, ..., vn, has length n, and successive formals have the
-;  corresponding ilk in ilks.  For example, if ilks is (NIL :FN :EXPR) and the
-;  formals are (X Y Z), then X is vanilla, Y is functional and Z is
-;  expressional.
+; ilks: a true list of ilk (or in badge inference, pseudo-ilk) symbols or T
+;  denoting a list of as many NILs as we'll need.  The ilks associated with a
+;  function symbol fn with formals v1, ..., vn, has length n, and successive
+;  formals have the corresponding ilk in ilks.  For example, if ilks is (NIL
+;  :FN :EXPR) and the formals are (X Y Z), then X is vanilla, Y is functional
+;  and Z is expressional.
 
 ; badge: a defrec record structure object associated with a function symbol fn.
 
 ;  The badge has name APPLY$-BADGE and three fields:
-;  :authorization-flg - indicates whether fn returns a single value
-;    or multiple values
-;  :arity - the arity of fn
+;  :arity - arity of fn
+;  :out-arity - number of output values
 ;  :ilks - ilks (of length equal to the arity of fn) corresponding to the
 ;    formals of fn, or else T denoting a list of nils of the appropriate
 ;    length.
 
-;   For example, the function COLLECT has badge
-;   (APPLY$-BADGE T            ; = :authorization-flg
-;                 2            ; = :arity
+;   For example, the function COLLECT (mentioned in a comment above) has badge
+;   (APPLY$-BADGE 2            ; = :arity
+;                 1            ; = :out-arity
 ;                 . (NIL :FN)) ; first formal is ordinary, second formal is
 ;                              ; treated like a function
 
-;   If a function fn with formals v1, ..., vn, has a badge with
-;   :authorization-flg flg, :arity n, and :ilks T or (c1 ... cn) then we know
-;   that fn does not traffic in stobjs or state, that fn returns a single value
-;   or multiple values according to whether flg is t, the arity of fn is n,
-;   and:
+;   If a function fn with formals v1, ..., vn, has a badge with :arity n,
+;   :out-arity k and :ilks T or (c1 ... cn) then we know that fn does not have
+;   state or stobjs in its signature, that fn takes n arguments and returns k
+;   values, and
 
 ;   - if fn is an apply$ primitive, then ilks is T
 
@@ -605,38 +571,54 @@
 ;     EV$                     (:EXPR NIL)
 
 ;    - otherwise, fn is a user-defined function successfully processed by
-;      def-warrant and thus:
+;      defwarrant and thus:
 
-;      (a) Fn is a defined, singly-recursive (or non-recursive) :logic mode
-;          function that (if recursive) is justified with a tame measure, tame
-;          domain predicate, and tame well-founded relation, and that (if
-;          recursive and at least one formal has ilk :FN or :EXPR) the measure
-;          is natural-number valued and the well-founded relation is o<.
+;      Fn is a defined :logic mode function without state or stobjs in its
+;      signature, its justification is ``pre-apply$ definable,'' meaning that
+;      the measure, well-founded relation, and domain are ancestrally
+;      independent of apply$-userfn, and is either in class (G1) or (G2) as
+;      described below:
 
-;       (b) Every function called in the body of fn has a badge.  (During
-;           ilk inference the function being analyzed does not have a badge and
-;           but it is being inferred.)
+;      (G1) fn's body is ancestrally independent of apply$-userfn and
+;           ancestrally independent of inapplicative functions, like sys-call.
+;           (This odd extra condition is necessary because we don't actually
+;           require that fn's body be fully badged.  If fn could only call
+;           badged functions, then we wouldn't have to check that such
+;           functions as sys-call are not involved.)
 
-;       (c) Every formal of ilk :FN is only passed into :FN slots and every :FN
-;           slot in the body is either occupied by a formal of ilk :FN or by a
-;           quoted tame function symbol other than fn itself, or a quoted
-;           well-formed (fully translated and closed), tame lambda object
-;           that does not call fn.
+;      (G2) fn's body is ancestrally dependent on apply$-usefn and
 
-;       (d) Every formal of ilk :EXPR is only passed into :EXPR slots and every
-;           :EXPR slot in the body is either occupied by a formal of ilk :EXPR
-;           or by a quoted, well-formed (fully translated), tame term that does
-;           not call fn.
+;        (a) one of these conditions hold:
+;            * fn is not recursively defined, or
 
-;       (e) If formal vi has ilk :FN or :EXPR then vi is passed unchanged into
-;           the ith slot of every recursive call of fn in the body.
+;            * fn is recursively defined with a natural number measure and
+;              well-founded relation O<, and domain O-P, or
 
-; mapping function: a function whose badge includes at least one :FN or :EXPR
-;  ilk.
+;            * fn is recursively defined with a measure that is the
+;              macroexpansion of an LLIST expression, well-founded relation L<,
+;              and domain LEXP
 
-; These conditions are important to the doppelganger construction in the
-; foundational work described in the paper ``Limited Second Order Functionality
-; in a First Order Setting'' and in books/projects/apply-model/.
+;            Recall from above that we also know justification is pre-apply$
+;            definable.
+
+;        (b) Every function called in the body of fn, except fn itself, has a
+;            badge (and thus cannot be one of the inapplicable primitives)
+
+;        (c) Every formal of ilk :FN is only passed into :FN slots and every
+;            :FN slot in the body is either occupied by a formal of ilk :FN or
+;            by a quoted tame function symbol other than fn itself, or a quoted
+;            well-formed (fully translated and closed), tame lambda expression
+;            that does not call fn.
+
+;        (d) Every formal of ilk :EXPR is only passed into :EXPR slots and
+;            every :EXPR slot in the body is either occupied by a formal of ilk
+;            :EXPR or by a quoted, well-formed (fully translated), tame term
+;            that does not call fn.
+
+;        (e) If formal vi has ilk :FN or :EXPR then vi is passed unchanged into
+;            the ith slot of every recursive call of fn in the body.
+
+; These conditions are important to our model construction.
 
 ; TODO: We cannot analyze mutually recursive defuns yet!  We have not yet tried
 ; to extend the modeling process to accommodate mutually recursive mapping
@@ -710,11 +692,13 @@
 ; applications in the body.  That is, when we say we analyze the body of a
 ; function we really mean we analyze the body after beta reducing all lambda
 ; applications in it.  [Important distinction: We really do mean we beta reduce
-; the ACL2 lambda applications, not ``LAMBDA apply$'s''.  That is: One must
-; distinguish ``ACL2 lambda applications,'' which are just ordinary first-class
-; terms, from ``apply$'s of lambda objects.''  Here we're talking
-; just about expanding all of the former, i.e., getting rid of LET's, LET*'s,
-; etc!]
+; the ACL2 lambda applications, not ``apply$'s of lambda objects''.  Just as we
+; distinguish ``ACL2 lambda expressions'' from ``lambda objects,'' -- the
+; former being ordinary first class ACL2 terms and the latter being quoted
+; constants -- one must distinguish ``ACL2 lambda applications,'' which are
+; just ordinary first-class terms, from ``apply$'s of lambda objects.''  Here
+; we're talking just about expanding all of the former, i.e., getting rid of
+; LET's, LET*'s, etc!]
 
 ; To illustrate the problem, consider
 
@@ -735,10 +719,10 @@
 ; will not contribute (initially) to the ilks of the slots.  So we would have
 ; to replace our simple alist, mentioned above and used to track the ilks
 ; determined so far for the formals of fn, with something more complicated that
-; keeps track of local variables within lambdas or ilks for each lambda
-; object or something.  In any case, the presence of recursive calls both
-; inside the lambdas and outside the lambdas complicates the inductive
-; inference.  It is clearly simpler to just get rid of the lambda applications!
+; keeps track of local variables within lambdas or ilks for each lambda object
+; or something.  In any case, the presence of recursive calls both inside the
+; lambdas and outside the lambdas complicates the inductive inference.  It is
+; clearly simpler to just get rid of the lambda applications!
 
 ; Warning: One might dismiss the possibility that the body of the lambda
 ; involves recursion on fn -- mistakenly thinking that recursion is not allowed
@@ -841,31 +825,6 @@
         t
         temp)))
 
-; Here is how we beta reduce all ACL2 lambda applications.
-
-(mutual-recursion
-
-(defun expand-all-lambdas (term)
-  (declare (xargs :mode :program))
-  (cond
-   ((variablep term) term)
-   ((fquotep term) term)
-   ((flambdap (ffn-symb term))
-    (expand-all-lambdas
-     (subcor-var (lambda-formals (ffn-symb term))
-                 (fargs term)
-                 (lambda-body (ffn-symb term)))))
-   (t (fcons-term (ffn-symb term)
-                  (expand-all-lambdas-list (fargs term))))))
-
-(defun expand-all-lambdas-list (terms)
-  (declare (xargs :mode :program))
-  (cond
-   ((endp terms) nil)
-   (t (cons (expand-all-lambdas (car terms))
-            (expand-all-lambdas-list (cdr terms))))))
-)
-
 (defun changed-functional-or-expressional-formalp (formals ilks actuals)
 
 ; If there is a formal, vi, of ilk :FN or :EXPR whose corresponding actual is
@@ -941,9 +900,9 @@
 
 ; All ACL2 lambda applications in the body of the function being analyzed
 ; should be expanded away before this function is called.  There may still be
-; lambda objects used as arguments to mapping functions, but no ACL2 lambda
-; applications.  Lambda objects need not be well-formed.  All free variables
-; encountered in term are formals of the function being analyzed!
+; lambda objects used as arguments to scions, but no ACL2 lambda applications.
+; Lambda objects need not be well-formed.  All free variables encountered in
+; term are formals of the function being analyzed!
 
 ; Ilk is the ``occurrence ilk'' of the current occurrence of term; however, it
 ; is one of the values: NIL, :FN, :EXPR, or :UNKNOWN.  The last means the
@@ -981,10 +940,22 @@
       (cond
        ((symbolp (cadr term))
         (cond
-         ((eq fn (cadr term))
-          (mv (msg "~x0 cannot be warranted because a :FN slot in its ~
-                    body is occupied by a quoted reference to ~x0 itself; ~
-                    recursion through APPLY$ is not permitted!"
+         ((and (eq fn (cadr term))
+               (not (executable-badge fn wrld)))
+
+; Note that we avoid the error by testing whether (executable-badge fn wrld) is
+; non-nil.  This means fn was admitted with :LOOP$-RECURSION.  But at the
+; moment, a loop like (loop$ for x in lst collect (fn x)) translates to
+; (collect$ (lambda$ (x)(fn x)) lst), not (collect$ 'fn lst), so technically
+; loop$ recursion has not occured!  But the user who knows what is going on
+; could well type (collect$ 'fn lst) if she wanted to, since it is logically
+; equivalent to the loop$ translation and more succinct!  So we allow it.
+
+          (mv (msg "~x0 cannot be warranted because a :FN slot in its body is ~
+                    occupied by a quoted reference to ~x0 itself; recursion ~
+                    through APPLY$ is not permitted except when the function ~
+                    was admitted with XARGS :LOOP$-RECURSION T, which only ~
+                    permits such recursion in LOOP$s."
                    fn)
               nil))
          ((executable-tamep-functionp (cadr term) wrld)
@@ -1005,11 +976,14 @@
 ; closure are unchecked.
 
                (cond
-                ((ffnnamep fn (lambda-object-body (cadr term)))
+                ((and (ffnnamep fn (lambda-object-body (cadr term)))
+                      (not (executable-badge fn wrld)))
                  (mv (msg "~x0 cannot be warranted because a :FN slot in its ~
                            body is occupied by a lambda object, ~x1, that ~
                            recursively calls ~x0; recursion through APPLY$ is ~
-                           not permitted!"
+                           not permitted unless the function was admitted ~
+                           with XARGS :LOOP$-RECURSION T, which only permits ~
+                           such recursion in LOOP$s."
                           fn
                           term)
                      nil))
@@ -1027,24 +1001,29 @@
               (t (mv (msg "~x0 will not be warranted because a :FN slot in ~
                            its body is occupied by a quoted cons object, ~x1, ~
                            that is not a well-formed, fully-translated, ~
-                           closed ACL2 lambda object.  The default behavior ~
-                           of APPLY$ on ill-formed input is nonsensical, ~
-                           e.g., unquoted numbers are treated like variables ~
-                           and macros are treated like undefined functions.  ~
-                           It is unwise to exploit this default behavior!"
+                           closed lambda object.  The default behavior of ~
+                           APPLY$ on ill-formed input is nonsensical, e.g., ~
+                           unquoted numbers are treated like variables and ~
+                           macros are treated like undefined functions.  It ~
+                           is unwise to exploit this default behavior!"
                           fn
                           term)
                      nil))))
        (t (mv (msg "~x0 cannot be warranted because a :FN slot in its ~
                     body is occupied by a quoted constant, ~x1, that does not ~
-                    denote a tame function symbol or LAMBDA object."
+                    denote a tame function symbol or lambda object."
                    fn
                    term)
               nil))))
      ((eq ilk :EXPR)
       (cond
        ((termp (cadr term) wrld)
+
         (cond ((ffnnamep fn (cadr term))
+
+; We don't even allow fns admitted with :LOOP$-RECURSION T because we don't
+; think the user will ever explicitly type a call of EV$! 
+
                (mv (msg "~x0 cannot be warranted because an :EXPR slot ~
                          in its body is occupied by a quoted term, ~x1, that ~
                          calls ~x0; recursion through EV$ is not permitted!"
@@ -1071,7 +1050,7 @@
               nil))))
      (t (mv nil alist))))
    ((flambdap (ffn-symb term))
-    (mv (msg "There are not supposed to be any ACL2 LAMBDA applications in ~
+    (mv (msg "There are not supposed to be any ACL2 lambda applications in ~
               the term being analyzed by guess-ilks-alist, but we have ~
               encountered ~x0!  This really indicates a coding error in ACL2 ~
               and is not your fault!  Please tell the implementors."
@@ -1159,7 +1138,7 @@
                     cannot be warranted, in which case neither can ~x0."
                    fn
                    (ffn-symb term)
-                   `(def-warrant ,(ffn-symb term)))
+                   `(defwarrant ,(ffn-symb term)))
               nil))
          (t (guess-ilks-alist-list fn new-badge
                                    (fargs term)
@@ -1199,161 +1178,310 @@
                                    alist1)))))))
  )
 
-(defun ancestrally-dependent-on-apply$-userfn-p1 (flg x wrld acc)
+(defun nonsensical-justification-term (fn wrld)
 
-; This is just all-fnnames1 except it recursively explores the body of each fn
-; it encounters and it short circuits if it sees the fnname APPLY$-USERFN or,
-; as a shortcut, the fnnames APPLY$ or EV$ (which are ancestrally dependent on
-; APPLY$-USERFN).  Flg = t means x is a list of terms; else x is a term.  Acc
-; is just the fns we've seen so far and is returned, but it is incomplete if
-; its car is APPLY$-USERFN, which is the signal that we found a dependence on
-; APPLY$-USERFN.
+; Let m, rel, and mp be the measure term, the well-founded relation, and the
+; domain predicate used in the justification of fn.  We return the essentially
+; maningless term (rel m (mp X)).  This term has the property that if g is
+; ancestral in it, then g is correspondingly ancestral in
+; m, or in the definition of rel, or in the definition of mp.
 
-; At one time we merely checked for ancestral dependence on APPLY$ or EV$.
-; That was probably sufficient, since measures must be tame and APPLY$-USERFN
-; is not badged.  However, it is more robust to make this stronger check for
-; ancestral dependence on APPLY$-USERFN.
+  (declare (xargs :mode :program))
+  (let ((just (getpropc fn 'justification nil wrld)))
+    (if just
+        (let ((m (access justification just :measure))
+              (rel (access justification just :rel))
+              (mp (access justification just :mp)))
+          (fcons-term* rel m (fcons-term* mp 'x)))
+        *t*)))
+
+(defun bad-ancestor1 (flg jflg x bad-fns wrld seen)
+
+; With the proper settings of the first two flag arguments, this function
+; determines whether any function symbol listed in bad-fns is ancestral in term
+; x.
+
+; This is a flagged mutual recursion where flg = t means x is a list of terms;
+; else x is a term.  When jflg=t causes the function to also check the measure,
+; well-founded relation, and domain predicate used to admit fn.  Otherwise, we
+; just check the body.
+
+; We walk through the relevant term(s) and consider every function symbol
+; called.  If we find a call of a function listed in bad-fns, we return the
+; first such fn found.  Otherwise, we return the list of all functions seen so
+; far.  We need to accumulate the list of functions seen to avoid loops
+; (through recursive calls) and redundant explorations of functions already
+; explored.  So the final answer is either a non-nil symbol, meaning we found
+; that particular bad function, or else is a list (nil or cons) meaning we did
+; not.
 
   (declare (xargs :mode :program))
   (cond
-   ((eq (car acc) 'apply$-userfn) acc)
+   ((and seen (symbolp seen))
+    seen)
    (flg ; x is a list of terms
-    (cond ((null x) acc)
-          (t (ancestrally-dependent-on-apply$-userfn-p1
+    (cond ((null x) seen)
+          (t (bad-ancestor1
               nil
+              jflg
               (car x)
+              bad-fns
               wrld
-              (ancestrally-dependent-on-apply$-userfn-p1 t (cdr x) wrld acc)))))
-   ((variablep x) acc)
-   ((fquotep x) acc)
+              (bad-ancestor1 t jflg (cdr x) bad-fns wrld seen)))))
+   ((variablep x) seen)
+   ((fquotep x) seen)
    ((flambda-applicationp x)
-    (ancestrally-dependent-on-apply$-userfn-p1
+    (bad-ancestor1
      nil
+     jflg
      (lambda-body (ffn-symb x))
+     bad-fns
      wrld
-     (ancestrally-dependent-on-apply$-userfn-p1 t (fargs x) wrld acc)))
-   ((or (eq (ffn-symb x) 'apply$)
-        (eq (ffn-symb x) 'ev$)
-        (eq (ffn-symb x) 'apply$-userfn))
-    (cons 'apply$-userfn acc))
-   ((member-eq (ffn-symb x) acc)
-    (ancestrally-dependent-on-apply$-userfn-p1
-     t
-     (fargs x)
-     wrld
-     (cons (ffn-symb x) acc)))
-   (t
-    (ancestrally-dependent-on-apply$-userfn-p1
+     (bad-ancestor1 t jflg (cdr x) bad-fns wrld seen)))
+   ((member-eq (ffn-symb x) bad-fns) (ffn-symb x))
+   ((member-eq (ffn-symb x) seen)
+    (bad-ancestor1 t jflg (fargs x) bad-fns wrld seen))
+   (jflg
+    (bad-ancestor1
      nil
+     jflg
      (body (ffn-symb x) nil wrld)
+     bad-fns
      wrld
-     (ancestrally-dependent-on-apply$-userfn-p1
+     (bad-ancestor1
       t
+      jflg
       (fargs x)
+      bad-fns
       wrld
-      (cons (ffn-symb x) acc))))))
+      (bad-ancestor1
+       nil
+       jflg
+       (nonsensical-justification-term (ffn-symb x) wrld)
+       bad-fns
+       wrld
+       (cons (ffn-symb x) seen)))))
+   (t
+    (bad-ancestor1
+     nil
+     jflg
+     (body (ffn-symb x) nil wrld)
+     bad-fns
+     wrld
+     (bad-ancestor1
+      t
+      jflg
+      (fargs x)
+      bad-fns
+      wrld
+      (cons (ffn-symb x) seen))))))
 
-(defun ancestrally-dependent-on-apply$-userfn-p (x wrld)
+(defun bad-ancestor (jflg term bad-fns wrld)
+
+; We return the first element of bad-fns that is ancestral in term, or nil if
+; none is.  Jflg determines whether the ancestral sweep includes justifications
+; or not.
+
   (declare (xargs :mode :program))
-  (let ((ans (ancestrally-dependent-on-apply$-userfn-p1 nil x wrld nil)))
-    (eq (car ans) 'apply$-userfn)))
+  (let ((ans (bad-ancestor1 nil jflg term bad-fns wrld nil)))
+    (if (and ans (symbolp ans))
+        ans
+        nil)))
 
-(defun acceptable-warranted-justificationp (fn ens wrld)
+(defun not-pre-apply$-definable (fnp x wrld)
 
-; Fn is a function symbol being considered for a warrant.  We check that its
-; well-founded-relation is O<, that its domain recognizer is O-P, and that its
-; measure is tame, natural-number valued, and not ancestrally dependent on
-; APPLY$-USERFN.  We just use type-set to confirm the type of the measure.
+; If fnp, then x is a function symbol; else it is a term.  We return nil if the
+; function symbol x (or every function symbol in term x, as per fnp) can be
+; defined before apply$ (actually, before apply$-userfn).'  Otherwise we return
+; a symbol, g, naming a ``bad'' function that is ancestral (in the jflg=t
+; sense) in fn.  G is always some element of *apply$-userfn-callers* and is
+; just used in an error about why we can't issue a warrant.
 
-; Our motivation is two-fold.  First, during the foundational construction of
-; the model we must admit every G1 function before we admit any G2 function.
-; That means all the G1 functions must have measures that are also entirely in
-; G1 terms.  Then when we admit the clique of doppelgangers of G2 functions we
-; want all the measures to be in G1 so we don't have to think about
-; simultaneously admitting the measures.  The check that every measure is tame
-; and independent of APPLY$ guarantees that the measure is composed entirely of
-; G1 functions.  The check that the measure is a natural guarantees that it
-; will fit inside the llist used to justify the G2 doppelgangers.
+  (declare (xargs :mode :program))
+  (bad-ancestor t
+                (if fnp
+                    (fcons-term x (formals x wrld))
+                    x)
+                *apply$-userfn-callers*
+                wrld))
 
-; We could relax these restrictions, someetimes at the expense of more
-; foundational work.
+(defun lex-measure-terms (term)
 
-; (1) We need the natp condition only if fn is in G2.  We needn't care if G1
-; functions have big measures, but we're lazy.  It requires checking whether fn
-; is dependent on APPLY$ and then changing the error messages.  One might be
-; tempted to not do any of this check for G1 functions but that would be a
-; mistake: we don't want to warrant a G1 function whose measure is a tame G2
-; function or else we couldn't admit all the G1 functions ``early.''
+; If term is (the translation of) an LLIST term, (llist t1 ... tk), we return
+; (t1 ... tk), the list of components.  Otherwise we return nil.
 
-; (2) We could allow tame G2 functions in measures (of G1 and G2 functions) if
-; we proved that every tame function is ``G1 defineable.''  We believe this but
-; haven't written a proof.  The basic construction is: take a tame G2
-; expression, like (m lst) where (defun m (lst) (sumlist lst '(lambda (x)
-; (binary-+ '1 (nfix x))))).  Copy the definition of the G2 function (e.g.,
-; sumlist), deleting the fn args and substituting the quoted tame functions for
-; them, beta reducing, and fold.  The result for this m would be (defun m (lst)
-; (if (endp lst) 0 (+ (+ 1 (nfix (car lst))) (m (cdr lst))))).  Of course, this
-; process has to be done recursively innermost first to reach all the G2
-; functions in m.  But if m is tame, we think you can always do this.  If
-; someone complains that their G2 function is rejected because its measure
-; depends on APPLY$, we could (i) tell them to use this construction themselves
-; to fix the problem and not bother us (!), or (ii) just eliminate the
-; ancestral check here, if we are really sure: every tame expression is G1
-; defineable.
-
-; (3) As for the natural-number restriction, that arises because of our use of
-; the original measure for fn in the 4th component of the measure for fn! in
-; our admittance of G2 doppelgangers.  We could allow bounded ordinal measures
-; on G2 functions, e.g., LLIST measures.  Then the doppelganger measures would
-; allot the maximum required amount of space to put all those LLISTs in as the
-; ``4th component''.  But we haven't implemented such a check or described in
-; the doppelganger proof how to embed the larger but bounded original measures.
+; We assume that term is not initially NIL.  Technically, nil is the
+; translation of (llist); if that were some function's measure it would mean
+; the function was non-recursive.  But we assume that condition is detected
+; before this function is called and so we are free to return nil as the signal
+; that term is not an LLIST term.
 
   (declare (xargs :mode :program))
   (cond
-   ((not (recursivep fn nil wrld)) t)
+   ((variablep term) nil)
+   ((fquotep term)
+; If term is NIL, we've reached the end of a successful parse of an LLIST.  We
+; return T to signal that, as opposed to returning NIL which here means that
+; the original term is not an LLIST.
+    (cond ((equal term acl2::*nil*) T)
+          (t nil)))
+   ((and (eq (ffn-symb term) 'CONS)
+         (acl2::nvariablep (fargn term 1))
+         (not (fquotep (fargn term 1)))
+         (eq (ffn-symb (fargn term 1)) 'NFIX))
+    (let ((temp (lex-measure-terms (fargn term 2))))
+      (cond ((null temp) nil)
+            (t (cons (fargn term 1)
+                     (if (eq temp t) nil temp))))))
+   (t nil)))
+
+(defun g2-justification (fn ens wrld)
+
+; Fn is a defined function symbol being considered for a warrant and we know
+; that fn's measure, if fn is recursive, is not ancestrally dependent on
+; apply$-userfn, but that fn's body is ancestrally dependent on apply$-userfn.
+; So fn will become a G2 function if we warrant it.  But that means its
+; justification has to meet certain criteria.  If it fails to meet the
+; criteria, we return (mv msg nil).  If it meets the criteria we return (mv nil
+; lst), where lst is the list of components in a LLIST measure justifying fn.
+
+; Every G2 function must satisfy one of the following criteria.
+
+; * fn's justification is NIL, meaning fn is not recursive: answer = (mv nil
+;   nil).
+
+; * the type-set of fn's measure is *ts-non-negative-integer*, and the relation
+;   and domain are O< and O-P: answer = (mv nil '(m)), where m is fn's measure
+;   term.
+
+; * fn's measure is (llist m1 ... mk) with relation and domain ACL2::L< and
+;   ACL2::LEXP: answer = (mv nil (m1 ... mk)).
+
+; Note that after suitable checks we treat the simple numeric measure case as
+; though it were (llist m).
+
+; The reasons we impose restrictions on G2 measures are:
+
+; (1) We don't care about the measures of G1 functions as long as they're not
+; dependent on apply$.  The model construction can order the G1 definitions
+; (and any relevant unwarranted definitions) in the user's chronological order
+; and admit them all.
+
+; (2) We insist that G2 functions have measures independent of apply$ so we
+; don't complicate the admission of the mutually recursive clique involving
+; apply$ and all G2 functions.  To weaken this restriction will require a
+; meta-level argument that a function in the clique can be used as the measure
+; of another one -- a reflexive situation we're not sure we can handle and so
+; don't!
+
+; (3) We limit the acceptable measures to either natural numbers or
+; lexicographic measures.  The model construction's measure for the
+; doppelganger clique is lexicographic and will allocate max slots to
+; accommodate all the userfn measures, where max is the length of the longest
+; lexicographic measure of any userfn.  Simple numeric measures are treated
+; like lexicographic measures of length 1.  We can imagine loosening this
+; restriction and allowing an arbitrary ordinal measure (independent of apply$)
+; but that requires another meta-level proof based on the structured theory
+; paper's universal evaluator to non-constructively define a recursion counter.
+; We haven't worked out the details of this proof.
+
+  (declare (xargs :mode :program))
+  (cond
+   ((not (recursivep fn nil wrld))
+    (mv nil nil))
    (t (let ((just (getpropc fn 'justification nil wrld)))
-        (and just
-             (eq (access justification just :rel) 'O<)
-             (eq (access justification just :mp) 'O-P)
-             (executable-tamep
-              (access justification just :measure)
-              wrld)
-             (not (ancestrally-dependent-on-apply$-userfn-p
-                   (access justification just :measure)
-                   wrld))
-             (mv-let (ts ttree)
-               (type-set (access justification just :measure)
-                         nil ; force-flg
-                         nil ; dwp
-                         nil ; type-alist
-                         ens
-                         wrld
-                         nil ; ttree
-                         nil ; pot-lst
-                         nil ;pt
-                         )
-               (declare (ignore ttree))
-               (ts-subsetp ts *ts-non-negative-integer*)))))))
+        (cond
+         ((null just)
+          (mv (er hard 'warranted-justification
+                  "~x0 is marked with a non-nil RECURSIVEP property but its ~
+                   JUSTIFICATION property is nil!"
+                  fn)
+              nil))
+         (t (let* ((m (access justification just :measure))
+                   (rel (access justification just :rel))
+                   (mp (access justification just :mp)))
+              (mv-let (ts ttree)
+                (type-set m
+                          nil ; force-flg
+                          nil ; dwp
+                          nil ; type-alist
+                          ens
+                          wrld
+                          nil ; ttree
+                          nil ; pot-lst
+                          nil ;pt
+                          )
+                (declare (ignore ttree))
+                (cond
+                 ((ts-subsetp ts *ts-non-negative-integer*)
+                  (cond
+                   ((not (eq rel 'O<))
+                    (mv (msg "~x0 cannot be warranted because its ~
+                              justification's well-founded relation is ~x1 ~
+                              instead of O< as required for its ~
+                              natural-number measure."
+                             fn
+                             rel)
+                        nil))
+                   ((not (eq mp 'O-P))
+                    (mv (msg "~x0 cannot be warranted because its ~
+                              justification's domain is ~x1 instead of O-P as ~
+                              required for its natural-number measure."
+                             fn
+                             mp)
+                        nil))
+                   (t (mv nil (list m)))))
+                 (t (let ((terms (lex-measure-terms m)))
+                      (cond
+                       ((null terms)
+                        (mv (msg "~x0 cannot be warranted because its ~
+                                  measure, ~x1, is not of the right shape.  ~
+                                  It must be either a simple natural number ~
+                                  measure recognized by primitive type ~
+                                  reasoning or a lexicographic measure ~
+                                  constructed by LLIST.  Your measure was not ~
+                                  constructed by LLIST and its output, V, as ~
+                                  deduced by type reasoning is described by ~
+                                  ~x2.  If you think your measure does in ~
+                                  fact return a natural number, prove it as a ~
+                                  :type-prescription lemma."
+                                 fn
+                                 m
+                                 (untranslate
+                                  (mv-let (tsterm x)
+                                    (acl2::convert-type-set-to-term
+                                     'v ts ens wrld nil)
+                                    (declare (ignore x))
+                                    tsterm)
+                                  t
+                                  wrld))
+                            nil))
+                       ((not (eq rel 'L<))
+                        (mv (msg "~x0 cannot be warranted because its ~
+                                  justification's well-founded relation is ~
+                                  ~x1 rather than L< as required for its ~
+                                  lexicographic measure."
+                                 fn
+                                 rel)
+                            nil))
+                       ((not (eq mp 'ACL2::LEXP))
+                        (mv (msg "~x0 cannot be warranted because its ~
+                                  justification's domain is domain is ~x1 ~
+                                  instead of LEXP as required for its ~
+                                  lexicographic measure."
+                                 fn
+                                 mp)
+                            nil))
+                       (t (mv nil terms))))))))))))))
 
-; TODO:  We could make badger a little more friendly by:
+; -----------------------------------------------------------------
+; REDEF+ HACK: Now I redefine badger properly.  If and when this is all
+; working, figure out how to make badger available to defuns-fn legitimately!
 
-; (a) detect mutual recursion up front and produce a suitable error msg.  Right
-;     now, attempting to badge a member of a mutually recursive clique fails
-;     with the explanation that some other member is not badged yet.
+; (redef+)
+; (logic)
 
-; (b) A not-too-difficult improvement would be to include tame
-;     mutual recursion.  For example, if my-even and my-odd are the obvious
-;     functions, we can't APPLY$ them, even though they are tame.  If we just
-;     recognized that if every subroutine used in a clique is tame (except for
-;     the clique members being defined, which will have no badges yet), then
-;     they're all tame and could be so badged.  This doesn't complicate the
-;     model since tame functions are defined in the model just as in the user's
-;     chronology and not mutually recursively with the model of APPLY$.
-
-; (c) compute the list of all unbadged functions in a defun and produce a
-;     suitable error msg.  Right now, the user is told about them one at a
-;     time.
+; -----------------------------------------------------------------
 
 (defun badger (fn ens wrld)
 
@@ -1386,67 +1514,110 @@
                  (prettyify-stobjs-out
                   (getpropc fn 'stobjs-out nil wrld)))
             nil))
-       ((not (acceptable-warranted-justificationp fn ens wrld))
 
-; We insist that every badged function be justified with O< over O-P on a
-; measure m that is tame, not ancestrally dependent on APPLY$-USERFN, and natp.
-; See acceptable-warranted-justificationp for some explanation.
+; Next, we need to find out if the justification of fn, if any, is dependent on
+; apply$-userfn.  If so, fn can't be warranted.
 
-        (mv (msg "~x0 cannot be warranted because it its justification is too ~
-                  complicated!  Our meta-level proof that there is a model in ~
-                  which all warrants are valid requires that warranted ~
-                  functions be justified by the well-founded relation O< on ~
-                  the domain O-P with a measure that is tame, not ancestrally ~
-                  dependent on APPLY$-USERFN, and natural-number valued as ~
-                  determined by type-set.  The relevant fields of ~x0's ~
-                  justification are ~%well-founded relation: ~x1~%domain: ~
-                  ~x2~%measure: ~x3.~%If the problem is that the measure ~
-                  isn't being correctly typed by type-set, you should prove ~
-                  the appropriate :type-prescription rule.  Otherwise, you ~
-                  should try to admit ~x0 with an acceptable justification.  ~
-                  Some of these restrictions could be relaxed at the expense ~
-                  of complicating our proof that an acceptable model exists.  ~
-                  If you really need ~x0 to be warranted, contact the authors!"
-                 fn
-                 (access justification
-                         (getpropc fn 'justification nil wrld)
-                         :rel)
-                 (access justification
-                         (getpropc fn 'justification nil wrld)
-                         :mp)
-                 (access justification
-                         (getpropc fn 'justification nil wrld)
-                         :measure))
-            nil))
-       (t
-; We know fn is a logic mode function symbol.
-        (if (quick-check-for-tamenessp fn body wrld)
-            (mv nil
-                (make apply$-badge
-                      :authorization-flg
-                      (if (cdr (getpropc fn 'stobjs-out nil wrld))
-                          nil
-                          t)
-                      :arity (arity fn wrld)
-                      :ilks t))
-            (mv-let (msg alist0)
-              (guess-ilks-alist fn nil body :unknown wrld nil) ; Pass 1
+       (t (let ((bad-fn
+                 (not-pre-apply$-definable
+                  nil
+                  (nonsensical-justification-term fn wrld)
+                  wrld)))
+            (cond
+             (bad-fn
+; A dependence on apply$-userfn was found in the justification of fn.
+
+              (mv (msg "~x0 cannot be warranted because some part of its ~
+                        justification (i.e., its measure, well-founded ~
+                        relation, or domain predicate) ancestrally calls or ~
+                        is justified in terms of ~x1."
+                       fn
+                       bad-fn)
+                  nil))
+
+; At this point we know fn is a candidate for either G1 or G2.  It can be G1 if
+; its body doesn't depend on apply$-userfn.  Otherwise, it has to be G2.  But
+; in both cases we'll have other constraints to check.
+
+             ((null (bad-ancestor
+                     nil ; j-flg (we no longer care about the justification)
+                     body
+                     *apply$-userfn-callers*
+                     wrld))
+
+; Fn will be in G1 if we warrant it.  G1 functions can't be dependent on any
+; blacklisted function like sys-call.
+
+              (let ((bad-fn
+                     (bad-ancestor nil body *blacklisted-apply$-fns* wrld)))
+                (cond
+                 (bad-fn
+                  (mv (msg "~x0 cannot be warranted because its body is ~
+                            ancestrally dependent on ~x1 which is among the ~
+                            functions apply$ is not allowed to call."
+                           fn
+                           bad-fn)
+                      nil))
+                 (t
+; Fn is an acceptable G1 function symbol.
+                  (mv nil
+                      (make apply$-badge
+                            :arity (arity fn wrld)
+                            :out-arity (length (getpropc fn 'stobjs-out nil wrld))
+                            :ilks t))))))
+
+; Fn will be in G2 if we warrant it.  By the way, we don't explicitly check
+; below that fn is independent of blacklisted functions because we check that
+; every function called is warranted.  If there's a blacklisted function int
+; the body it will be identified as unbadged.
+
+             (t
               (cond
-               (msg (mv msg nil))
-               (t (let* ((new-ilks
-                          (convert-ilk-alist-to-ilks formals alist0))
-                         (alist1
-                          (pairlis$ formals
-                                    (if (eq new-ilks t) nil new-ilks)))
-                         (new-badge
+               ((cdr (getpropc fn 'recursivep nil wrld))
+                (mv (msg "~x0 cannot be warranted because it is ancestrally ~
+                          dependent on apply$-userfn and in a mutually ~
+                          recursive clique with ~&1.  Unfortunately, ~
+                          defwarrant cannot analyze mutually recursive ~
+                          definitions yet."
+                         fn
+                         (remove1-eq fn (getpropc fn 'recursivep nil wrld)))
+                    nil))
+               (t (mv-let
+                    (msg val)
+                    (g2-justification fn ens wrld)
+                    (declare (ignore val))
+
+; We can ignore val, the list of lexicographic components in fn's measure,
+; because we just need to know whether the justification is acceptable or not.
+; The reason we even compute val is so that g2-justification can be used in the
+; model constructions of projects/apply-model-2/ex1 and ex2.
+
+                    (cond
+                     (msg
+                      (mv msg nil))
+                     ((quick-check-for-tamenessp fn body wrld)
+                      (mv nil
                           (make apply$-badge
-                                :authorization-flg
-                                (if (cdr (getpropc fn 'stobjs-out nil wrld))
-                                    nil
-                                    t)
                                 :arity (arity fn wrld)
-                                :ilks new-ilks)))
-                    (mv-let (msg alist2)
+                                :out-arity (length (getpropc fn 'stobjs-out nil wrld))
+                                :ilks t)))
+                     (t
+                      (mv-let (msg alist0)
+                        (guess-ilks-alist fn nil body :unknown wrld nil) ; Pass 1
+                        (cond
+                         (msg (mv msg nil))
+                         (t (let* ((new-ilks
+                                    (convert-ilk-alist-to-ilks formals alist0))
+                                   (alist1
+                                    (pairlis$ formals
+                                              (if (eq new-ilks t) nil new-ilks)))
+                                   (new-badge
+                                    (make apply$-badge
+                                          :arity (arity fn wrld)
+                                          :out-arity
+                                          (length (getpropc fn 'stobjs-out nil wrld))
+                                          :ilks new-ilks)))
+                              (mv-let (msg alist2)
 
 ; We suspect that if new-ilks (the :ilks of new-badge) is t then there is no
 ; need to do Pass 2: The only parts of the body that get different treatments
@@ -1456,34 +1627,36 @@
 ; run guess-ilks-alist again... and we've got the proof in the essay below to
 ; confirm that pass 2 is adequate, so we are not much motivated to change it.
 
-                      (guess-ilks-alist fn ; Pass 2
-                                        new-badge
-                                        body
-                                        nil
-                                        wrld
-                                        alist1)
-                      (cond
-                       (msg (mv msg nil))
-                       ((equal alist1 alist2)
+                                (guess-ilks-alist fn ; Pass 2
+                                                  new-badge
+                                                  body
+                                                  nil
+                                                  wrld
+                                                  alist1)
+                                (cond
+                                 (msg (mv msg nil))
+                                 ((equal alist1 alist2)
 
 ; If we get here, we know that (check-ilks fn new-badge body nil (w state)).
 ; See the Essay on Check-Ilks below.
 
-                        (mv nil new-badge))
-                       (t
+                                  (mv nil new-badge))
+                                 (t
 
 ; We believe it is impossible to get here because of guess-ilks-alist-lemma
 ; shown in the Essay on Check-Ilks below.
 
-                          (mv (msg "The second pass of the badger produced a ~
-                                    different alist than the first!  The ~
-                                    (completed) alist produced by the first ~
-                                    pass is ~x0 but the alist produced by the ~
-                                    second pass is ~x1.  This must be some ~
-                                    kind of coding error in ACL2.  Please ~
-                                    report this to the implementors."
-                                  alist1 alist2)
-                              nil)))))))))))))
+                                  (mv (msg "The second pass of the badger ~
+                                            produced a different alist than ~
+                                            the first!  The (completed) alist ~
+                                            produced by the first pass is ~x0 ~
+                                            but the alist produced by the ~
+                                            second pass is ~x1.  This must be ~
+                                            some kind of coding error in ~
+                                            ACL2.  Please report this to the ~
+                                            implementors."
+                                           alist1 alist2)
+                                      nil))))))))))))))))))))
    (t (mv (msg "~x0 cannot be warranted because it is not a defined ~
                 :logic mode function symbol."
                fn)
@@ -1491,7 +1664,7 @@
 
 (defun badge-table-guard (key val wrld ens)
 
-; See the comment in def-warrant about speeding up this function by using a
+; See the comment in defwarrant about speeding up this function by using a
 ; checker version of badger.  (That checker would need to be written.)
 
   (declare (xargs :mode :program))
@@ -1579,45 +1752,60 @@
 ; decreases according to o<.
 
 ; Fifth, when badger returns non-erroneously, the badge is constructed with
-; make apply$-badge with obviously correct settings for :authorization-flg and
-; :arity.  The only question is whether :ilks is set correctly.
+; make apply$-badge with obviously correct settings for :arity and :out-arity.
+; The only question is whether :ilks is set correctly.
 
 ; Assurances on Badged Functions (recapitulation)
 
 ; If badger assigns new-badge as the badge of fn with (beta-reduced) body,
-; body, then we know:
+; body, then we know fn is a defined :logic mode function without state or
+; stobjs in its signature, its justification is pre-apply$ definable as above
+; and fn is either in class (G1) or (G2).
 
-; (a) Fn is a defined, singly-recursive (or non-recursive) :logic mode function
-;     that does not traffic in stobjs or state and that (if recursive) is
-;     justified with a natural number valued measure decreasing by o<.
-;     Furthermore, the badge returned is an apply$-badgep with correct
-;     :authorization-flg and :arity and :ilks of either T or a list (in 1:1
-;     correspondence with the formals of fn) of NIL, :FN, and/or :EXPR tokens.
+; (G1) fn's body is ancestrally independent of apply$-userfn and ancestrally
+;      independent of inapplicative functions, like sys-call.
 
-; (b) Every function called in body has a badge (including fn if we consider
-;     new-badge the badge of fn).
+; (G2) fn's body is ancestrally dependent on apply$-usefn and
 
-; (c) Every formal of ilk :FN is only passed into :FN slots, and
-;     every :FN slot in the body is occupied by
-;     * a formal variable of ilk :FN in new-badge, or
-;     * a quoted tame function symbol other than fn, or
-;     * a quoted, well-formed (fully translated and closed), tame lambda
-;       object that does not call fn.
+;  (a) one of these conditions hold:
+;      * fn is not recursively defined, or
 
-; (d) Every formal of ilk :EXPR is only passed into :EXPR slots, and
-;     every :EXPR slot in the body is occupied by
-;     * a formal variable of ilk :EXPR in new-badge, or
-;     * a quoted, well-formed (fully translated), tame term that does not call
-;       fn.
+;      * fn is recursively defined with a natural number measure and
+;        well-founded relation O<, and domain O-P, or
 
-; (e) If the nth formal, vn, of fn has ilk :FN or :EXPR then vn is passed
-;     unchanged into the nth slot of every recursive call of fn.
+;      * fn is recursively defined with a measure that is the
+;        macroexpansion of an LLIST expression, well-founded relation L<,
+;        and domain LEXP
 
-; To establish this we first inspect badger and see that there are only two
-; places where it returns non-erroneously, i.e., (mv nil ...).  In the first
-; non-erroneous return, fn has a tame body, and so is tame, and we assign :ilks
-; = t, which is obviously correct.  It is the second non-erroneous return that
-; is potentially problematic.
+;      Recall from above that we also know justification is pre-apply$
+;      definable.
+
+;  (b) Every function called in body has a badge (including fn if we consider
+;      new-badge the badge of fn).
+
+;  (c) Every formal of ilk :FN is only passed into :FN slots, and
+;      every :FN slot in the body is occupied by
+;      * a formal variable of ilk :FN in new-badge, or
+;      * a quoted tame function symbol other than fn, or
+;      * a quoted, well-formed (fully translated and closed), tame lambda
+;        object that does not call fn.
+
+;  (d) Every formal of ilk :EXPR is only passed into :EXPR slots, and
+;      every :EXPR slot in the body is occupied by
+;      * a formal variable of ilk :EXPR in new-badge, or
+;      * a quoted, well-formed (fully translated), tame term that does not call
+;        fn.
+
+;  (e) If the nth formal, vn, of fn has ilk :FN or :EXPR then vn is passed
+;      unchanged into the nth slot of every recursive call of fn.
+
+; To establish this we first inspect badger and see that it quite literally
+; checks that fn is in :logic mode without state or stobjs in its signature,
+; its justification is pre-apply$ definable, and it is either in class (G1) or
+; (G2).  It then goes on to check the additional properties imposed on (G2)
+; functions.  One need only pay attention to the non-erroneous exits, e.g., (mv
+; nil ...).  It is the third (last) non-erroneous exit that is potentially
+; problematic.
 
 ; Briefly reviewing the code in badger leading to the second non-erroneous
 ; return we see that it guesses an alist0 assigning ilks to the vars of body,
@@ -1676,7 +1864,7 @@
 ; <beta-reduced-body> is a term in <(w state)>.
 
 ; This ``proof'' has to be made informally unless we formalize a great deal of
-; the properties of (w state) and the invariants maintained by def-warrant.
+; the properties of (w state) and the invariants maintained by defwarrant.
 
 ; -----------------------------------------------------------------
 ; 7. Functional Equivalence
@@ -1714,34 +1902,35 @@
    ((endp c1-cn) nil)
    ((eq (car c1-cn) :FN)
     (cons `(defcong fn-equal equal ,term ,i
+             :package :legacy
              :hints
              (("Goal" :in-theory (disable (:executable-counterpart force)))))
           (defcong-fn-equal-equal-events term (+ 1 i) (cdr c1-cn))))
    (t (defcong-fn-equal-equal-events term (+ 1 i) (cdr c1-cn)))))
 
 ; -----------------------------------------------------------------
-; 8. DEF-WARRANT
+; 8. DEFWARRANT
 
-; Suppose AP is defined (with defun$) to be a tame function of two arguments.
-; Then defun$ will also do something equivalent to the following (modulo
-; the note below):
+; Suppose AP is defined (with defun$) to be a tame function of two arguments
+; returning one result.  Then defun$ will also do something equivalent to the
+; following (modulo the note below):
 
 ; (defun-sk apply$-warrant-AP nil
-;   (forall (args) (and (equal (badge 'AP) '(APPLY$-BADGE T 2 . T))
+;   (forall (args) (and (equal (badge 'AP) '(APPLY$-BADGE 2 1 . T))
 ;                       (equal (apply$ 'AP args)
 ;                              (ap (car args) (cadr args))))))
 
 ; (defthm apply$-AP
 ;   (implies (force (apply$-warrant-AP))
-;            (and (equal (badge 'AP) '(APPLY$-BADGE T 2 . T))
+;            (and (equal (badge 'AP) '(APPLY$-BADGE 2 1 . T))
 ;                 (equal (apply$ 'AP args)
 ;                        (ap (car args) (cadr args))))))
 
 ; (in-theory (disable apply$-warrant-AP))
 
 ; which will mean that if we have the hypothesis (apply$-warrant-AP), we will
-; rewrite (badge 'AP) to the given badge record and rewrite (apply$ 'AP args)
-; to the appropriate call of ap.
+; rewrite (badge 'AP) to the given badge of ap and rewrite (apply$ 'AP args) to
+; the appropriate call of ap.
 
 ; Note: the actual warrant is phrased in terms of badge-userfn and
 ; apply$-userfn, not badge and apply$, as shown above; but the rewrite rule
@@ -1755,8 +1944,9 @@
   (declare (xargs :mode :logic ; :program mode may suffice, but this is nice
                   :guard (symbol-listp names)))
   (cond ((endp names) nil)
-        ((assoc-eq (car names)
-                   *badge-prim-falist*) ; primitives don't have warrants
+        ((or (assoc-eq (car names) *badge-prim-falist*)
+             (assoc-eq (car names) *apply$-boot-fns-badge-alist*))
+; Primitives and apply$ boot functions do not have or need warrants.
          (warrant-fn (cdr names)))
         (t (cons (list (warrant-name (car names)))
                  (warrant-fn (cdr names))))))
@@ -1776,7 +1966,7 @@
 
 ; (defun-sk apply$-warrant-COLLECT nil
 ;   (forall (args)
-;     (and (equal (badge 'COLLECT) '(APPLY$-BADGE T 2 NIL :FN))
+;     (and (equal (badge 'COLLECT) '(APPLY$-BADGE 2 1 NIL :FN))
 ;          (implies (tamep-functionp (cadr args)) ; tameness-conditions
 ;                   (equal (apply$ 'COLLECT args)
 ;                          (collect (car args)     ; successive-cadrs
@@ -1787,74 +1977,56 @@
 ; apply$-userfn, not badge and apply$, as shown above; but the rewrite rule
 ; indeed deals with badge and apply$.  We deal with this later.)
 
-; We originally introduced def-warrant-event here, preceded by supporting
+; We originally introduced defwarrant-event here, preceded by supporting
 ; functions tameness-conditions, successive-cadrs, and necc-name-ARGS-instance.
-; However, we call def-warrant-event in the definition of warrantp, which in
+; However, we call defwarrant-event in the definition of warrantp, which in
 ; turn is called in the implementation of defattach in file other-events.lisp.
 ; So those definitions now appear in that file.
 
-(defun def-warrant-fn1 (fn state)
+(defun defwarrant-fn1 (fn state)
   (declare (xargs :mode :program))
   (let ((ens (ens state))
         (wrld (w state))
         (apply-lemmas-book
-         (extend-pathname :system "projects/apply/apply-lemmas.lisp" state)))
+         (extend-pathname :system "projects/apply/base.lisp" state)))
     (mv-let (msg bdg)
       (badger fn ens wrld)
       (cond
        (msg
-        (er soft 'def-warrant "~@0" msg))
+        (er soft 'defwarrant "~@0" msg))
        ((and (not (assoc-equal
                    apply-lemmas-book
                    (global-val 'include-book-alist (w state))))
              (not (equal apply-lemmas-book
-                         (active-book-name (w state) state))))
+                         (active-book-name (w state) state)))
+             (not (global-val 'boot-strap-flg (w state))))
 
-; In order to succeed, def-warrant needs apply-lemmas.lisp to have been
-; included.  That is because def-warrant tries to prove congruence rules and at
-; the very least needs the lemmas establishing that fn-equal is an equivalence
-; and a congruence for apply$.  So we tell the user to load apply-lemmas unless
-; it has already been loaded or we're currently including or certifying
-; apply-lemmas itself (which, naturally enough, explicitly proves all the
-; lemmas it needs to do the def-warrants it tries).
+; In order to succeed, defwarrant needs base.lisp to have been included.  That
+; is because defwarrant tries to prove congruence rules and at the very least
+; needs the lemmas establishing that fn-equal is an equivalence and a
+; congruence for apply$.  So we tell the user to load top (which includes base)
+; unless base has already been loaded or we're currently including or
+; certifying base itself (which, naturally enough, explicitly proves all the
+; lemmas it needs to do the defwarrants it tries).
 
-        (er soft 'def-warrant
-            "Please execute~%~x0~|before the first defun$ or def-warrant.  ~
-             See :DOC def-warrant."
+; We make an exception for the boot-strap, where we take responsibility for the
+; necessary verification.
+
+        (er soft 'defwarrant
+            "Please execute~%~x0~|before the first defun$ or defwarrant.  ~
+             See :DOC defwarrant."
             '(include-book
-              "projects/apply/apply-lemmas" :dir :system)))
-       ((null (access apply$-badge bdg :authorization-flg))
-        (value
-         `(progn
-            (table badge-table
-                   :badge-userfn-structure
-                   (cons ',(cons fn bdg)
-                         (cdr
-                          (assoc :badge-userfn-structure
-                                 (table-alist 'badge-table world))))
-                   :put)
-            ,@(if (eq (access apply$-badge bdg :ilks) t)
-                  nil
-                (defcong-fn-equal-equal-events
-                  (cons fn (formals fn wrld))
-                  1
-                  (access apply$-badge bdg :ilks)))
-            (with-output
-              :stack :pop
-              (value-triple
-               (prog2$
-                (cw "~%~x0 cannot be warranted because it returns multiple ~
-                     values, but it otherwise satisfies the syntactic ~
-                     restrictions on warrants.  So a badge for ~x0 has been ~
-                     issued -- allowing you to use ~x0 in other functions ~
-                     that may be warranted -- but no warrant for ~x0 can be ~
-                     issued.  The badge of ~x0 is ~x1.~%~%"
-                    ',fn ',bdg)
-                :badged))))))
+              "projects/apply/top" :dir :system)))
        (t
         (value
-         `(progn
-            ,@(def-warrant-event fn (formals fn wrld)
+
+; WARNING: Be sure no event under this (encapsulate () ...) is local!  At one
+; time we used (progn ...) instead.  However, we found that defwarrant events
+; were never redundant because of the defattach below.
+
+         `(encapsulate ; Read the warning above before changing to progn.
+            ()
+            ,@(defwarrant-event fn (formals fn wrld)
                 bdg)
             (table badge-table
                    :badge-userfn-structure
@@ -1862,7 +2034,11 @@
                          (cdr (assoc :badge-userfn-structure
                                      (table-alist 'badge-table world))))
                    :put)
-            (defattach ,(warrant-name fn) true-apply$-warrant)
+            ,(if (getpropc fn 'predefined nil wrld)
+                 `(defattach (,(warrant-name fn)
+                              true-apply$-warrant)
+                    :system-ok t)
+               `(defattach ,(warrant-name fn) true-apply$-warrant))
             ,@(if (eq (access apply$-badge bdg :ilks) t)
                   nil
                 (defcong-fn-equal-equal-events
@@ -1877,21 +2053,11 @@
                     ',fn ',bdg)
                 :warranted))))))))))
 
-(defun def-warrant-fn (fn)
+(defun defwarrant-fn (fn)
   (declare (xargs :mode :logic :guard t)) ; for execution speed in safe-mode
-  `(cond
-    ((and (symbolp ',fn)
-          (executable-badge ',fn (w state)))
+  `(defwarrant-fn1 ',fn state))
 
-; By returing (value :redundant) in this case, we arrange that (value
-; :redundant) is returned by a corresponding defun$, so that :REDUNDANT is
-; printed in that case.
-
-     (value '(value-triple :redundant)))
-    (t
-     (def-warrant-fn1 ',fn state))))
-
-(defmacro def-warrant (fn)
+(defmacro defwarrant (fn)
 
 ; We can probably speed up this event, which currently may be particularly slow
 ; when there are lambda applications because of beta reduction in badger.  One
@@ -1912,7 +2078,7 @@
 ; applications in place, since one knows the ilks of the actuals and can
 ; transfer them to the ilks of the lambda formals before diving into the body.
 
-; WARNING: Do not extend the functionality of def-warrant by making constrained
+; WARNING: Do not extend the functionality of defwarrant by making constrained
 ; functions warrantable!  That opens a can of worms, namely tracking
 ; attachments to guard against the calling of lambda$ expressions unbound by
 ; lambda$-alist during pre-loading of compiled files.  There are probably a
@@ -1927,9 +2093,15 @@
      (make-event
       (with-output
         :stack :pop
-        ,(def-warrant-fn fn))
+        ,(defwarrant-fn fn))
+      :on-behalf-of :quiet!
 ; See note below.
       :check-expansion t)))
+
+(defmacro def-warrant (fn)
+  (er hard (msg "~x0" `(def-warrant ,fn))
+      "Def-warrant has been replaced by defwarrant.  Please use defwarrant ~
+       instead."))
 
 ; Note on Why We :Check-Expansion T
 
@@ -1951,19 +2123,19 @@
 ; Note that mapstub ancestrally uses stub (not subversively).  Note that
 ; mapstub is used in the constraint.  Finally, note that both stub and mapstub
 ; are introduced with DEFUN$, so both expand to DEFUNs followed by
-; DEF-WARRANTs.
+; DEFWARRANTs.
 
 ; During first pass, stub is tame (more precisely, its witness is tame).  It
-; gets the badge (APPLY$-BADGE T 2 . T).  The next event, the defun$ of
+; gets the badge (APPLY$-BADGE 2 1 . T).  The next event, the defun$ of
 ; mapstub, analyzes the body and announces that mapstub is a mapping function
-; with badge (APPLY$-BADGE T 2 NIL :FN).
+; with badge (APPLY$-BADGE 2 1 NIL :FN).
 
 ; The successful badging of mapstub implicitly depends on stub having a badge.
 
 ; But during the second pass, stub is just declared.  The local defun$ is
 ; skipped.  Stub gets no badge.
 
-; But the expansion of the (def-warrant mapstub) records the pass 1 badge
+; But the expansion of the (defwarrant mapstub) records the pass 1 badge
 ; of mapstub, so mapstub would get the old -- now inappropriate -- badge if
 ; we didn't have :CHECK-EXPANSION T!
 
@@ -1975,7 +2147,7 @@
 ; It is worrying because of functional instantiation.  There is no logical
 ; recording of the badge of stub.  It could be functionally instantiated with a
 ; function that is not tame, for example.  Perhaps this could be fixed, e.g.,
-; by having a constraint on stub that says (badge 'stub) = '(APPLY$-BADGE T 2
+; by having a constraint on stub that says (badge 'stub) = '(APPLY$-BADGE 2 1
 ; . T) or something.  Even if we solve that problem, there is the problem of
 ; elaborating the evaluation theory story for mapping functions, especially as
 ; it concerns the idea of using defattach to make stub executable.  But this
@@ -1983,7 +2155,7 @@
 ; just haven't considered a high enough priority to think about!
 
 ; Use of :check-expansion t is inefficient, since it re-does the entire
-; def-warrant calculation.  It may be possible to change the expansion so that
+; defwarrant calculation.  It may be possible to change the expansion so that
 ; it causes an error if stub isn't properly badged during the table event that
 ; normally stores the badge.  I.e., instead of laying down the quoted badge in:
 
@@ -2008,7 +2180,58 @@
 (defmacro defun$ (fn formals &rest rest)
   `(progn
      (defun ,fn ,formals ,@rest)
-     (def-warrant ,fn)))
+     (defwarrant ,fn)))
+
+(defmacro defun$! (fn formals &rest rest)
+
+; This is like defun$ but it also includes a post-warrant verify-guards.  The
+; declarations must NOT have any :verify-guard settings, as this is added
+; automatically.  The motivation for this variant of defun$ is that the guards
+; on loop$ recursive defuns cannot be expressed until the warrant is available.
+; See the comment below on the "ideal design" for defun$.
+
+  `(progn
+     (defun ,fn ,formals
+       (declare (xargs :verify-guards nil))
+       ,@rest)
+     (defwarrant ,fn)
+     (verify-guards ,fn)))
+
+; The ideal design for defun$ would be for it to determine first whether the
+; declarations include :loop$-recursion t and whether the user wants guards
+; verified during defun.  If both conditions are true, it could change or add a
+; :verify-guards nil setting to the declarations before submitting the defun.
+; Then it could lay down a verify-guards command after the defwarrant command.
+; Doing this just whenever loop$-recursion is declared would be a mistake since
+; the user might not want guards verified.  But determine whether the user
+; wants guards verified depends on many things including the default defun mode
+; and the default verify-guards-eagerness settings in the world -- which are
+; inaccessible in macros.  So to do it "right" we'd have to implement the ideal
+; defun$ with a make-event.  Other factors involved in determining whether
+; guards are to be verified during defun include information recovered from the
+; declarations, including the :mode, :verify-guards, :guard settings and any
+; type declarations.  E.g., guard verification is not tried automatically if
+; the eagerness value is 1, no :verify-guards value is specified, and no guard
+; or type is present.  Recovering the various settings from untranslated
+; declarations is messy.
+
+; Since a goal of the ideal design would be to not render an illegal defun
+; legal or a legal one illegal when shutting off :verify-guards, the problem is
+; even messier than the various combinations of the above factors suggests.
+; For example, if the world defaults are :logic mode and
+; verify-guards-eagerness 1, and the user has two occurrences of (xargs
+; :verify-guards t) among his declares, then changing just one of them to
+; (xargs :verify-guards nil) would produce an illegal ambiguous setting from a
+; legal defun.  Similarly, if the user had both (xargs :verify-guards t) and
+; (xargs :verify-guards nil), then changing the first to (xargs :verify-guards
+; nil) would produce a legal defun from an illegal one.
+
+; While all of this could be -- and might someday be -- handled by a suitable
+; make-event version of defun or, perhaps better, extending defun to include
+; defwarrant when asked to do so by declarations or loop$ recursion, we decided
+; at the moment to just cut through the complexity by instructing the user to
+; employ defun$! if defun-time guard verification of a loop$-recursive defun is
+; wanted!
 
 ; -----------------------------------------------------------------
 ; 10. The LAMB Hack
@@ -2025,11 +2248,530 @@
 ; the constraint on apply$-userfn mentions badge-userfn.
 
 (defattach
-  (badge-userfn concrete-badge-userfn)
-  (apply$-userfn concrete-apply$-userfn)
+  (badge-userfn doppelganger-badge-userfn)
+  (apply$-userfn doppelganger-apply$-userfn)
   :hints
-  (("Goal" :use (concrete-badge-userfn-type
-                 concrete-apply$-userfn-takes-arity-args))))
+  (("Goal" :use (doppelganger-badge-userfn-type
+                 doppelganger-apply$-userfn-takes-arity-args))))
+
+; -----------------------------------------------------------------
+; 12. Loop$ Scions
+;     Define the loop$ scions.  See the Essay on LOOP$ in translate.lisp.
+
+; The definitions below are in :program mode.  See community book
+; books/system/apply/loop.lisp for termination and guard verification, which
+; makes these common-lisp-compliant in the build (see
+; *system-verify-guards-alist*).
+
+; See the Essay on Loop$ in the ACL2 source code for a guide to the translation
+; of plain and fancy loops.
+
+; -----------------------------------------------------------------
+; Tails and Its Tail Recursive Counterpart
+
+; Rather than define accumulator scions, like sum$ and collect$ for both IN
+; iteration and ON iteration, we always use IN iteration but lift the target,
+; lst, to a list of its successive tails.  Furthermore, we define tails both
+; the ``natural'' way and via tail-recursion so that we reason about the
+; natural definition but compute in the ACL2 top-level loop via the
+; tail-recursive version.  We do this generally for all the functions involved
+; in the semantics of LOOP$.  So you'll see the same dance over and over:
+; define the tail-recursive version, define the natural version with an mbe but
+; with verify-guards nil, prove the lemma equating them, and verify-guards to
+; install the fast :exec.
+
+(defun tails-ac (lst ac)
+  (declare (xargs :guard (and (true-listp lst)
+                              (true-listp ac))
+                  :mode :program))
+  (cond ((endp lst) (revappend ac nil))
+        (t (tails-ac (cdr lst) (cons lst ac)))))
+
+(defun tails (lst)
+  (declare (xargs :guard (true-listp lst)
+                  :mode :program))
+  (mbe :logic
+       (cond ((endp lst) nil)
+             (t (cons lst (tails (cdr lst)))))
+       :exec (tails-ac lst nil)))
+
+; -----------------------------------------------------------------
+; Loop$-as and Its Tail Recursive Counterpart
+
+(defun empty-loop$-as-tuplep (tuple)
+; A loop$-as-tuple is empty if at least one element is empty.
+  (declare (xargs :guard (true-list-listp tuple)
+                  :mode :program))
+  (cond ((endp tuple) nil)
+        ((endp (car tuple)) t)
+        (t (empty-loop$-as-tuplep (cdr tuple)))))
+
+(defun car-loop$-as-tuple (tuple)
+  (declare (xargs :guard (true-list-listp tuple)
+                  :mode :program))
+  (cond ((endp tuple) nil)
+        (t (cons (caar tuple) (car-loop$-as-tuple (cdr tuple))))))
+
+(defun cdr-loop$-as-tuple (tuple)
+  (declare (xargs :guard (true-list-listp tuple)
+                  :mode :program))
+  (cond ((endp tuple) nil)
+        (t (cons (cdar tuple) (cdr-loop$-as-tuple (cdr tuple))))))
+
+(defun loop$-as-ac (tuple ac)
+  (declare (xargs :guard (and (true-list-listp tuple)
+                              (true-listp ac))
+                  :mode :program))
+  (cond ((endp tuple) (revappend ac nil))
+        ((empty-loop$-as-tuplep tuple) (revappend ac nil))
+        (t (loop$-as-ac (cdr-loop$-as-tuple tuple)
+                        (cons (car-loop$-as-tuple tuple)
+                              ac)))))
+
+(defun loop$-as (tuple)
+  (declare (xargs :guard (true-list-listp tuple)
+                  :mode :program))
+  (mbe :logic
+       (cond ((endp tuple) nil)
+             ((empty-loop$-as-tuplep tuple) nil)
+             (t (cons (car-loop$-as-tuple tuple)
+                      (loop$-as (cdr-loop$-as-tuple tuple)))))
+       :exec
+       (loop$-as-ac tuple nil)))
+
+; -----------------------------------------------------------------
+; From-to-by and Its Tail Recursive Counterpart
+
+; We will need this measure in order to warrant from-to-by-ac.
+(defun from-to-by-measure (i j)
+  (declare (xargs :guard t))
+  (if (and (integerp i)
+           (integerp j)
+           (<= i j))
+      (+ 1 (- j i))
+      0))
+
+(defun from-to-by-ac (i j k ac)
+  (declare (xargs :guard (and (integerp i)
+                              (integerp j)
+                              (integerp k)
+                              (< 0 k)
+                              (true-listp ac))
+                  :mode :program))
+  (cond ((mbt (and (integerp i)
+                   (integerp j)
+                   (integerp k)
+                   (< 0 k)))
+         (cond
+          ((<= i j)
+           (from-to-by-ac i (- j k) k (cons j ac)))
+          (t ac)))
+        (t nil)))
+
+(defun from-to-by (i j k)
+  (declare (xargs :guard (and (integerp i)
+                              (integerp j)
+                              (integerp k)
+                              (< 0 k))
+                  :mode :program))
+
+; Before we verify the guards (and so avail ourselves of the :exec branch
+; below), (time$ (length (from-to-by 1 1000000 1))) took 0.21 seconds.  After
+; verify guards it took 0.07 seconds.
+
+  (mbe :logic
+       (cond ((mbt (and (integerp i)
+                        (integerp j)
+                        (integerp k)
+                        (< 0 k)))
+              (cond
+               ((<= i j)
+                (cons i (from-to-by (+ i k) j k)))
+               (t nil)))
+             (t nil))
+       :exec (if (< j i)
+                 nil
+                 (from-to-by-ac i (+ i (* k (floor (- j i) k))) k nil))))
+
+; Timing Comparision
+; (time$ (length (from-to-by 1 1000000 1))
+; Before verify-guards: 0.27 seconds realtime, 0.27 seconds runtime
+; After verify-guards:  0.06 seconds realtime, 0.06 seconds runtime
+
+; In the following comments use the constant *m*, defined by (defconst *m*
+; (from-to-by 1 1000000 1)), in our standard timing tests to see whether our
+; tail-recursive definitions and guard verification help.
+
+; -----------------------------------------------------------------
+; Until$, Until$+, and Their Tail Recursive Counterparts
+
+(defun until$-ac (fn lst ac)
+  (declare (xargs :guard
+                  (and (apply$-guard fn '(nil))
+                       (true-listp lst)
+                       (true-listp ac))
+                  :mode :program))
+  (cond
+   ((endp lst) (revappend ac nil))
+   ((apply$ fn (list (car lst))) (revappend ac nil))
+   (t (until$-ac fn (cdr lst) (cons (car lst) ac)))))
+
+(defun until$ (fn lst)
+  (declare (xargs :guard
+                  (and (apply$-guard fn '(nil))
+                       (true-listp lst))
+                  :mode :program))
+  (mbe :logic
+       (if (endp lst)
+           nil
+           (if (apply$ fn (list (car lst)))
+               nil
+               (cons (car lst)
+                     (until$ fn (cdr lst)))))
+       :exec
+       (until$-ac fn lst nil)))
+
+; Timing Comparision
+; (time$ (length (until$ (lambda$ (x) (equal x 'abc)) *m*)))
+; Before verify-guards: 0.56 seconds realtime, 0.56 seconds runtime
+; After verify-guards:  0.32 seconds realtime, 0.32 seconds runtime
+
+(defun until$+-ac (fn globals lst ac)
+  (declare (xargs :guard
+                  (and (apply$-guard fn '(nil nil))
+                       (true-listp globals)
+                       (true-list-listp lst)
+                       (true-listp ac))
+                  :mode :program))
+  (cond
+   ((endp lst) (revappend ac nil))
+   ((apply$ fn (list globals (car lst))) (revappend ac nil))
+   (t (until$+-ac fn globals (cdr lst) (cons (car lst) ac)))))
+
+(defun until$+ (fn globals lst)
+  (declare (xargs :guard
+                  (and (apply$-guard fn '(nil nil))
+                       (true-listp globals)
+                       (true-list-listp lst))
+                  :mode :program))
+  (mbe :logic
+       (if (endp lst)
+           nil
+           (if (apply$ fn (list globals (car lst)))
+               nil
+               (cons (car lst)
+                     (until$+ fn globals (cdr lst)))))
+       :exec
+       (until$+-ac fn globals lst nil)))
+
+; -----------------------------------------------------------------
+; When$, When$+, and Their Tail Recursive Counterparts
+
+(defun when$-ac (fn lst ac)
+  (declare (xargs :guard
+                  (and (apply$-guard fn '(nil))
+                       (true-listp lst)
+                       (true-listp ac))
+                  :mode :program))
+  (if (endp lst)
+      (revappend ac nil)
+      (when$-ac fn (cdr lst)
+                (if (apply$ fn (list (car lst)))
+                    (cons (car lst) ac)
+                    ac))))
+
+(defun when$ (fn lst)
+  (declare (xargs :guard
+                  (and (apply$-guard fn '(nil))
+                       (true-listp lst))
+                  :mode :program))
+  (mbe :logic
+       (if (endp lst)
+           nil
+           (if (apply$ fn (list (car lst)))
+               (cons (car lst)
+                     (when$ fn (cdr lst)))
+               (when$ fn (cdr lst))))
+       :exec (when$-ac fn lst nil)))
+
+; Timing Comparision
+; (time$ (length (when$ 'integerp *m*)))
+; Before verify-guards: 0.52 seconds realtime, 0.52 seconds runtime
+; After verify-guards:  0.25 seconds realtime, 0.25 seconds runtime
+
+(defun when$+-ac (fn globals lst ac)
+  (declare (xargs :guard
+                  (and (apply$-guard fn '(nil nil))
+                       (true-listp globals)
+                       (true-list-listp lst)
+                       (true-listp ac))
+                  :mode :program))
+  (if (endp lst)
+      (revappend ac nil)
+      (when$+-ac fn globals
+                 (cdr lst)
+                 (if (apply$ fn (list globals (car lst)))
+                     (cons (car lst) ac)
+                     ac))))
+
+(defun when$+ (fn globals lst)
+  (declare (xargs :guard
+                  (and (apply$-guard fn '(nil nil))
+                       (true-listp globals)
+                       (true-list-listp lst))
+                  :mode :program))
+  (mbe :logic
+       (if (endp lst)
+           nil
+           (if (apply$ fn (list globals (car lst)))
+               (cons (car lst)
+                     (when$+ fn globals (cdr lst)))
+               (when$+ fn globals (cdr lst))))
+       :exec (when$+-ac fn globals lst nil)))
+
+; -----------------------------------------------------------------
+; Sum$, Sum$+, and Their Tail Recursive Counterparts
+
+(defun sum$-ac (fn lst ac)
+  (declare (xargs :guard
+                  (and (apply$-guard fn '(nil))
+                       (true-listp lst)
+                       (acl2-numberp ac))
+                  :mode :program))
+  (if (endp lst)
+      ac
+      (sum$-ac fn
+               (cdr lst)
+               (+ (fix (apply$ fn (list (car lst)))) ac))))
+
+; Note the fix in both sum$-ac and sum$.  Once upon a time we thought perhaps
+; we could avoid the fix in sum$-ac by arranging for sum$-ac to be treated as a
+; special loop$ scion, which would have imposed the guard conjecture that fn
+; returns a number on every newv in lst.  But that would impose the elaboration
+; of the :guard below on sum$, which would then require checking at runtime.
+; So the fix in sum$-ac is necessary if we're to avoid that expensive check.
+
+(defun sum$ (fn lst)
+  (declare (xargs :guard
+                  (and (apply$-guard fn '(nil))
+                       (true-listp lst))
+                  :mode :program))
+  (mbe :logic
+       (if (endp lst)
+           0
+           (+ (fix (apply$ fn (list (car lst))))
+              (sum$ fn (cdr lst))))
+       :exec (sum$-ac fn lst 0)))
+
+(defun sum$+-ac (fn globals lst ac)
+  (declare (xargs :guard
+                  (and (apply$-guard fn '(nil nil))
+                       (true-listp globals)
+                       (true-list-listp lst)
+                       (acl2-numberp ac))
+                  :mode :program))
+  (if (endp lst)
+      ac
+      (sum$+-ac fn globals
+                (cdr lst)
+                (+ (fix (apply$ fn (list globals (car lst)))) ac))))
+
+(defun sum$+ (fn globals lst)
+  (declare (xargs :guard
+                  (and (apply$-guard fn '(nil nil))
+                       (true-listp globals)
+                       (true-list-listp lst))
+                  :mode :program))
+  (mbe :logic
+       (if (endp lst)
+           0
+           (+ (fix (apply$ fn (list globals (car lst))))
+              (sum$+ fn globals (cdr lst))))
+       :exec (sum$+-ac fn globals lst 0)))
+
+; -----------------------------------------------------------------
+; Always$ and Always$+
+
+; Note there is no need for the -ac versions since always$ is tail-recursive!
+; Thus, there's no use of MBE or delayed guard verification in always$, unlike
+; sum$.
+
+(defun always$ (fn lst)
+  (declare (xargs :guard
+                  (and (apply$-guard fn '(nil))
+                       (true-listp lst))
+                  :mode :program))
+  (if (endp lst)
+      t
+      (if (apply$ fn (list (car lst)))
+          (always$ fn (cdr lst))
+          nil)))
+
+(defun always$+ (fn globals lst)
+  (declare (xargs :guard
+                  (and (apply$-guard fn '(nil nil))
+                       (true-listp globals)
+                       (true-list-listp lst))
+                  :mode :program))
+  (if (endp lst)
+      t
+      (if (apply$ fn (list globals (car lst)))
+          (always$+ fn globals (cdr lst))
+          nil)))
+
+; -----------------------------------------------------------------
+; Thereis$ and Thereis$+
+
+; Note there is no need for the -ac versions since thereis$ is tail-recursive!
+; Thus, there's no use of MBE or delayed guard verification in thereis$, unlike
+; sum$.
+
+(defun thereis$ (fn lst)
+  (declare (xargs :guard
+                  (and (apply$-guard fn '(nil))
+                       (true-listp lst))
+                  :mode :program))
+  (if (endp lst)
+      nil
+      (or (apply$ fn (list (car lst)))
+          (thereis$ fn (cdr lst)))))
+
+(defun thereis$+ (fn globals lst)
+  (declare (xargs :guard
+                  (and (apply$-guard fn '(nil nil))
+                       (true-listp globals)
+                       (true-list-listp lst))
+                  :mode :program))
+  (if (endp lst)
+      nil
+      (or (apply$ fn (list globals (car lst)))
+          (thereis$+ fn globals (cdr lst)))))
+
+
+; -----------------------------------------------------------------
+; Collect$, Collect$+, and Their Tail Recursive Counterparts
+
+(defun collect$-ac (fn lst ac)
+  (declare (xargs :guard (and (apply$-guard fn '(nil))
+                              (true-listp lst)
+                              (true-listp ac))
+                  :mode :program))
+  (cond ((endp lst) (revappend ac nil))
+        (t (collect$-ac fn (cdr lst)
+                        (cons (apply$ fn (list (car lst))) ac)))))
+
+(defun collect$ (fn lst)
+  (declare (xargs :guard (and (apply$-guard fn '(nil))
+                              (true-listp lst))
+                  :mode :program))
+  (mbe :logic
+       (if (endp lst)
+           nil
+           (cons (apply$ fn (list (car lst)))
+                 (collect$ fn (cdr lst))))
+       :exec (collect$-ac fn lst nil)))
+
+(defun collect$+-ac (fn globals lst ac)
+  (declare (xargs :guard (and (apply$-guard fn '(nil nil))
+                              (true-listp globals)
+                              (true-list-listp lst)
+                              (true-listp ac))
+                  :mode :program))
+  (cond ((endp lst) (revappend ac nil))
+        (t (collect$+-ac fn globals
+                         (cdr lst)
+                         (cons (apply$ fn (list globals (car lst))) ac)))))
+
+(defun collect$+ (fn globals lst)
+  (declare (xargs :guard (and (apply$-guard fn '(nil nil))
+                              (true-listp globals)
+                              (true-list-listp lst))
+                  :mode :program))
+  (mbe :logic
+       (if (endp lst)
+           nil
+           (cons (apply$ fn (list globals (car lst)))
+                 (collect$+ fn globals (cdr lst))))
+       :exec (collect$+-ac fn globals lst nil)))
+
+; -----------------------------------------------------------------
+; Append$, Append$+, and Their Tail Recursive Counterparts
+
+; A hard-to-model aspect of the CLTL's LOOP APPEND accumulation is that it
+; preserves the final cdr of the last result but, obviously, wipes out the
+; final cdrs of the rest of the results.
+
+; ? (loop for x in '((1 2 3 . 7) (4 5 6)) append x)
+; (1 2 3 4 5 6)
+; ? (loop for x in '((1 2 3 . 7) (4 5 6 . 8)) append x)
+; (1 2 3 4 5 6 . 8)
+
+; Rather than try to model this behavior (which would complicate subsequent
+; proofs about loop$ append) we just require all results to be true-listps.
+; Logically, we'll fix each result with true-list-fix.  But the special loop$
+; scion guard conjectures will require it to be proved because CLTL doesn't fix
+; the result.
+
+(defun revappend-true-list-fix (x ac)
+
+; This function is equivalent to (revappend (true-list-fix x) ac) but doesn't
+; copy x before reversing it onto ac.
+
+  (declare (xargs :guard t
+                  :mode :program))
+  (if (atom x)
+      ac
+      (revappend-true-list-fix (cdr x) (cons (car x) ac))))
+
+(defun append$-ac (fn lst ac)
+  (declare (xargs :guard (and (apply$-guard fn '(nil))
+                              (true-listp lst)
+                              (true-listp ac))
+                  :mode :program))
+  (cond ((endp lst) (revappend ac nil))
+        (t (append$-ac fn
+                       (cdr lst)
+                       (revappend-true-list-fix
+                        (apply$ fn (list (car lst)))
+                        ac)))))
+
+(defun append$ (fn lst)
+  (declare (xargs :guard (and (apply$-guard fn '(nil))
+                              (true-listp lst))
+                  :mode :program))
+  (mbe :logic
+       (if (endp lst)
+           nil
+           (append
+            (true-list-fix (apply$ fn (list (car lst))))
+            (append$ fn (cdr lst))))
+       :exec (append$-ac fn lst nil)))
+
+(defun append$+-ac (fn globals lst ac)
+  (declare (xargs :guard (and (apply$-guard fn '(nil nil))
+                              (true-listp globals)
+                              (true-list-listp lst)
+                              (true-listp ac))
+                  :mode :program))
+  (cond ((endp lst) (revappend ac nil))
+        (t (append$+-ac fn
+                        globals
+                        (cdr lst)
+                        (revappend-true-list-fix
+                         (apply$ fn (list globals (car lst)))
+                         ac)))))
+
+(defun append$+ (fn globals lst)
+  (declare (xargs :guard (and (apply$-guard fn '(nil nil))
+                              (true-listp globals)
+                              (true-list-listp lst))
+                  :mode :program))
+  (mbe :logic
+       (if (endp lst)
+           nil
+           (append
+            (true-list-fix (apply$ fn (list globals (car lst))))
+            (append$+ fn globals (cdr lst))))
+       :exec (append$+-ac fn globals lst nil)))
 
 )
-

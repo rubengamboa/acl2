@@ -421,11 +421,13 @@
         (cond
          ((eq ilk :FN)
           (or (and (symbolp (cadr term))
-                   (not (equal fn (cadr term)))
+                   (or (not (equal fn (cadr term)))
+                       (executable-badge fn wrld))
                    (executable-tamep-functionp (cadr term) wrld))
               (and (consp (cadr term))
                    (and (weak-well-formed-lambda-objectp (cadr term) wrld)
-                        (not (ffnnamep fn (lambda-object-body (cadr term))))
+                        (or (not (ffnnamep fn (lambda-object-body (cadr term))))
+                            (executable-badge fn wrld))
                         (executable-tamep-lambdap (cadr term) wrld)))))
          ((eq ilk :EXPR)
           (and (termp (cadr term) wrld)
@@ -592,7 +594,7 @@
                      (term-listp terms wrld))
                 (check-ilks-list fn formals new-badge terms ilks wrld))
        :flag guess-ilks-alist-list)
-     :hints (("Subgoal *1/24" :use ((:instance apply$-badgep-executable-badge
+     :hints (("Subgoal *1/28" :use ((:instance apply$-badgep-executable-badge
                                                (fn (car term)))))))
    ))
 
@@ -627,9 +629,9 @@
    :hints (("Goal" :in-theory (disable APPLY$-EQUIVALENCE-NECC)
             :use APPLY$-EQUIVALENCE-NECC))))
 
-(defequiv fn-equal)
+(defequiv fn-equal :package :legacy)
 
-(defcong fn-equal equal (apply$ fn args) 1)
+(defcong fn-equal equal (apply$ fn args) 1 :package :legacy)
 
 (in-theory (disable fn-equal))
 
@@ -649,13 +651,14 @@
    ((endp c1-cn) nil)
    ((eq (car c1-cn) :FN)
     (cons `(defcong fn-equal equal ,term ,i
+             :package :legacy
              :hints
              (("Goal" :in-theory (disable (:executable-counterpart force)))))
           (defcong-fn-equal-equal-events term (+ 1 i) (cdr c1-cn))))
    (t (defcong-fn-equal-equal-events term (+ 1 i) (cdr c1-cn)))))
 
 ; -----------------------------------------------------------------
-; 8. DEF-WARRANT
+; 8. DEFWARRANT
 
 ; -----------------------------------------------------------------
 ; 9. DEFUN$
@@ -666,3 +669,8 @@
 
 ; -----------------------------------------------------------------
 ; 11. The Defattach
+
+; -----------------------------------------------------------------
+; 12. Loop$ Scions
+
+; See loop.lisp.

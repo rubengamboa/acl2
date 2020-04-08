@@ -1,10 +1,13 @@
 ;; Copyright (C) 2017, Regents of the University of Texas
-;; Written by Cuong Chau
+;; Written by Cuong Chau (derived from the FM9001 work of Brock and Hunt)
 ;; License: A 3-clause BSD license.  See the LICENSE file distributed with
 ;; ACL2.
 
+;; The ACL2 source code for the FM9001 work is available at
+;; https://github.com/acl2/acl2/tree/master/books/projects/fm9001.
+
 ;; Cuong Chau <ckcuong@cs.utexas.edu>
-;; September 2018
+;; January 2019
 
 (in-package "ADE")
 
@@ -15,7 +18,7 @@
 ;; respective arities.
 
 (defconst *primitives*
-  ;; name                  ins  outs sts
+  ;; name                  ins  outs st
   '((b-and                  2    1    0)
     (b-and3                 3    1    0)
     (b-and4                 4    1    0)
@@ -44,7 +47,7 @@
     (b-xnor                 2    1    0)
     (b-xor                  2    1    0)
 
-    (fd1                    2    2    1)
+    (ff                     2    2    1)
     (latch                  2    2    1)
     (link-cntl              2    1    1)
 
@@ -71,7 +74,7 @@
   (declare (xargs :guard t))
   (caddr (primp fn)))
 
-(defun primp-sts  (fn)
+(defun primp-st  (fn)
   (declare (xargs :guard t))
   (cadddr (primp fn)))
 
@@ -95,14 +98,14 @@
     (implies (primp fn)
              (< 0 (primp-outs fn))))))
 
-(defthm natp-primp-sts
+(defthm natp-primp-st
   (implies (primp fn)
-           (natp (primp-sts fn)))
+           (natp (primp-st fn)))
   :rule-classes
   (:type-prescription
    (:linear
     :corollary
     (implies (primp fn)
-             (<= 0 (primp-sts fn))))))
+             (<= 0 (primp-st fn))))))
 
-(in-theory (disable primp primp-ins primp-outs primp-sts))
+(in-theory (disable primp primp-ins primp-outs primp-st))

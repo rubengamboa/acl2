@@ -185,12 +185,15 @@
 	     (equal (bits x i j)
                     (1- (expt 2 (1+ (- i j)))))))
 
-(defthmd bits-minus-1
-    (implies (and (natp i)
-		  (natp j)
-		  (>= i j))
-	     (equal (bits -1 i j)
-                    (1- (expt 2 (1+ (- i j)))))))
+(defthmd bits-top-ones
+  (implies (and (natp i)
+                (natp j)
+		(>= i j)
+		(natp x)
+		(< x (expt 2 (1+ i)))
+		(>= x (- (expt 2 (1+ i)) (expt 2 j))))
+	   (equal (bits x i j)
+	          (1- (expt 2 (- (1+ i) j))))))
 
 (defthm bits-bits-sum
   (implies (and (integerp x)
@@ -249,10 +252,8 @@
   :rule-classes ())
 
 (defthm bits-mod-fl
-  (implies (and (integerp x)
-                (integerp i)
-                (integerp j)
-                (>= i j))
+  (implies (and (integerp i)
+                (integerp j))
            (equal (bits x (1- i) j)
                   (mod (fl (/ x (expt 2 j)))
                        (expt 2 (- i j)))))
@@ -962,12 +963,20 @@
 
 (defsection-rtl |Signed Integer Formats| |Bit Vectors|
 
+(defnd ui (r) r)
+
 (defund si (r n)
   (declare (xargs :guard (and (integerp r)
                               (natp n))))
   (if (= (bitn r (1- n)) 1)
       (- r (expt 2 n))
     r))
+
+(defthm int-si
+  (implies (and (integerp r)
+                (natp n))
+	   (integerp (si r n)))
+  :rule-classes (:type-prescription :rewrite))
 
 (defthm si-bits
     (implies (and (integerp x)
@@ -1015,19 +1024,21 @@
                      (si (mod y (expt 2 n)) n))
                   (- x y))))
 
-(defund ui (r) r)
 
-(defund si (r n)
-  (declare (xargs :guard (and (integerp r)
-                              (natp n))))
-  (if (= (bitn r (1- n)) 1)
-      (- r (expt 2 n))
-    r))
+;;;**********************************************************************
+;;;                      Fixed-Point Registers
+;;;**********************************************************************
 
 (defund uf (r n m)
+  (declare (xargs :guard (and (natp r)
+                              (natp n)
+                              (natp m))))
   (* (expt 2 (- m n)) (ui r)))
 
 (defund sf (r n m)
+  (declare (xargs :guard (and (integerp r)
+                              (natp n)
+                              (natp m))))
   (* (expt 2 (- m n)) (si r n)))
 
 (defthmd bits-uf

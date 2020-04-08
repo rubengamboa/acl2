@@ -1,7 +1,3 @@
-; Copyright (C) 2017, Regents of the University of Texas
-; Written by Mihir Mehta
-; License: A 3-clause BSD license.  See the LICENSE file distributed with ACL2.
-
 (in-package "ACL2")
 
 ;  find-n-free-blocks.lisp                     Mihir Mehta
@@ -50,74 +46,46 @@
       ;; this block isn't taken
       (cons start (find-n-free-blocks-helper (cdr alv) (- n 1) (+ start 1))))))
 
-(defthmd
-  find-n-free-blocks-helper-correctness-1
-  (implies (and (boolean-listp alv) (natp n))
-           (<= (len (find-n-free-blocks-helper alv n start))
-               n))
+(defthmd find-n-free-blocks-helper-correctness-1
+  (<= (len (find-n-free-blocks-helper alv n start))
+      (nfix n))
   :rule-classes (:rewrite :linear)
   :hints (("goal" :in-theory (enable find-n-free-blocks-helper))))
 
-(defthmd
-  find-n-free-blocks-helper-correctness-2
-  (implies (and (boolean-listp alv)
-                (natp n))
-           (equal (len (find-n-free-blocks-helper alv n start))
-                  (min (count-free-blocks alv) n)))
- :hints (("goal" :in-theory (enable find-n-free-blocks-helper))))
+(defthmd find-n-free-blocks-helper-correctness-2
+  (equal (len (find-n-free-blocks-helper alv n start))
+         (min (count-free-blocks alv) (nfix n)))
+  :hints (("goal" :in-theory (enable find-n-free-blocks-helper))))
 
-(defthmd
-  find-n-free-blocks-helper-correctness-3
-  (implies (and (boolean-listp alv)
-                (natp n)
-                (natp start))
+(defthmd find-n-free-blocks-helper-correctness-3
+  (implies (natp start)
            (nat-listp (find-n-free-blocks-helper alv n start)))
   :rule-classes (:rewrite :type-prescription)
   :hints (("goal" :in-theory (enable find-n-free-blocks-helper))))
 
-(defthmd
+(defthm
   find-n-free-blocks-helper-correctness-4
-  (implies (and (natp n)
-                (natp start)
-                (member-equal m
-                              (find-n-free-blocks-helper alv n start)))
-           (<= start m))
+  (implies (> start m)
+           (not (member-equal m
+                              (find-n-free-blocks-helper alv n start))))
   :hints (("goal" :in-theory (enable find-n-free-blocks-helper))))
 
-(defthmd
+(defthm
   find-n-free-blocks-helper-correctness-5
-  (implies (and (boolean-listp alv)
-                (natp n)
-                (natp start)
-                (member-equal m
-                              (find-n-free-blocks-helper alv n start)))
-           (not (nth (- m start) alv)))
+  (implies (and (natp start)
+                (equal (nth (- m start) alv) t))
+           (not (member-equal m
+                              (find-n-free-blocks-helper alv n start))))
   :hints
   (("goal" :in-theory (enable find-n-free-blocks-helper
-                              find-n-free-blocks-helper-correctness-3))
-   ("subgoal *1/6.1'"
-    :use (:instance find-n-free-blocks-helper-correctness-4
-                    (alv (cdr alv))
-                    (start (+ 1 start))))))
+                              find-n-free-blocks-helper-correctness-3))))
 
-(defthmd
-  find-n-free-blocks-helper-correctness-6
-  (implies (and (natp n) (natp start))
-           (no-duplicatesp-equal (find-n-free-blocks-helper alv n start)))
-  :hints (("goal" :in-theory (enable find-n-free-blocks-helper))
-          ("subgoal *1/9''"
-           :in-theory (disable find-n-free-blocks-helper-correctness-4)
-           :use (:instance find-n-free-blocks-helper-correctness-4
-                           (m start)
-                           (alv (cdr alv))
-                           (n (+ -1 n))
-                           (start (+ 1 start))))))
+(defthmd find-n-free-blocks-helper-correctness-6
+  (no-duplicatesp-equal (find-n-free-blocks-helper alv n start))
+  :hints (("goal" :in-theory (enable find-n-free-blocks-helper))))
 
-(defthmd
-  find-n-free-blocks-helper-correctness-7
-  (implies (and (boolean-listp alv)
-                (natp n)
-                (natp start))
+(defthmd find-n-free-blocks-helper-correctness-7
+  (implies (natp start)
            (bounded-nat-listp (find-n-free-blocks-helper alv n start)
                               (+ start (len alv))))
   :hints (("goal" :in-theory (enable find-n-free-blocks-helper))))
@@ -138,8 +106,8 @@
 
 (defthm
   find-n-free-blocks-correctness-1
-  (implies (and (boolean-listp alv) (natp n))
-           (<= (len (find-n-free-blocks alv n)) n))
+  (<= (len (find-n-free-blocks alv n))
+      (nfix n))
   :rule-classes (:rewrite :linear)
   :hints
   (("goal" :in-theory (enable find-n-free-blocks
@@ -147,18 +115,15 @@
 
 (defthm
   find-n-free-blocks-correctness-2
-  (implies (and (boolean-listp alv)
-                (natp n))
-           (equal (len (find-n-free-blocks alv n))
-                  (min (count-free-blocks alv) n)))
+  (equal (len (find-n-free-blocks alv n))
+         (min (count-free-blocks alv) (nfix n)))
   :hints
   (("goal" :in-theory (enable find-n-free-blocks
                               find-n-free-blocks-helper-correctness-2))))
 
 (defthm
   find-n-free-blocks-correctness-3
-  (implies (and (boolean-listp alv) (natp n))
-           (nat-listp (find-n-free-blocks alv n)))
+  (nat-listp (find-n-free-blocks alv n))
   :rule-classes (:rewrite :type-prescription)
   :hints
   (("goal" :in-theory (enable find-n-free-blocks
@@ -166,28 +131,25 @@
 
 (defthm
   find-n-free-blocks-correctness-5
-  (implies (and (member-equal m (find-n-free-blocks alv n))
-                (boolean-listp alv)
-                (natp n))
-           (not (nth m alv)))
-  :rule-classes (:forward-chaining)
-  :hints (("goal" :in-theory (enable find-n-free-blocks)
-           :use (:instance find-n-free-blocks-helper-correctness-5
-                           (start 0)))))
+  (implies (equal (nth m alv) t)
+           (not (member-equal m (find-n-free-blocks alv n))))
+  :hints
+  (("goal"
+    :in-theory (e/d (find-n-free-blocks)
+                    ((:rewrite find-n-free-blocks-helper-correctness-5)))
+    :use (:instance (:rewrite find-n-free-blocks-helper-correctness-5)
+                    (start 0)))))
 
 (defthm
   find-n-free-blocks-correctness-6
-  (implies (and (natp n))
-           (no-duplicatesp-equal (find-n-free-blocks alv n)))
+  (no-duplicatesp-equal (find-n-free-blocks alv n))
   :hints
   (("goal" :in-theory (enable find-n-free-blocks
                               find-n-free-blocks-helper-correctness-6))))
 
 (defthm
   find-n-free-blocks-correctness-7
-  (implies (and (boolean-listp alv)
-                (natp n)
-                (equal m (len alv)))
+  (implies (equal m (len alv))
            (bounded-nat-listp (find-n-free-blocks alv n)
                               m))
   :hints (("goal" :in-theory (enable find-n-free-blocks)

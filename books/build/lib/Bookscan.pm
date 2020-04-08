@@ -77,8 +77,8 @@ sub set_max_time_event () { return 'set-max-time'; }
 sub pbs_event () { return 'pbs'; }
 
 sub print_scanevent {
-    my ($fname,$cmd,$args) = @_;    
-    print "$fname: $cmd ";
+    my ($fname,$args) = @_;    
+    print "$fname: ";
     foreach my $arg (@$args) {
 	$arg && print " $arg";
     }
@@ -87,9 +87,9 @@ sub print_scanevent {
 
 
 sub debug_print_event {
-    my ($fname,$cmd,$args) = @_;
+    my ($fname,$args) = @_;
     if ($debugging) {
-	print_scanevent($fname, $cmd, $args);
+	print_scanevent($fname, $args);
     }
 }
 
@@ -127,11 +127,13 @@ sub scan_ifdef_define {
     my @res = $the_line =~ m/^[^;]* # not commented
                              \(\s*
                              (?:[^\s():]*::)? # package prefix
-                             ifdef-(?<negate>un)?define \s+
+                             ifdef-(?<negate>un)?define(?<nonloc>!?) \s+
                              "(?<var>\w*)"
                              /xi;
     if (@res) {
-	return [ifdef_define_event, $+{negate} ? 1 : 0, $+{var}];
+	my $ans = [ifdef_define_event, $+{negate} ? 1 : 0, $+{var}, ($+{nonloc} eq "!") ? 0 : 1 ];
+	debug_print_event($base, $ans);
+	return $ans;
     }
     return 0;
 }
@@ -141,12 +143,23 @@ sub scan_add_dir {
     my ($base,$the_line) = @_;
 
     # Check for ADD-INCLUDE-BOOK-DIR commands
-    my $regexp = "^[^;]*\\([\\s]*add-include-book-dir!?[\\s]+:([^\\s]*)[\\s]*\"([^\"]*[^\"/])/?\"";
-    my @res = $the_line =~ m/$regexp/i;
-    if (@res) {
-	my $name = uc($res[0]);
-	print "$base: add_dir $name $res[1]\n" if $debugging;
-	return [add_dir_event, $name, $res[1]];
+    # my $regexp = "^[^;]*\\([\\s]*add-include-book-dir!?[\\s]+:([^\\s]*)[\\s]*\"([^\"]*[^\"/])/?\"";
+    my $res = $the_line =~
+	m/^[^;]* # not commented
+          \(\s*
+            (?:[^\s():]*::)?   # package prefix
+            add-include-book-dir
+            (?<nonloc>!?)
+            \s+
+            :(?<name>[^\s]*)
+            \s+
+            "(?<dir>[^"]*[^"\/])  # dir string except for possible trailing slash
+            \/?"
+         /xi;
+    if ($res) {
+	my $ans = [add_dir_event, uc($+{name}), $+{dir}, ($+{nonloc} eq "!") ? 0 : 1 ];
+	debug_print_event($base, $ans);
+	return $ans;
     }
     return 0;
 }
@@ -156,7 +169,12 @@ sub scan_include_book {
     my ($base,$the_line) = @_;
 
     my @res = $the_line =~
-	m/^[^;]*   # not commented
+	m/^[^;]*?   # not commented. Minimal match so we don't miss the optional local.
+          (?<local>
+               \(\s*
+               (?:[^\s():]*::)? # package prefix
+               local
+               \s*)?  # optional local prefix
           \(\s*
            (?:[^\s():]*::)? # package prefix
            include-book
@@ -169,8 +187,9 @@ sub scan_include_book {
             (?<noport>no[_-]port))? # optional no-port comment
        /xi;
     if (@res) {
-	debug_print_event($base, "include_book", \@res);
-	return [include_book_event, $+{book}, $+{dirname}, $+{noport} ? 1 : 0];
+	my $ans = [include_book_event, $+{book}, uc($+{dirname} || ""), $+{noport} ? 1 : 0, $+{local} ? 1 : 0 ];
+	debug_print_event($base, $ans);
+	return $ans;
     }
     return 0;
 }
@@ -185,14 +204,16 @@ sub scan_depends_on {
 	debug_print_event($base, "depends_on", \@res);
 	# Disallow depends-on of a certificate, for now.
 	if ($res[0] =~ m/\.cert$/) {
-	    print("**************************** WARNING **************************************\n");
-	    print("$base has a \'depends-on\' dependency on a certificate, $res[0].\n");
-	    print("It is better to use \'include-book\' (in a multiline comment, if necessary)\n");
-	    print("to specify dependencies on books, because \'depends-on\' doesn't trigger\n");
-	    print("a scan of the target's dependencies.\n");
-	    print("***************************************************************************\n");
+	    STDERR->print("**************************** WARNING **************************************\n");
+	    STDERR->print("$base has a \'depends-on\' dependency on a certificate, $res[0].\n");
+	    STDERR->print("It is better to use \'include-book\' (in a multiline comment, if necessary)\n");
+	    STDERR->print("to specify dependencies on books, because \'depends-on\' doesn't trigger\n");
+	    STDERR->print("a scan of the target's dependencies.\n");
+	    STDERR->print("***************************************************************************\n");
 	}
-	return [depends_on_event, $res[0], $res[1]];
+	my $ans = [depends_on_event, $res[0], uc($res[1] || "")];
+	debug_print_event($base, $ans);
+	return $ans;
     }
 }
 
@@ -202,8 +223,9 @@ sub scan_depends_rec {
     my $regexp = "\\([\\s]*depends-rec[\\s]*\"([^\"]*)\"(?:[^;]*:dir[\\s]*:([^\\s)]*))?";
     my @res = $the_line =~ m/$regexp/i;
     if (@res) {
-	debug_print_event($base, "depends_rec", \@res);
-	return [depends_rec_event, $res[0], $res[1]];
+	my $ans = [depends_rec_event, $res[0], uc($res[1] || "")];
+	debug_print_event($base, $ans);
+	return $ans;
     }
     return 0;
 }
@@ -214,8 +236,9 @@ sub scan_loads {
     my $regexp = "\\([\\s]*loads[\\s]*\"([^\"]*)\"(?:[^;]*:dir[\\s]*:([^\\s)]*))?";
     my @res = $the_line =~ m/$regexp/i;
     if (@res) {
-	debug_print_event($base, "loads", \@res);
-	return [loads_event, $res[0], $res[1]];
+	my $ans = [loads_event, $res[0], uc($res[1] || "")];
+	debug_print_event($base, $ans);
+	return $ans;
     }
     return 0;
 }
@@ -259,13 +282,13 @@ sub scan_cert_param {
     $regexp = ";; two-pass certification";
     if ($the_line =~ m/$regexp/) {
 	if ($two_pass_warning_printed) {
-	    print "$base has two-pass certification directive\n";
+	    print STDERR "$base has two-pass certification directive\n";
 	} else {
 	    $two_pass_warning_printed = 1;
-	    print "\nin $base:\n";
-	    print "Note: Though we still recognize the \";; two-pass certification\"\n";
-	    print "directive, it is deprecated in favor of:\n";
-	    print ";; cert_param: (acl2x)\n\n";
+	    print STDERR "\nin $base:\n";
+	    print STDERR "Note: Though we still recognize the \";; two-pass certification\"\n";
+	    print STDERR "directive, it is deprecated in favor of:\n";
+	    print STDERR ";; cert_param: (acl2x)\n\n";
 	}
 	return [cert_param_event, [["acl2x", 1]]];
     }
@@ -284,8 +307,9 @@ sub scan_ld {
     my $regexp = "^[^;]*\\([\\s]*ld[\\s]*\"([^\"]*)\"(?:[^;]*:dir[\\s]*:([^\\s)]*))?";
     my @res = $the_line =~ m/$regexp/i;
     if (@res) {
-	debug_print_event($base, "ld", \@res);
-	return [ld_event, $res[0], $res[1]];
+	my $ans = [ld_event, $res[0], $res[1]];
+	debug_print_event($base, $ans);
+	return $ans;
     }
     return 0;
 }
@@ -312,11 +336,11 @@ sub parse_max_mem_arg
 	$ret      = 2 ** $rexpt;                      # 64 (e.g., 2^6)
     }
     else {
-	print "Warning in $filename: skipping unsupported set-max-mem line: $arg\n";
-	print "Currently supported forms:\n";
-	print "  - (set-max-mem (expt 2 k))\n";
-	print "  - (set-max-mem (* n (expt 2 30)))\n";
-	print "  - (set-max-mem (* (expt 2 30) n))\n";
+	print STDERR "Warning in $filename: skipping unsupported set-max-mem line: $arg\n";
+	print STDERR "Currently supported forms:\n";
+	print STDERR "  - (set-max-mem (expt 2 k))\n";
+	print STDERR "  - (set-max-mem (* n (expt 2 30)))\n";
+	print STDERR "  - (set-max-mem (* (expt 2 30) n))\n";
     }
     return $ret;
 }
@@ -391,6 +415,9 @@ sub scan_src_run {
 	    my $event = scan_include_book($fname, $the_line)
 		|| scan_max_mem($fname, $the_line)
 		|| scan_max_time($fname, $the_line)
+		|| scan_ifdef($fname, $the_line)
+		|| scan_endif($fname, $the_line)
+		|| scan_ifdef_define($fname, $the_line)
 		|| scan_pbs($fname, $the_line);
 	    if ($event) {
 		push @events, $event;

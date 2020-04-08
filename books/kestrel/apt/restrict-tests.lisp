@@ -1,6 +1,6 @@
-; APT Domain Restriction Transformation -- Tests
+; APT (Automated Program Transformations) Library
 ;
-; Copyright (C) 2018 Kestrel Institute (http://www.kestrel.edu)
+; Copyright (C) 2020 Kestrel Institute (http://www.kestrel.edu)
 ;
 ; License: A 3-clause BSD license. See the LICENSE file distributed with ACL2.
 ;
@@ -10,8 +10,12 @@
 
 (in-package "ACL2")
 
-(include-book "kestrel/utilities/testing" :dir :system)
 (include-book "restrict")
+
+(include-book "std/testing/assert-bang" :dir :system)
+(include-book "std/testing/eval" :dir :system)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (set-verify-guards-eagerness 2)
 
@@ -86,20 +90,12 @@
       (if (atom x) nil (f (car x)))))
   (must-fail (restrict f t)))
 
- ;; in its own termination theorem:
- (must-succeed*
-  (defun f (x)
-    (declare (xargs :guard (natp x)))
-    (if (zp x)
-        nil
-      (and (f (1- x))
-           (f (1- x)))))
-  (must-fail (restrict f t)))
-
  ;; not guard-verified (and VERIFY-GUARDS is T):
  (must-succeed*
   (defun f (x) (declare (xargs :verify-guards nil)) x)
-  (must-fail (restrict f t :verify-guards t))))
+  (must-fail (restrict f t :verify-guards t)))
+
+ :with-output-off nil)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -258,12 +254,6 @@
 
  ;; name that already exists:
  (must-fail (restrict nfix (natp x) :new-name car-cdr-elim))
-
- ;; determining a name in the main Lisp package:
- (must-fail (restrict atom (natp x) :new-name :auto))
-
- ;; determining, by default, a name in the main Lisp package:
- (must-fail (restrict atom (natp x)))
 
  ;; default:
  (must-succeed*
@@ -525,7 +515,7 @@
  ;; not an applicability condition name:
  (must-fail
   (restrict nfix (natp x)
-            :hints (:not-an-app-cond (("Goal" :in-theory (enable len))))))
+            :hints (:not-an-appcond (("Goal" :in-theory (enable len))))))
 
  ;; duplicate applicability condition names:
  (must-fail
@@ -737,3 +727,20 @@
    (must-be-redundant (restrict nfix (natp x) :verify-guards nil)))
   (must-fail-local
    (must-be-redundant (restrict nfix (natp x) :new-name nfix-new)))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(must-succeed*
+
+ (test-title "Test reflexive function.")
+
+ (defun f (x)
+   (declare (xargs :guard (natp x)))
+   (if (zp x)
+       nil
+     (and (f (1- x))
+          (f (1- x)))))
+
+ (restrict f (natp x))
+
+ :with-output-off nil)

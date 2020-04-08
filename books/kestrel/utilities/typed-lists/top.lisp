@@ -1,6 +1,6 @@
 ; Typed List Utilities
 ;
-; Copyright (C) 2018 Kestrel Institute (http://www.kestrel.edu)
+; Copyright (C) 2019 Kestrel Institute (http://www.kestrel.edu)
 ;
 ; License: A 3-clause BSD license. See the LICENSE file distributed with ACL2.
 ;
@@ -10,10 +10,8 @@
 
 (in-package "ACL2")
 
-(include-book "kestrel/utilities/xdoc/constructors" :dir :system)
-
+(include-book "bit-listp")
 (include-book "nat-list-fix-theorems")
-(include-book "string-listp-theorems")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -21,7 +19,7 @@
   :parents (kestrel-utilities lists)
   :short "Some utilities for typed @(see lists)."
   :long
-  (xdoc::topapp
+  (xdoc::topstring
    (xdoc::p
     "These are for lists with elements of homogeneous types,
      similarly to @(see std/typed-lists).

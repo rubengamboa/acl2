@@ -40,6 +40,7 @@
 
 ;; x86 ISA model specification
 (include-book "machine/x86" :ttags :all)
+(include-book "machine/inst-listing" :ttags :all)
 
 ;; Misc. tools
 (include-book "tools/execution/top" :ttags :all)
@@ -57,6 +58,8 @@
 ;; Files will be copied from X86ISA/images to res/images of the x86
 ;; manual.
 (xdoc::add-resource-directory "images" "images")
+
+; (depends-on "images/x86isa.png")
 
 (defxdoc X86ISA
   :parents (acl2::software-verification acl2::projects)
@@ -284,6 +287,8 @@
  Otherwise, you do.</p>"
   )
 
+; (depends-on "images/cosim.png")
+
 (defxdoc model-validation
   :parents (x86isa)
   :short "How do we trust that our x86 ISA model is faithful to the
@@ -350,12 +355,12 @@
  <p>Shilpi Goel, Warren A. Hunt, Jr., and Matt Kaufmann</p>
 
  <p>Questions or Suggestions? Email Shilpi:
- <tt>shigoel@cs.utexas.edu</tt></p>
+ <tt>shigoel@gmail.com</tt>.</p>
 
  <h5>Contributors to the x86 ISA Model</h5>
 
- <p>Thanks to Rob Sumners (Centaur Technology) for adding support for detecting
- decode-time exceptions.</p>
+ <p>Thanks to Rob Sumners for adding support for detecting decode-time
+ exceptions.</p>
 
  <p>Thanks to Alessandro Coglio (Kestrel Institute and Kestrel Technology LLC)
  for adding support for 32-bit mode and for improving the documentation of
@@ -458,10 +463,10 @@
 
 (xdoc::order-subtopics
  implemented-opcodes
- (one-byte-opcodes-table
-  two-byte-opcodes-table
-  0f-38-three-byte-opcodes-table
-  0f-3a-three-byte-opcodes-table))
+ (one-byte-opcodes-map
+  two-byte-opcodes-map
+  0f-38-three-byte-opcodes-map
+  0f-3a-three-byte-opcodes-map))
 
 (xdoc::order-subtopics
  instructions

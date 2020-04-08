@@ -1,5 +1,5 @@
-; ACL2 Version 8.1 -- A Computational Logic for Applicative Common Lisp
-; Copyright (C) 2018, Regents of the University of Texas
+; ACL2 Version 8.2 -- A Computational Logic for Applicative Common Lisp
+; Copyright (C) 2019, Regents of the University of Texas
 
 ; This version of ACL2 is a descendent of ACL2 Version 1.9, Copyright
 ; (C) 1997 Computational Logic, Inc.  See the documentation topic NOTE-2-0.
@@ -1733,31 +1733,58 @@
   (coerce (chars-for-tilde-@-clause-id-phrase id)
           'string))
 
-(defun update-enabled-structure-array (name header alist k old)
+(defun update-enabled-structure-array (name header alist k old d new-n)
 
 ; This function makes a number of assumptions, including the assumption noted
-; below that the first k keys of alist form a strictly decreasing sequence.
+; below that if k is non-nil, then the first k keys of alist form a strictly
+; decreasing sequence.
+
+; We have considered trying to optimize this function.  We found that only 961
+; out of the approximately 871,000 calls during (include-book "centaur/sv/top"
+; :dir :system) were with k = nil, and these accounted only for less than 5% of
+; the time spent in this function.  We also found that when k is not nil, the
+; average value of k during evaluation of that same include-book is 11.1, which
+; seems pretty small.  So perhaps there isn't much opportunity for further
+; optimization here.
 
   #+acl2-loop-only
   (declare (xargs :guard (and (array1p name (cons header alist))
                               (null (array-order header))
-                              (natp k)
-                              (<= k (length alist))))
-           (ignore k old))
+                              (or (eq k nil)
+                                  (and (natp k)
+                                       (<= k (length alist))))
+                              (natp d)
+                              (<= new-n d)))
+           (ignore k old d new-n))
   #+acl2-loop-only
   (compress1 name (cons header alist))
-  #-acl2-loop-only (declare (ignore name))
+  #-acl2-loop-only
+  (declare (ignore name))
   #-acl2-loop-only
   (let ((old-car (car old))
-        (ar (cadr old))
+        (ar0 (cadr old))
+        (k2 (or k (length alist))) ; number of array elements to set
         index)
-    (assert (= 1 (array-rank (cadr old))))
-    (assert (eq (car (car (car old))) :HEADER))
-    (assert (eq (nthcdr k alist)
-                (cdr old-car)))
+    (assert (= 1 (array-rank ar0)))
+    (assert (eq (car (car old-car)) :HEADER))
+    (assert (or (eq k nil)
+                (eq (nthcdr k alist)
+                    (cdr old-car))))
     (assert (eq header (car old-car)))
+    (assert (<= new-n d)) ; necessity is explained in a comment below
     (setf (car old) *invisible-array-mark*)
-    (loop for i from 1 to k
+
+; If we are to build the array from scratch (which is the case k = nil),
+; then set all entries of the array to nil.
+
+    (when (eq k nil)
+      (loop for i from 0 to (1- d)
+            do
+            (setf (svref ar0 i) nil)))
+
+; Next set relevant entries in the array according to enabled status.
+
+    (loop for i from 1 to k2
           for tail on alist
           do
           (let ((new-index (caar tail)))
@@ -1767,12 +1794,14 @@
 
             (assert (or (null index)
                         (< new-index index)))
-            (setq index (caar tail))
-            (setf (svref ar index) (cdar tail))))
+            (setq index new-index)
+            (setf (svref ar0 index) (cdar tail))))
+
+; Finally, return the new theory-array, which is placed into the car of old.
+
     (setf (car old) (cons header alist))))
 
-(defun update-enabled-structure (ens n d new-d alist
-                                     augmented-p
+(defun update-enabled-structure (ens n d new-d alist augmented-p
                                      incrmt-array-name-info)
   #+acl2-loop-only (declare (ignore d augmented-p))
   #-acl2-loop-only
@@ -1783,21 +1812,41 @@
          (old-n (access enabled-structure ens :index-of-last-enabling)))
     (when (and header ; hence old is associated with name
                (consp (car old))
-               (eq header (caar old)) ; assumed in compress1-in-place
+               (eq header (caar old))
                (null incrmt-array-name-info)
                augmented-p
-               (eql d new-d)
-               (eq (loop for tail on alist
-                         do (cond ((<= (caar tail) old-n)
-                                   (return tail))
-                                  (t (incf k))))
-                   (cdr (access enabled-structure ens :theory-array))))
+               (int= d new-d)
+               (or (eq (loop for tail on alist
+                             do (cond ((<= (caar tail) old-n)
+                                       (return tail))
+                                      (t (incf k))))
+                       (cdr (access enabled-structure ens :theory-array)))
+
+; The disjunct just above computes the tail of alist consisting of entries
+; not exceeding the old index-of-last-enabling, and checks that this tail is
+; the alist stored in the existing enabled structure.  In that case, k is the
+; number of entries of alist outside that tail, and the call of
+; update-enabled-structure-array below can take advantage of the fact that only
+; the first k elements of alist need to be updated in the corresponding raw
+; Lisp array.
+
+; By including the following disjunct and also tweaking
+; load-theory-into-enabled-structure, we have reduced the time spent in
+; load-theory-into-enabled-structure from about 3.1 to 3.2s to about 2.7s to
+; 2.8s in runs (of (include-book "centaur/sv/top" :dir :system)) that take
+; about 58s.  Notice that by setting k = nil, we are indicating to the call
+; below of update-enabled-structure-array that the eq test above has failed.
+
+                   (and (<= old-n n)
+                        (progn (setq k nil) t))))
+      (assert (eq (access enabled-structure ens :theory-array)
+                  (car old))) ; checking this invariant before updating
       (return-from
        update-enabled-structure
        (change enabled-structure ens
                :index-of-last-enabling n
                :theory-array (update-enabled-structure-array
-                              name header alist k old)))))
+                              name header alist k old d n)))))
   (let* ((root (access enabled-structure ens :array-name-root))
          (suffix (cond ((eq incrmt-array-name-info t)
                         (1+ (access enabled-structure ens
@@ -1857,7 +1906,7 @@
 ; enabling to be the highest existing nume in wrld right now unless
 ; index-of-last-enabling is non-nil, in which case we use that (which should be
 ; a natp).  Thus, any name introduced after this is enabled relative to this
-; ens.  If the array of the ens is too short, we extend it by 500.
+; ens.  If the array of the ens is too short, we extend it.
 
 ; A Refresher Course on ACL2 One Dimensional Arrays:
 
@@ -1867,7 +1916,7 @@
 ; d, but the maximum index would be d-1, since indexing is 0-based.
 ; You set elements with (aset1 'name a i val).  That increases the
 ; length of a by 1.  When (length a) > m, a compress is done.  If an
-; array is never modified, then the minimum acceptable m is in fact d.
+; array is never modified, then the minimum acceptable m is in fact d+1.
 
 ; Note:  Every call of this function should be followed by a call of
 ; maybe-warn-about-theory on the enabled structure passed in and the one
@@ -1876,7 +1925,8 @@
   (let* ((n (or index-of-last-enabling (1- (get-next-nume wrld))))
          (d (access enabled-structure ens :array-length))
          (new-d (cond ((< n d) d)
-                      (t (+ d (* 500 (1+ (floor (- n d) 500)))))))
+                      (t (max (* 2 d)
+                              (+ d (* 500 (1+ (floor (- n d) 500))))))))
          (alist (if augmented-p
                     theory
                   (augment-runic-theory theory wrld)))
@@ -1946,12 +1996,6 @@
 ; it covered up the most recent command-landmark; indeed, sometimes there
 ; would be two successive bindings of it.)
 
-  (declare (xargs :guard (and (equal varname varname)
-                              (equal wrld wrld))))
-
-; Without the odd guard -- some term mentioning all the formals -- the formals
-; are recognized as irrelevant!  This body below always returns t.
-
 ; Parallelism wart: it's unclear whether we need to lock this array operation.
 ; By design, each array and theory is unique to the current subgoal, so this
 ; locking should be unnecessary.  However, we've seen some slow array access
@@ -1960,28 +2004,12 @@
 ; (with-acl2-lock
 ;  *acl2-par-arrays-lock*
 
-  (let* ((ges1 (getpropc varname 'global-value nil wrld))
-         (theory-array (access enabled-structure ges1 :theory-array))
-         (name (access enabled-structure ges1 :array-name)))
-
-; We would rather not pay the price of making a new array if the proper
-; association of array to alist is already set up.  Since this function is
-; logically a no-op (it is just a function that returns t), it is certainly
-; legitimate to punt if we like.  But it might be nice to abstract what we are
-; doing here and make it available to the ACL2 user.
-
-    #-acl2-loop-only
-    (when (let ((old-ar (get-acl2-array-property name)))
-            (and old-ar
-                 (eq (car old-ar) theory-array)))
-      (return-from recompress-global-enabled-structure t))
-    (let ((to-ignore
-           (cond (ges1
-                  (prog2$ (flush-compress name)
-                          (compress1 name theory-array)))
-                 (t nil))))
-      (declare (ignore to-ignore))
-      t)))
+  (let ((ges1 (getpropc varname 'global-value nil wrld)))
+    (cond (ges1 (prog2$ (maybe-flush-and-compress1
+                         (access enabled-structure ges1 :array-name)
+                         (access enabled-structure ges1 :theory-array))
+                        t))
+          (t t))))
 
 (defun recompress-stobj-accessor-arrays (stobj-names wrld)
 
@@ -1995,8 +2023,7 @@
     (let* ((st (car stobj-names))
            (ar (getpropc st 'accessor-names nil wrld)))
       (prog2$ (or (null ar)
-                  (prog2$ (flush-compress st)
-                          (compress1 st ar)))
+                  (maybe-flush-and-compress1 st ar))
               (recompress-stobj-accessor-arrays (cdr stobj-names) wrld)))))
 
 ; We have defined all the basic concepts having to do with theories
@@ -2674,16 +2701,17 @@
          (mv *ts-t* (puffert ttree)))
         (t (mv *ts-boolean* (puffert ttree0)))))
 
-; Essay on the Recognizer-Alist and Recognizer-Tuples
+; Essay on Recognizer-Tuples
 
-; The "recognizer alist" of ACL2 is a combination of Nqthm's
-; RECOGNIZER-ALIST and its two COMPOUND-RECOGNIZER-ALISTs.  The
-; recognizer-alist is stored as a global variable in the world w and
-; accessed via
-
-; (global-val 'recognizer-alist w).
-
-; The recognizer alist contains records of the following form:
+; The "recognizer-alist" of ACL2 is a virtual alist -- that is, a
+; representation of a finite function -- rather than a single data structure.
+; It associates a function symbol with a list of recognizer-tuple records that
+; is stored on its 'recognizer-alist property.  This "alist" a combination of
+; Nqthm's RECOGNIZER-ALIST and its two COMPOUND-RECOGNIZER-ALISTs.  (Historical
+; note: Through Version_8.2 we stored a single alist rather than distributing
+; the recognizer-alist across relevant function symbols.  But we made the
+; change to support non-trivial efficiency improvements for large proof
+; developments.)
 
 (defrec recognizer-tuple
 
@@ -2697,7 +2725,7 @@
       . rune)
   t)
 
-; The initial value of the recognizer alist is shown after we discuss the
+; The initial value of the recognizer-alist is shown after we discuss the
 ; meaning of these records.
 
 ; In a recognizer-tuple, fn is the name of some Boolean-valued
@@ -2901,17 +2929,26 @@
               :nume nil
               :rune *fake-rune-for-anonymous-enabled-rule*)))
 
-(defun most-recent-enabled-recog-tuple (fn alist ens)
+(defun most-recent-enabled-recog-tuple1 (lst ens)
 
-; This function finds the first recognizer-tuple on alist whose :fn is
-; fn and whose :nume is enabled-numep.  Thus, primitive recognizer
-; tuples, like that for rationalp, are always "enabled."
+; This function finds the first recognizer-tuple in lst whose whose :nume is
+; enabled-numep.  Thus, primitive recognizer tuples, like that for rationalp,
+; are always "enabled."
 
-  (cond ((null alist) nil)
-        ((and (eq fn (access recognizer-tuple (car alist) :fn))
-              (enabled-numep (access recognizer-tuple (car alist) :nume) ens))
-         (car alist))
-        (t (most-recent-enabled-recog-tuple fn (cdr alist) ens))))
+  (cond ((endp lst) nil)
+        ((enabled-numep (access recognizer-tuple (car lst) :nume) ens)
+         (car lst))
+        (t (most-recent-enabled-recog-tuple1 (cdr lst) ens))))
+
+(defun most-recent-enabled-recog-tuple (fn wrld ens)
+
+; This function finds the first recognizer-tuple for fn whose whose :nume is
+; enabled-numep.  Thus, primitive recognizer tuples, like that for rationalp,
+; are always "enabled."
+
+  (let ((lst (getpropc fn 'recognizer-alist nil wrld)))
+    (and lst ; optimization
+         (most-recent-enabled-recog-tuple1 lst ens))))
 
 (defun type-set-recognizer (recog-tuple arg-ts ttree ttree0)
 
@@ -5993,9 +6030,7 @@
                             (not (fquotep term))
                             (not (flambda-applicationp term))
                             (most-recent-enabled-recog-tuple
-                             (ffn-symb term)
-                             (global-val 'recognizer-alist wrld)
-                             ens))))
+                             (ffn-symb term) wrld ens))))
       (cond ((and recog-tuple
                   (access recognizer-tuple recog-tuple :strongp))
              (mv (fargn term 1)
@@ -6042,7 +6077,7 @@
                         (packn (list 'unbound-free- (car vars))))
                   alist)))))
 
-; The Accumulated Persistence Essay
+; Essay on Accumulated Persistence
 
 ; We now develop the code needed to track accumulated-persistence.  The
 ; documentation topic for accumulated-persistence serves as a useful
@@ -6086,9 +6121,9 @@
 ; currently being applied (after push-accp but before pop-accp).  The stack is
 ; initially empty, but every attempt to apply a lemma (with push-accp) pushes
 ; current information on the stack and starts accumulating information for that
-; lemma, generally while relieving hypotheses.  More precisely, all our data is
-; kept in a single accp-info record, which is the value of the wormhole-data
-; field of wormhole-status:
+; lemma, for example while relieving hypotheses.  More precisely, all our data
+; is kept in a single accp-info record, which is the value of the wormhole-data
+; field of wormhole-status.
 
 ; If accumulated persistence is enabled then we give special treatment to
 ; hypotheses and conclusions of rules.  Each is represented as an ``extended
@@ -6103,6 +6138,38 @@
 ; rather than (:hyp rune . n), but we found the latter form much more
 ; convenient for sorting.  Still, we present (:hyp n . rune) to the user by
 ; calling prettyify-xrune.
+
+; On recursion
+
+; Through Version_8.2 we overcounted accumulated frames for a rule applied
+; recursively, in the sense that it already on the stack discussed above when
+; it is again pushed onto the stack.  The problem was documented essentially as
+; follows.
+
+;    Consider the following example.
+;  
+;      (defun mem (a x)
+;        (if (atom x)
+;            nil
+;          (or (equal a (car x)) (mem a (cdr x)))))
+;  
+;    Now suppose we consider the sequence of theorems (mem a (list a)),
+;    (mem a (list 1 a)), (mem a (list 1 2 a)), (mem a (list 1 2 3 a)),
+;    and so on.  We will see that the :frames reported for each
+;    increases quadratically, even though the :tries increases linearly;
+;    so in this case the :tries statistics are more appropriate.  Each
+;    time the definition of mem is applied, a new stack frame is pushed
+;    (see [accumulated-persistence]), and all subsequent applications of
+;    that definition are accumulated into the :frames count for that
+;    stack frame.  The final :frames count will be the sum of the counts
+;    for those individual frames, which form a linear sequence whose sum
+;    is therefore quadratic in the number of applications of the
+;    definition of mem.
+
+; We now avoid this problem by skipping the accumulation of frames for such
+; recursive rule applications (though we still count their tries); these will
+; be accumulated in full in the top-level applications of the rule.  See the
+; variable top-level-p in function pop-accp-fn.
 
 (defabbrev x-xrunep (xrune) ; extended xrunep
   (or (eq (car xrune) :hyp)
@@ -6404,39 +6471,51 @@
 ; ; merge-accumulated-persistence-rec in merge-accumulated-persistence.
 ;
 
-(defun add-accumulated-persistence-s (xrune delta-s delta-f alist
-                                            original-alist acc)
+(defun add-accumulated-persistence-s (xrune delta alist original-alist acc)
 
 ; Warning: Keep this in sync with add-accumulated-persistence-f.
+
+; See add-accumulated-persistence.
 
   (cond ((null alist)
          (cons (make accp-entry
                      :xrune xrune
                      :n-s  1
-                     :ap-s (+ delta-f delta-s)
+                     :ap-s (or delta 0)
                      :n-f  0
                      :ap-f 0)
                original-alist))
         ((xrune= xrune (access accp-entry (car alist) :xrune))
-         (cons (change accp-entry (car alist)
-                       :ap-f 0 ; no change in :n-f
-                       :n-s  (1+ (access accp-entry (car alist) :n-s))
-                       :ap-s (+ delta-s delta-f
-                                (access accp-entry (car alist)
-                                        :ap-s)
-                                (access accp-entry (car alist)
-                                        :ap-f)))
+         (cons (cond (delta (change accp-entry (car alist)
+                                    :ap-f 0 ; no change in :n-f
+                                    :n-s  (1+ (access accp-entry (car alist)
+                                                      :n-s))
+                                    :ap-s (+ delta
+                                             (access accp-entry (car alist)
+                                                     :ap-s)
+                                             (access accp-entry (car alist)
+                                                     :ap-f))))
+                     (t (assert$
+                         (and (int= (access accp-entry (car alist) :ap-s)
+                                    0)
+                              (int= (access accp-entry (car alist) :ap-f)
+                                    0))
+                         (change accp-entry (car alist)
+                                 :ap-f 0 ; no change in :n-f
+                                 :n-s (1+ (access accp-entry (car alist)
+                                                  :n-s))))))
                (revappend acc (cdr alist))))
         (t (add-accumulated-persistence-s
-            xrune delta-s delta-f (cdr alist) original-alist
+            xrune delta (cdr alist) original-alist
             (cons (car alist) acc)))))
 
-(defun add-accumulated-persistence-f (xrune delta-s delta-f alist
-                                            original-alist acc)
+(defun add-accumulated-persistence-f (xrune delta alist original-alist acc)
 
 ; Warning: Keep this in sync with add-accumulated-persistence-s.
 
-; We assume that every :ap-s field if alist is 0, as is the case for alists
+; See add-accumulated-persistence.
+
+; We assume that every :ap-s field of alist is 0, as is the case for alists
 ; produced by accumulated-persistence-make-failures.
 
   (cond ((null alist)
@@ -6445,20 +6524,27 @@
                      :n-s  0
                      :ap-s 0
                      :n-f  1
-                     :ap-f (+ delta-f delta-s))
+                     :ap-f (or delta 0))
                original-alist))
         ((xrune= xrune (access accp-entry (car alist) :xrune))
-         (cons (change accp-entry (car alist)
-                       :n-f  (1+ (access accp-entry (car alist) :n-f))
-                       :ap-f (assert$
-                              (eql (access accp-entry (car alist) :ap-s)
-                                   0)
-                              (+ delta-s delta-f
-                                 (access accp-entry (car alist)
-                                         :ap-f))))
-               (revappend acc (cdr alist))))
+         (assert$
+          (eql (access accp-entry (car alist) :ap-s)
+               0)
+          (cons (cond (delta (change accp-entry (car alist)
+                                     :n-f  (1+ (access accp-entry (car alist)
+                                                       :n-f))
+                                     :ap-f (+ delta
+                                              (access accp-entry (car alist)
+                                                      :ap-f))))
+                      (t (assert$
+                          (eql (access accp-entry (car alist) :ap-f)
+                               0)
+                          (change accp-entry (car alist)
+                                  :n-f (1+ (access accp-entry (car alist)
+                                                   :n-f))))))
+                (revappend acc (cdr alist)))))
         (t (add-accumulated-persistence-f
-            xrune delta-s delta-f (cdr alist) original-alist
+            xrune delta (cdr alist) original-alist
             (cons (car alist) acc)))))
 
 (defun accumulated-persistence-make-failures (alist)
@@ -6473,27 +6559,38 @@
                        :ap-s 0)
                (accumulated-persistence-make-failures (cdr alist))))))
 
-(defun add-accumulated-persistence (xrune success-p delta-s delta-f
-                                          alist-stack)
+(defun add-accumulated-persistence (xrune success-p delta alist-stack)
 
-; Alist-stack is a list of lists of accp-entry records.  First, we modify the
-; top of alist-stack to record everything as useless (failure) if success-p is
-; nil.  Then, we merge that modification into the second element of
-; alist-stack, after incrementing by 1 for the given xrune's :n-s or :n-f and
-; by delta for its :ap-s or :ap-f, according to success-p.
+; This function is called by pop-accp-fn, to compute the new :totals field of
+; the accp-info record.
+
+; Alist-stack is a list of lists of accp-entry records (as in a :totals field
+; of an accp-info record).  First, we modify the top of alist-stack to record
+; everything as useless (failure) if success-p is nil.  Then, we merge that
+; modification into the second element of alist-stack, after incrementing by 1
+; for the given xrune's :n-s or :n-f and incrementing its :ap-s or :ap-f,
+; according to success-p, by the given delta (which is the sum of the deltas
+; for its :ap-s and :ap-f).  However, we make the following exception when
+; delta is nil: then we do not increment :ap-s or :ap-f, which should be 0.
 
   (assert$
    (cdr alist-stack)
    (let* ((alist (if success-p
                      (car alist-stack)
                    (accumulated-persistence-make-failures (car alist-stack))))
-          (new-alist (cond
-                      (success-p
-                       (add-accumulated-persistence-s
-                        xrune delta-s delta-f alist alist nil))
-                      (t
-                       (add-accumulated-persistence-f
-                        xrune delta-s delta-f alist alist nil)))))
+          (new-alist (cond ((fake-rune-for-anonymous-enabled-rule-p
+                             (xrune-rune xrune))
+                            alist)
+                           (success-p
+                            (add-accumulated-persistence-s
+                             xrune
+                             delta
+                             alist alist nil))
+                           (t
+                            (add-accumulated-persistence-f
+                             xrune
+                             delta
+                             alist alist nil)))))
      (cons (merge-accumulated-persistence new-alist (cadr alist-stack))
            (cddr alist-stack)))))
 
@@ -6779,17 +6876,34 @@
 (defun pop-accp-fn (info success-p)
 
 ; Warning: Keep the branches below in sync.  We considered merging them into a
-; single branch, but the fields changed differ in each case, so we keep the
-; cases separate in order to save a few conses.
+; single branch, but the fields changed are different in each case, so we keep
+; the cases separate in order to save a few conses.
+
+; This function returns an updated version of the given accp-info record when
+; exiting the accumulated-persistence wormhole.  Most of the update is done
+; directly in the code below, but add-accumulated-persistence is called to
+; update the :totals field, which is a stack of alists that record the
+; accumulations.
+
+; If xrune is a member of (cdr xrune-stack), then we avoid accumulating values
+; for xrune here.  We will ultimately do such accumulation for the top-level
+; occurrence of xrune in xrune-stack.  See the Essay on Accumulated
+; Persistence.
 
   (let* ((xrune-stack (access accp-info info :xrune-stack))
          (xrune (car xrune-stack))
          (xp (x-xrunep xrune))
-         (new-cnt (and (not xp) ; optimization
-                       (cond (success-p
-                              (1+ (access accp-info info :cnt-s)))
-                             (t
-                              (1+ (access accp-info info :cnt-f)))))))
+         (new-cnt
+          (and (not xp) ; else new-cnt is irrelevant
+               (cond (success-p
+                      (if (fake-rune-for-anonymous-enabled-rule-p xrune)
+                          (access accp-info info :cnt-s)
+                        (1+ (access accp-info info :cnt-s))))
+                     (t
+                      (if (fake-rune-for-anonymous-enabled-rule-p xrune)
+                          (access accp-info info :cnt-f)
+                        (1+ (access accp-info info :cnt-f)))))))
+         (top-level-p (not (member-equal xrune (cdr xrune-stack)))))
     (cond
      (xp
       (change accp-info info
@@ -6799,10 +6913,11 @@
               :totals (add-accumulated-persistence
                        xrune
                        success-p
-                       (- (access accp-info info :cnt-s)
-                          (car (access accp-info info :stack-s)))
-                       (- (access accp-info info :cnt-f)
-                          (car (access accp-info info :stack-f)))
+                       (and top-level-p
+                            (+ (- (access accp-info info :cnt-s)
+                                  (car (access accp-info info :stack-s)))
+                               (- (access accp-info info :cnt-f)
+                                  (car (access accp-info info :stack-f)))))
                        (access accp-info info :totals))))
      (success-p
       (change accp-info info
@@ -6813,10 +6928,11 @@
               :totals (add-accumulated-persistence
                        xrune
                        success-p
-                       (- new-cnt
-                          (car (access accp-info info :stack-s)))
-                       (- (access accp-info info :cnt-f)
-                          (car (access accp-info info :stack-f)))
+                       (and top-level-p
+                            (+ (- new-cnt
+                                  (car (access accp-info info :stack-s)))
+                               (- (access accp-info info :cnt-f)
+                                  (car (access accp-info info :stack-f)))))
                        (access accp-info info :totals))))
      (t
       (change accp-info info
@@ -6827,10 +6943,11 @@
               :totals (add-accumulated-persistence
                        xrune
                        success-p
-                       (- (access accp-info info :cnt-s)
-                          (car (access accp-info info :stack-s)))
-                       (- new-cnt
-                          (car (access accp-info info :stack-f)))
+                       (and top-level-p
+                            (+ (- (access accp-info info :cnt-s)
+                                  (car (access accp-info info :stack-s)))
+                               (- new-cnt
+                                  (car (access accp-info info :stack-f)))))
                        (access accp-info info :totals)))))))
 
 (defun pop-accp-fn-iterate (info n)
@@ -7007,14 +7124,33 @@
              :ld-query-control-alist nil
              :ld-verbose nil))
 
+(defun push-accp-fn (rune x-info info)
+  (let ((xrune (cond ((natp x-info)
+                      (hyp-xrune x-info rune))
+                     ((eq x-info :conc)
+                      (conc-xrune rune))
+                     ((null x-info)
+                      rune)
+                     (t (er hard 'push-accp
+                            "Implementation error: Bad value of x-info, ~x0."
+                            x-info)))))
+    (change accp-info info
+            :xrune-stack (cons xrune (access accp-info info :xrune-stack))
+            :stack-s (cons (access accp-info info :cnt-s)
+                           (access accp-info info :stack-s))
+            :stack-f (cons (access accp-info info :cnt-f)
+                           (access accp-info info :stack-f))
+            :totals (cons nil
+                          (access accp-info info :totals)))))
+
 (defun push-accp (rune x-info)
   (wormhole-eval 'accumulated-persistence
                  '(lambda (whs)
 
 ; The wormhole status of the accumulated-persistence wormhole is of the form
 ; (:key . info), where :key is either :ENTER or :SKIP and info is an accp-info
-; record or NIL.  When this code is eventually converted to :logic mode and we wish to
-; verify its guards we are going to have to confront the question of
+; record or NIL.  When this code is eventually converted to :logic mode and we
+; wish to verify its guards we are going to have to confront the question of
 ; maintaining invariants on a wormhole's status so we don't have to check
 ; guards at runtime.  For example, in the code below, (cdr whs) is assumed to
 ; be a accp-info record.  See the Essay on Wormholes.
@@ -7023,28 +7159,9 @@
                       (if (and info
                                (or (null x-info)
                                    (access accp-info info :xrunep)))
-                          (let ((xrune (cond ((natp x-info)
-                                              (hyp-xrune x-info rune))
-                                             ((eq x-info :conc)
-                                              (conc-xrune rune))
-                                             ((null x-info)
-                                              rune)
-                                             (t (er hard 'push-accp
-                                                    "Implementation error: ~
-                                                     Bad value of x-info, ~x0."
-                                                    x-info)))))
-                            (set-wormhole-data
-                             whs
-                             (change accp-info info
-                                     :xrune-stack (cons xrune (access accp-info
-                                                                      info
-                                                                      :xrune-stack))
-                                     :stack-s (cons (access accp-info info :cnt-s)
-                                                    (access accp-info info :stack-s))
-                                     :stack-f (cons (access accp-info info :cnt-f)
-                                                    (access accp-info info :stack-f))
-                                     :totals (cons nil
-                                                   (access accp-info info :totals)))))
+                          (set-wormhole-data
+                           whs
+                           (push-accp-fn rune x-info info))
                           whs)))
 
 ; We avoid locking push-accp, in order to benefit the performance of ACL2(p).
@@ -7836,10 +7953,7 @@
                      (type-set-finish x ts0 ttree0 ts1 ttree1 type-alist))))
     (t
      (let* ((fn (ffn-symb x))
-            (recog-tuple (most-recent-enabled-recog-tuple
-                          fn
-                          (global-val 'recognizer-alist w)
-                          ens))
+            (recog-tuple (most-recent-enabled-recog-tuple fn w ens))
             (dwp (if (and (consp dwp) (eq (car dwp) :SKIP-LOOKUP))
                      nil
                    dwp)))
@@ -9827,9 +9941,7 @@
                          pot-lst pt backchain-limit))
     (t
      (let ((recog-tuple
-            (most-recent-enabled-recog-tuple (ffn-symb x)
-                                             (global-val 'recognizer-alist w)
-                                             ens))
+            (most-recent-enabled-recog-tuple (ffn-symb x) w ens))
            (ignore (adjust-ignore-for-atf xnot-flg ignore0)))
        (cond
         (recog-tuple

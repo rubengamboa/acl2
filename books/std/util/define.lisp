@@ -528,7 +528,8 @@ form is usually an adequate work-around.</p>")
             :progn
             :hooks
             :t-proof
-            :no-function)
+            :no-function
+            :local-def)
           acl2::*xargs-keywords*))
 
 
@@ -851,9 +852,8 @@ form is usually an adequate work-around.</p>")
 
 (defun extend-define-guts-alist (guts)
   `(table define 'guts-alist
-          (cons (cons ',(defguts->name guts) ',guts)
+          (cons '(,(defguts->name guts) . ,guts) ; minor Matt K. mod
                 (get-define-guts-alist world))))
-
 
 (defun get-define-current-function (world)
   (cdr (assoc 'current-function (table-alist 'define world))))
@@ -1414,11 +1414,14 @@ examples.</p>")
          ;; e.g., to take advantage of nicer optional/keyword args.
          ,@(and guts.macro `((with-output :stack :pop ,guts.macro)))
 
-         ,@(if set-ignores
-               `((encapsulate ()
-                   ,@set-ignores
-                   (with-output :stack :pop ,guts.main-def)))
-             `((with-output :stack :pop ,guts.main-def)))
+         ,(let ((def (if set-ignores
+                         `(encapsulate ()
+                            ,@set-ignores
+                            (with-output :stack :pop ,guts.main-def))
+                       `(with-output :stack :pop ,guts.main-def))))
+            (if (cdr (assoc :local-def guts.kwd-alist))
+                `(local ,def)
+              def))
 
          ,@(add-macro-aliases-from-guts guts)
 
@@ -1472,7 +1475,10 @@ examples.</p>")
          ;; our nice output and then says, "oh but this is really a macro" and
          ;; then shows us the ugly macro.  But targeting name-fn instead seems
          ;; to do the right thing.
-         (acl2::extend-pe-table ,guts.name-fn ,guts.pe-entry)
+         ,(let ((pe-table `(acl2::extend-pe-table ,guts.name-fn ,guts.pe-entry)))
+            (if (cdr (assoc :local-def guts.kwd-alist))
+                `(local ,pe-table)
+              pe-table))
 
          ,@(and guts.rest-events
                 `((with-output :stack :pop
@@ -1490,10 +1496,14 @@ examples.</p>")
 
          ,@(if enabled-p
                nil
-             `((make-event
-                (if (logic-mode-p ',guts.name-fn (w state))
-                    '(in-theory (disable ,guts.name))
-                  '(value-triple :invisible))))))
+             (let ((disable
+                    `(make-event
+                      (if (logic-mode-p ',guts.name-fn (w state))
+                          '(in-theory (disable ,guts.name))
+                        '(value-triple :invisible)))))
+               (if (cdr (assoc :local-def guts.kwd-alist))
+                   `((local ,disable))
+                 `(,disable)))))
 
 
        ;; Now that the section has been submitted, its xdoc exists, so we can
@@ -1872,6 +1882,7 @@ the names.</li>
        (ign-names (make-symbols-ignorable names))
        (formals (look-up-formals guts.name-fn world))
        ((mv body-subst hint-subst) (returnspec-return-value-subst fn guts.name-fn formals names))
+       (strsubst (returnspec-strsubst fn guts.name-fn))
        (binding `((,(if (consp (cdr ign-names))
                         `(mv . ,ign-names)
                       (car ign-names))
@@ -1883,21 +1894,28 @@ the names.</li>
        (rule-classes? (assoc :rule-classes kwd-alist))
        (hints? (assoc :hints kwd-alist))
        (otf-flg? (assoc :otf-flg kwd-alist))
-       (pre-bind (cdr (assoc :pre-bind kwd-alist)))
-       (concl `(b* (,@pre-bind ,@binding) ,concl-term))
+       (pre-bind (returnspec-sublis body-subst nil (cdr (assoc :pre-bind kwd-alist))))
+       (concl-subst (returnspec-sublis body-subst nil concl-term))
+       ((mv ?err concl-trans) (acl2::translate-cmp concl-subst t nil nil 'defret world
+                                                   (acl2::default-state-vars nil)))
+       ;; Ignore any error from translate, just want to find out if any of the bindings are needed.
+       ;; Omit the binding if none of the bound variables are used.
+       (binding (and (not err)
+                     (intersectp-eq names (acl2::all-vars concl-trans))
+                     binding))
+       (concl `(b* (,@pre-bind ,@binding) ,concl-subst))
        (thm (if hyp?
-                `(implies ,hyp ,concl)
+                `(implies ,(returnspec-sublis body-subst nil hyp)
+                          ,concl)
               concl))
        (thmname (intern-in-package-of-symbol
-                 (dumb-str-sublis `(("<FN>" . ,(symbol-name fn))
-                                    ("<FN!>" . ,(symbol-name guts.name-fn)))
-                                  (symbol-name name))
+                 (dumb-str-sublis strsubst (symbol-name name))
                  name)))
     `(,(if disablep 'defthmd 'defthm) ,thmname
-      ,(returnspec-sublis body-subst thm)
-      ,@(and hints?        `(:hints ,(returnspec-sublis hint-subst (cdr hints?))))
+      ,thm
+      ,@(and hints?        `(:hints ,(returnspec-sublis hint-subst strsubst (cdr hints?))))
       ,@(and otf-flg?      `(:otf-flg ,(cdr otf-flg?)))
-      ,@(and rule-classes? `(:rule-classes ,(returnspec-sublis hint-subst (cdr rule-classes?)))))))
+      ,@(and rule-classes? `(:rule-classes ,(returnspec-sublis hint-subst nil (cdr rule-classes?)))))))
 
 
 (defun defret-fn (name args disablep world)

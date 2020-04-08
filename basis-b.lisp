@@ -1,5 +1,5 @@
-; ACL2 Version 8.1 -- A Computational Logic for Applicative Common Lisp
-; Copyright (C) 2018, Regents of the University of Texas
+; ACL2 Version 8.2 -- A Computational Logic for Applicative Common Lisp
+; Copyright (C) 2019, Regents of the University of Texas
 
 ; This version of ACL2 is a descendent of ACL2 Version 1.9, Copyright
 ; (C) 1997 Computational Logic, Inc.  See the documentation topic NOTE-2-0.
@@ -181,7 +181,8 @@
 
 (defun gen-formals-from-pretty-flags1 (pretty-flags i avoid)
   (cond ((endp pretty-flags) nil)
-        ((eq (car pretty-flags) '*)
+        ((and (symbolp (car pretty-flags))
+              (equal (symbol-name (car pretty-flags)) "*"))
          (let ((xi (pack2 'x i)))
            (cond ((member-eq xi avoid)
                   (let ((new-var (genvar 'genvar ;;; ACL2 package
@@ -206,38 +207,15 @@
 
 (defun gen-formals-from-pretty-flags (pretty-flags)
 
-; Given a list of prettyified stobj flags, e.g., '(* * $S * STATE) we
-; generate a proposed list of formals, e.g., '(X1 X2 $S X4 STATE).  We
-; guarantee that the result is a list of symbols as long as
-; pretty-flags.  Furthermore, a non-* in pretty-flags is preserved in
-; the same slot in the output.  Furthermore, the symbol generated for
-; each * in pretty-flags is unique and not among the symbols in
-; pretty-flags.  Finally, STATE is not among the symbols we generate.
+; Given a list of prettyified stobj flags, e.g., '(* * $S * STATE) we generate
+; a proposed list of formals, e.g., '(X1 X2 $S X4 STATE).  We guarantee that
+; the result is a list of symbols of the same length as pretty-flags.
+; Furthermore, a non-* in pretty-flags is preserved in the same slot in the
+; output.  Furthermore, the symbol generated for each * in pretty-flags is
+; unique and not among the symbols in pretty-flags.  Finally, STATE is not
+; among the symbols we generate.
 
   (gen-formals-from-pretty-flags1 pretty-flags 1 pretty-flags))
-
-(defun defstub-body (output)
-
-; This strange little function is used to turn an output signature
-; spec (in either the old or new style) into a term.  It never causes
-; an error, even if output is ill-formed!  What it returns in that
-; case is irrelevant.  If output is well-formed, i.e., is one of:
-
-;       output               result
-; *                           nil
-; x                           x
-; state                       state
-; (mv * state *)              (mv nil state nil)
-; (mv x state y)              (mv x state y)
-
-; it replaces the *'s by nil and otherwise doesn't do anything.
-
-  (cond ((atom output)
-         (cond ((equal output '*) nil)
-               (t output)))
-        ((equal (car output) '*)
-         (cons nil (defstub-body (cdr output))))
-        (t (cons (car output) (defstub-body (cdr output))))))
 
 (defun collect-non-x (x lst)
 
@@ -250,6 +228,38 @@
          (collect-non-x x (cdr lst)))
         (t (cons (car lst) (collect-non-x x (cdr lst))))))
 
+(defun collect-non-* (lst)
+
+; This variant of collect-symbol-name considers any symbol with name "*",
+; regardless of the package.
+
+  (declare (xargs :guard (symbol-listp lst)))
+  (cond ((endp lst) nil)
+        ((equal (symbol-name (car lst)) "*")
+         (collect-non-* (cdr lst)))
+        (t (cons (car lst) (collect-non-* (cdr lst))))))
+
+(defun defstub-body-new (outputs)
+
+; Turn the output part of a new-style signature into a term.  This is called to
+; construct the body of the witness function that defstub passes to
+; encapsulate, when the new style is used in defstub (otherwise,
+; defstub-body-old is called).  This function never causes an error, even if
+; outputs is ill-formed; what it returns in that case is irrelevant.  If
+; outputs is well-formed, it converts each * to nil and every other symbol to
+; itself, e.g., it converts (mv * s *) to (mv nil s nil), * to nil, and state
+; to state.
+
+  (cond ((atom outputs)
+         (cond ((and (symbolp outputs)
+                     (equal (symbol-name outputs) "*"))
+                nil)
+               (t outputs)))
+        ((and (symbolp (car outputs))
+              (equal (symbol-name (car outputs)) "*"))
+         (cons nil (defstub-body-new (cdr outputs))))
+        (t (cons (car outputs) (defstub-body-new (cdr outputs))))))
+
 #+acl2-loop-only
 (defmacro defproxy (name args-sig arrow body-sig)
   (cond
@@ -261,8 +271,8 @@
          where args-sig is a true-list of symbols.  See :DOC defproxy."))
    (t
     (let ((formals (gen-formals-from-pretty-flags args-sig))
-          (body (defstub-body body-sig))
-          (stobjs (collect-non-x '* args-sig)))
+          (body (defstub-body-new body-sig))
+          (stobjs (collect-non-* args-sig)))
       `(defun ,name ,formals
          (declare (xargs :non-executable :program
                          :mode :program
@@ -314,76 +324,174 @@
          (cdr body)))
     nil))
 
+(defun defstub-body-old-aux (outputs-without-mv stobjs)
+
+; Helper of defstub-body-old; see that function.  This function processes the
+; elements after mv.
+
+  (declare (xargs :guard (symbol-listp stobjs)))
+  (cond ((atom outputs-without-mv) nil)
+        ((member-eq (car outputs-without-mv) stobjs)
+         (cons (car outputs-without-mv)
+               (defstub-body-old-aux (cdr outputs-without-mv) stobjs)))
+        (t (cons nil ; could probably use t instead
+                 (defstub-body-old-aux (cdr outputs-without-mv) stobjs)))))
+
+(defun defstub-body-old (outputs stobjs)
+
+; Turn the output part of an old-style signature into a term.  This is called
+; to construct the body of the witness function that defstub passes to the
+; encapsulate, when the old style is used in defstub (otherwise,
+; defstub-body-new is called).  This function never causes an error, even if
+; outputs is ill-formed; what it returns in that case is irrelevant.  If
+; outputs is well-formed, it converts each non-stobj name to nil and each stobj
+; name to itself, e.g., it converts (mv x s y) to (mv nil s nil), x to nil, and
+; state to state.  Since stobjs other than state are not as evident in the old
+; style as in the new style, the user-specified stobjs (as well as state, if
+; present) are passed as an extra argument to this function; these stobjs are
+; collected as explained in the comments in defstub-fn.
+
+  (declare (xargs :guard (symbol-listp stobjs)))
+  (cond ((atom outputs)
+         (cond ((member-eq outputs stobjs) outputs)
+               (t nil)))
+        (t (cons (car outputs) (defstub-body-old-aux (cdr outputs) stobjs)))))
+
 (defun defstub-fn (name args)
+
+; We cannot just "forward" the arguments of defstub to encapsulate and have
+; encapsulate validate them, for two reasons.  First, the new-style syntax
+; differs slightly in the two macros (e.g. (defstub f (*) => *) vs.
+; (encapsulate (((f *) => *)) ...)) while the old-style syntax is the same
+; (e.g. (defstub f (x) t) vs. (encapsulate ((f (x) t)) ...)), making it
+; necessary to distinguish new style from old style to adapt slightly the
+; syntax in the new style prior to passing the arguments to encapsulate.
+; Second, the witness to pass to the encapsulate is constructed differently
+; depending on whether the style is new or old.
+
+; Here we aim at performing only the "minimal" validation checks that let us
+; pass the right data to encapsulate, delegating to encapsulate all the
+; remaining validation checks.
+
+; In both styles, there must be at least two arguments following the name.  If
+; this condition fails, it would not be clear what to pass to encapsulate.
+
   (let ((len-args (length args)))
     (cond
-     ((not (or (eql len-args 2)
-               (and (eql len-args 3)
-                    (symbolp (cadr args))
-                    (equal (symbol-name (cadr args)) "=>"))))
+     ((< len-args 2)
       `(er soft 'defstub
-           "Defstub must be of the form (defstub name formals args-sig) or ~
-            (defstub name args-sig => body-sig).  See :DOC defstub."))
-     ((and (eql len-args 2)
-           (not (and (symbol-listp (car args))
-                     (or (symbolp (cadr args))
-                         (symbol-listp (cadr args))))))
-      `(er soft 'defstub
-           "For calls of the form (defstub name formals args-sig), formals ~
-            must be a true-list of symbols and args-sig must be a symbol or a ~
-            true-list of symbols.  See :DOC defstub."))
-     ((and (eql len-args 3)
-           (not (symbol-listp (car args))))
-      `(er soft 'defstub
-           "For calls of the form (defstub name args-sig => body-sig), ~
-            args-sig must be a true-list of symbols.  See :DOC defstub."))
-     ((eql len-args 2) ; old style
-      (let* ((formals (car args))
-             (body (cadr args))
-             (mv-p (and (consp body)
-                        (eq (car body) 'mv))))
+           "Defstub must be of the form (defstub name inputs => outputs ...) ~
+            or (defstub name inputs outputs ...).  See :DOC defstub."))
+
+; New and old style cannot be told apart just from the first argument after the
+; name, which for example could be (state) in both styles.  New and old styles
+; cannot be told apart just from the second argument after the name either,
+; because for example (defstub f (x) =>) is valid in the old style, where => is
+; (oddly) used as output variable.  We need to look past the second argument
+; after the name: if there is no third argument, we must be in the old style,
+; because the new style requires inputs, arrow, and outputs; if the third
+; argument is a keyword, we must be in the old style, because the output part
+; of the new style cannot be a keyword; if the third argument is not a keyword,
+; we must be in the new style instead.
+
+; We handle the old style first.
+
+     ((or (= len-args 2)
+          (keywordp (caddr args)))
+
+; We keep the same syntax for the signature, including any options.  We use the
+; inputs as the formals of the witness function.  If there is a :stobjs option
+; (which may be a single stobj name or a list thereof) or the inputs include
+; state, we declare the stobjs in the witness function (note that state may or
+; may not be explicitly declared in the stobjs option of defstub).  If there
+; are multiple outputs, we also generate an exported type prescription theorem
+; saying that the function returns a true list.  The code below includes some
+; checks on the arguments of defstub to ensure the absence of run-time errors
+; (e.g. the options are checked to satisfy keyword-value-listp before calling
+; assoc-keyword on them).
+
+      (let* ((inputs (car args))
+             (outputs (cadr args))
+             (options (cddr args))
+             (stobjs (and (keyword-value-listp options) ; assoc-keyword guard
+                          (cadr (assoc-keyword :stobjs options))))
+             (stobjs (cond ((symbol-listp stobjs) stobjs) ; covers nil case
+                           ((symbolp stobjs) (list stobjs))
+                           (t nil))) ; malformed :stobjs option
+; Stobjs is a symbol-listp at this point.
+             (stobjs (cond ((and (true-listp inputs) ; member-equal guard
+                                 (member-eq 'state inputs))
+                            (add-to-set-eq 'state stobjs))
+                           (t stobjs)))
+
+; If stobjs is ill-formed in any of the bindings above, then the signature will
+; be illegal in the generated encapsulate, in which case the value of stobjs is
+; irrelevant.
+
+             (body (defstub-body-old outputs stobjs)))
         `(encapsulate
-           ((,name ,formals ,body))
+           ((,name ,@args)) ; args includes inputs, outputs, and options
            (logic)
            (local
-            (defun ,name ,formals
-              (declare (ignorable ,@formals))
-              ,(if mv-p
-                   (let* ((output-vars (cdr body))
-                          (posn (position-eq 'state output-vars))
-                          (lst
-                           (if posn
-                               (append (make-list posn :initial-element t)
-                                       (cons 'state
-                                             (make-list (- (length output-vars)
-                                                           (1+ posn)))))
-                             (make-list (length output-vars)
-                                        :initial-element t))))
-                     `(mv ,@lst))
-                 (if (eq body 'state)
-                     'state
-                   t))))
-           ,@(and mv-p
+            (defun ,name ,inputs
+              (declare (ignorable ,@inputs)
+                       ,@(and stobjs `((xargs :stobjs ,stobjs))))
+              ,body))
+           ,@(and (consp outputs)
+
+; Note that if (car outputs) is not MV, then the signature will be illegal in
+; the generated encapsulate below, so the user will see an error message that
+; should be adequate.
+
                   `((defthm ,(packn-pos (list "TRUE-LISTP-" name)
                                         name)
-                      (true-listp (,name ,@formals))
+                      (true-listp (,name ,@inputs))
                       :rule-classes :type-prescription))))))
-     (t (let* ((args-sig (car args))
-               (body-sig (caddr args))
-               (formals (gen-formals-from-pretty-flags args-sig))
-               (body (defstub-body body-sig))
+
+; In the new style, we adapt the syntax of the signature, keeping all the
+; options.  We derive the formals of the witness function by replacing the *s
+; in the signature with distinct symbols.  We derive the stobjs of the witness
+; function from the inputs of the signature, by collecting all the non-*s.  If
+; there are multiple outputs, we also generate an exported type prescription
+; theorem saying that the function returns a true list.  The code below
+; includes some checks on the arguments of defstub to ensure the absence of
+; run-time errors (e.g., the inputs are checked to satisfy symbol-listp before
+; calling gen-formals-from-pretty-flags).
+
+     (t (let* ((inputs (car args))
+               (arrow
+
+; We do not check here that arrow is a symbol with name "=>", since that check
+; will be made when the signature is checked in the generated encapsulate.
+
+                (cadr args))
+               (outputs (caddr args))
+               (options (cdddr args))
+               (formals (and (symbol-listp inputs)
+
+; Note that if inputs is not a symbol-listp, then the value of formals will be
+; ignored because the generated encapsulate will immediately report a signature
+; violation.
+
+                             (gen-formals-from-pretty-flags inputs)))
+               (body (defstub-body-new outputs))
                (ignores (defstub-ignores formals body))
-               (stobjs (collect-non-x '* args-sig)))
+               (stobjs (and (true-listp inputs) ; collect-non-x guard
+                            (collect-non-* inputs))))
           `(encapsulate
-             (((,name ,@args-sig) => ,body-sig))
+             (((,name ,@inputs) ,arrow ,outputs ,@options))
              (logic)
              (local
               (defun ,name ,formals
                 (declare (ignore ,@ignores)
-                         (xargs :stobjs ,stobjs))
+                         ,@(and stobjs `((xargs :stobjs ,stobjs))))
                 ,body))
-             ,@(and (consp body-sig)
-                    (eq (car body-sig) 'mv)
+             ,@(and (consp outputs)
+
+; Note that if (car outputs) is not MV, then the signature will be illegal in
+; the generated encapsulate below, so the user will see an error message that
+; should be adequate.
+
                     `((defthm ,(packn-pos (list "TRUE-LISTP-" name)
                                           name)
                         (true-listp (,name ,@formals))
@@ -2215,7 +2323,7 @@
 
 ; The symbol-class of a symbol is one of three keywords:
 
-; :program                  - not defined within the logic
+; :program               - not defined within the logic
 ; :ideal                 - defined in the logic but not known to be CL compliant
 ; :common-lisp-compliant - defined in the logic and known to be compliant with
 ;                          Common Lisp
@@ -2259,10 +2367,12 @@
 
   (declare (xargs :guard (and (symbolp sym)
                               (plist-worldp wrld))))
-  (or (getpropc sym 'symbol-class nil wrld)
-      (if (getpropc sym 'theorem nil wrld)
-          :ideal
-          :program)))
+  (if (eq sym 'cons) ; optimization
+      :COMMON-LISP-COMPLIANT
+    (or (getpropc sym 'symbol-class nil wrld)
+        (if (getpropc sym 'theorem nil wrld)
+            :ideal
+          :program))))
 
 (defmacro fdefun-mode (fn wrld)
 
@@ -2666,21 +2776,8 @@
 
 (defun sublis-var (alist form)
 
-; Call this function with alist = nil to put form into quote-normal form so
-; that for example if form is (cons '1 '2) then '(1 . 2) is returned.  The
-; following two comments come from the nqthm version of this function.
-
-;     In REWRITE-WITH-LEMMAS we use this function with the nil alist
-;     to put form into quote normal form.  Do not optimize this
-;     function for the nil alist.
-
-;     This is the only function in the theorem prover that we
-;     sometimes call with a "term" that is not in quote normal form.
-;     However, even this function requires that form be at least a
-;     pseudo-termp.
-
-; We rely on quote-normal form for the return value, for example in calls of
-; sublis-var in rewrite-with-lemma and in apply-top-hints-clause1.
+; If you are tempted to call this function with alist = nil to put form into
+; quote-normal form, consider calling quote-normal-form instead.
 
   (declare (xargs :guard (and (symbol-alistp alist)
                               (pseudo-term-listp (strip-cdrs alist))
@@ -2808,16 +2905,20 @@
 
 (defun untranslate-and (p q iff-flg)
 
-; The following theorem illustrates the various cases:
-; (thm (and (equal (and t q) q)
-;           (iff (and p t) p)
-;           (equal (and p (and q1 q2)) (and p q1 q2))))
+; The following theorem illustrates the theorem:
+
+; (thm (equal (and p (and q1 q2)) (and p q1 q2)))
+
+; We formerly also gave special treatment corresponding to the cases (equal
+; (and t q) q) and (iff (and p t) p).  But we stopped doing so after
+; Version_8.2, when Stephen Westfold pointed out the confusion arising in the
+; proof-builder after rewriting a subterm, tst, to t, in a term (and tst x2),
+; i.e., (if tst x2 'nil).  A similar problem occurs for (and x2 tst).
 
 ; Warning: Keep this in sync with and-addr.
 
-  (cond ((eq p t) q)
-        ((and iff-flg (eq q t)) p)
-        ((and (consp q)
+  (declare (ignore iff-flg))
+  (cond ((and (consp q)
               (eq (car q) 'and))
          (cons 'and (cons p (cdr q))))
         (t (list 'and p q))))
@@ -4187,19 +4288,117 @@
 ; The following two functions could go in axioms.lisp, but it seems not worth
 ; putting them in :logic mode so we might as well put them here.
 
+(defmacro set-print-clause-ids (flg)
+  (declare (xargs :guard (member-equal flg '(t 't nil 'nil))))
+  (let ((flg (if (atom flg)
+                 (list 'quote flg)
+               flg)))
+    `(f-put-global 'print-clause-ids ,flg state)))
+
+(defmacro set-saved-output (save-flg inhibit-flg)
+  (let ((save-flg-original save-flg)
+        (save-flg (if (and (consp save-flg)
+                           (eq (car save-flg) 'quote))
+                      (cadr save-flg)
+                    save-flg))
+        (inhibit-flg-original inhibit-flg)
+        (inhibit-flg (if (and (consp inhibit-flg)
+                              (eq (car inhibit-flg) 'quote))
+                         (cadr inhibit-flg)
+                       inhibit-flg)))
+    `(prog2$
+      (and (gag-mode)
+           (er hard 'set-saved-output
+               "It is illegal to call set-saved-output explicitly while ~
+                gag-mode is active.  First evaluate ~x0."
+               '(set-gag-mode nil)))
+      (pprogn ,(cond ((eq save-flg t)
+                      '(f-put-global 'saved-output-token-lst :all state))
+                     ((null save-flg)
+                      '(f-put-global 'saved-output-token-lst nil state))
+                     ((true-listp save-flg)
+                      `(f-put-global 'saved-output-token-lst ',save-flg state))
+                     (t (er hard 'set-saved-output
+                            "Illegal first argument to set-saved-output (must ~
+                             be ~x0 or a true-listp): ~x1."
+                            t save-flg-original)))
+              ,(if (eq inhibit-flg :same)
+                   'state
+                 `(f-put-global 'inhibit-output-lst
+                                ,(cond ((eq inhibit-flg t)
+                                        '(add-to-set-eq 'prove
+                                                        (f-get-global
+                                                         'inhibit-output-lst
+                                                         state)))
+                                       ((eq inhibit-flg :all)
+                                        '(set-difference-eq
+                                          *valid-output-names*
+                                          (set-difference-eq
+                                           '(error warning!)
+                                           (f-get-global
+                                            'inhibit-output-lst
+                                            state))))
+                                       ((eq inhibit-flg :normal)
+                                        ''(proof-tree))
+                                       ((true-listp inhibit-flg)
+                                        (list 'quote inhibit-flg))
+                                       (t (er hard 'set-saved-output
+                                              "Illegal second argument to ~
+                                               set-saved-output (must be ~v0, ~
+                                               or a true-listp): ~x1."
+                                              '(t :all :normal :same)
+                                              inhibit-flg-original)))
+                                state))))))
+
+(defun set-gag-mode-fn (action state)
+
+; Warning: Keep this in sync with with-output-fn, in particular with respect to
+; the legal values for action and for the state-global-let* generated there.
+
+  (let ((action (if (and (consp action)
+                         (consp (cdr action))
+                         (eq (car action) 'quote))
+                    (cadr action)
+                  action)))
+    (pprogn
+     (f-put-global 'gag-mode nil state) ; to allow set-saved-output
+     (case action
+       ((t)
+        (pprogn (set-saved-output t :same)
+                (f-put-global 'gag-mode action state)
+                (set-print-clause-ids nil)))
+       (:goals
+        (pprogn (set-saved-output t :same)
+                (f-put-global 'gag-mode action state)
+                (set-print-clause-ids t)))
+       ((nil)
+        (pprogn ; (f-put-global 'gag-mode nil state) ; already done
+         (set-saved-output nil :same)
+         (set-print-clause-ids nil)))
+       (otherwise
+        (prog2$ (er hard 'set-gag-mode
+                    "Unknown set-gag-mode argument, ~x0"
+                    action)
+                state))))))
+
+(defmacro set-gag-mode (action)
+  `(set-gag-mode-fn ,action state))
+
 (defun pop-inhibit-output-lst-stack (state)
   (let ((stk (f-get-global 'inhibit-output-lst-stack state)))
     (cond ((null stk) state)
           (t (pprogn (f-put-global 'inhibit-output-lst
-                                   (car stk)
+                                   (caar stk)
                                    state)
+                     (set-gag-mode (cdar stk))
                      (f-put-global 'inhibit-output-lst-stack
                                    (cdr stk)
                                    state))))))
 
 (defun push-inhibit-output-lst-stack (state)
   (f-put-global 'inhibit-output-lst-stack
-                (cons (f-get-global 'inhibit-output-lst state)
+                (cons (cons (f-get-global 'inhibit-output-lst state)
+                            (f-get-global 'gag-mode state))
                       (f-get-global 'inhibit-output-lst-stack state))
                 state))
 

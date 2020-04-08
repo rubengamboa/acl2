@@ -28,6 +28,9 @@
 ;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Sol Swords <sswords@centtech.com>
+;
+; Includes tweaks made by Mihir Mehta 4/2019 for a change to the
+; definition of take.
 
 (in-package "ACL2")
 
@@ -671,12 +674,16 @@
                (equal (car (nthcdr n x))
                       (mv-nth n x))
                :hints(("Goal" :in-theory (enable nthcdr mv-nth)))))
+      (local (defthm cdr-nthcdr
+               (equal (cdr (nthcdr n x))
+                      (nthcdr n (cdr x)))
+               :hints(("Goal" :in-theory (enable nthcdr mv-nth)))))
       (defthm get-mv-nths-correct
         (implies (and (natp start) (natp n))
                  (equal (partial-ev-lst (get-mv-nths start n term) al)
                         (take n (nthcdr start (partial-ev term al)))))
-        :hints(("Goal" :in-theory (enable take-redefinition nthcdr)
-                :induct t
+        :hints(("Goal" :in-theory (enable take nthcdr)
+                :induct (get-mv-nths start n term)
                 :expand ((:free (x) (nthcdr (+ 1 start) x))))))))
 
 
@@ -1434,7 +1441,11 @@
                     & ;; reclassifying
                     & ;; world
                     non-execp
-                    ?guard-debug))
+                    guard-debug
+                    ?measure-debug
+                    ?split-types-terms
+                    ?lambda$-stuff
+                    guard-simplify))
           (chk-acceptable-defuns tuple 'def-tr-fn world state))
          ((er &) (set-ld-redefinition-action redef-action state))
          (- (cw "symbol-class: ~x0~%" symbol-class))
@@ -1753,7 +1764,9 @@
                  `((verify-guards ,fn
                      :hints ,(cons `'(:use ,(dtr-sym fn "-REDEF")
                                       :in-theory (disable ,(dtr-sym fn "-REDEF")))
-                                   guard-hints))))
+                                   guard-hints)
+                     :guard-simplify ,guard-simplify
+                     :guard-debug ,guard-debug)))
 
           (in-theory (disable (:definition ,fn))))))))
 
@@ -1786,7 +1799,9 @@
 
    (def-tr my-run (pc prog sta)
      (declare (xargs :guard (and (natp pc) (true-listp prog))
-                     :stobjs sta))
+                     :stobjs sta
+                     :guard-simplify nil
+                     :guard-debug t))
      (if (< (len prog) pc)
          sta
        (mv-let (pc sta)
@@ -1836,9 +1851,3 @@
              (otherwise (prog2$ (cw "bad instruction: ~x0~%" (car instr))
                                 sta))))))
      :diverge (mk-sta))))
-
-
-
-
-
-

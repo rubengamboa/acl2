@@ -91,13 +91,11 @@
   (savings :desc "savings computed" :abbrev "savings"))
 
 
-(defstobj-clone strash2 strash :suffix "2")
 
 ;; bozo redundant with balance.lisp
 (defstobj-clone refcounts2 u32arr :prefix "REFCOUNTS2-")
 ;; (defstobj-clone rwlib rwlib :prefix "RWLIB-")
 
-(defstobj-clone copy2 copy :suffix "2")
 ;; (defstobj-clone smm acl2::smm :strsubst (("abcd" . "abcd")))
 (defstobj-clone eba2 eba :suffix "2")
 (defstobj-clone eba3 eba :suffix "3")
@@ -673,21 +671,7 @@
   ///
   (def-aignet-preservation-thms aignet-build-cut :stobjname aignet2)
 
-  (local (defun nth-of-repeat-ind (n m)
-           (if (zp n)
-               m
-             (nth-of-repeat-ind (1- n) (1- m)))))
-  (local (defthmd nth-of-repeat-split
-           (equal (nth n (acl2::repeat m x))
-                  (and (< (nfix n) (nfix m))
-                       x) )
-           :hints(("Goal" :in-theory (enable nth acl2::repeat)
-                   :induct (nth-of-repeat-ind n m)))))
-
-  (local (defthm dfs-copy-onto-invar-of-empty-marks
-           (dfs-copy-onto-invar aignet (acl2::repeat n 0) copy aignet2)
-           :hints(("Goal" :in-theory (enable dfs-copy-onto-invar
-                                             nth-of-repeat-split)))))
+  
 
   (local (defthm b-xor-identity
            (equal (b-xor a (b-xor a b))
@@ -872,22 +856,6 @@
     (mv lit copy2 eba strash2 aignet2))
   ///
   (def-aignet-preservation-thms aignet-build-cut-tmp :stobjname aignet2)
-
-  (local (defun nth-of-repeat-ind (n m)
-           (if (zp n)
-               m
-             (nth-of-repeat-ind (1- n) (1- m)))))
-  (local (defthmd nth-of-repeat-split
-           (equal (nth n (acl2::repeat m x))
-                  (and (< (nfix n) (nfix m))
-                       x) )
-           :hints(("Goal" :in-theory (enable nth acl2::repeat)
-                   :induct (nth-of-repeat-ind n m)))))
-
-  (local (defthm dfs-copy-onto-invar-of-empty-marks
-           (dfs-copy-onto-invar aignet (acl2::repeat n 0) copy aignet2)
-           :hints(("Goal" :in-theory (enable dfs-copy-onto-invar
-                                             nth-of-repeat-split)))))
 
   (defret aignet-litp-of-aignet-build-cut-tmp
     (implies (and (aignet-input-copies-in-bounds copy2 (rwlib->aigs rwlib) aignet2)
@@ -1108,22 +1076,6 @@
   ///
   (def-aignet-preservation-thms eval-cut-implementation :stobjname aignet2)
 
-  (local (defun nth-of-repeat-ind (n m)
-           (if (zp n)
-               m
-             (nth-of-repeat-ind (1- n) (1- m)))))
-  (local (defthmd nth-of-repeat-split
-           (equal (nth n (acl2::repeat m x))
-                  (and (< (nfix n) (nfix m))
-                       x) )
-           :hints(("Goal" :in-theory (enable nth acl2::repeat)
-                   :induct (nth-of-repeat-ind n m)))))
-
-  (local (defthm dfs-copy-onto-invar-of-empty-marks
-           (dfs-copy-onto-invar aignet (acl2::repeat n 0) copy aignet2)
-           :hints(("Goal" :in-theory (enable dfs-copy-onto-invar
-                                             nth-of-repeat-split)))))
-
   ;; (defret aignet-litp-of-eval-cut-implementation
   ;;   (implies (and (aignet-copies-in-bounds copy2 aignet2)
   ;;                 (cutsdb-lit-idsp aignet2 cutsdb)
@@ -1266,22 +1218,6 @@
 
   (def-aignet-preservation-thms eval-cut-implementations :stobjname aignet2)
 
-  (local (defun nth-of-repeat-ind (n m)
-           (if (zp n)
-               m
-             (nth-of-repeat-ind (1- n) (1- m)))))
-  (local (defthmd nth-of-repeat-split
-           (equal (nth n (acl2::repeat m x))
-                  (and (< (nfix n) (nfix m))
-                       x) )
-           :hints(("Goal" :in-theory (enable nth acl2::repeat)
-                   :induct (nth-of-repeat-ind n m)))))
-
-  (local (defthm dfs-copy-onto-invar-of-empty-marks
-           (dfs-copy-onto-invar aignet (acl2::repeat n 0) copy aignet2)
-           :hints(("Goal" :in-theory (enable dfs-copy-onto-invar
-                                             nth-of-repeat-split)))))
-
 
   (defret aignet-copies-in-bounds-of-eval-cut-implementations-copy2
     (implies (and (aignet-input-copies-in-bounds copy2 (rwlib->aigs rwlib) aignet2)
@@ -1417,8 +1353,7 @@
               (< cut (nodecut-indicesi (cut-nnodes cutsdb) cutsdb))
               (equal (num-nxsts aignet2) 0)
               (equal (num-outs aignet2) 0)
-              (b* (((cutinfo cutinf) (cut-infoi cut cutsdb))
-                   ((acl2::stobj-get ok)
+              (b* (((acl2::stobj-get ok)
                     ((aignet-tmp (rwlib->aigs rwlib)))
                     (and (<= (num-fanins aignet-tmp) (lits-length copy2))
                          (<= (num-fanins aignet-tmp) (eba-length eba)))))
@@ -3721,7 +3656,6 @@
         (mv aignet2 cutsdb eba eba2 copy copy2 eba3 eba4 strash2 refcounts2 rewrite-stats))
        ((mv lit build-cost cutsdb aignet2 strash2 refcounts2 rewrite-stats)
         (rewrite-copy-node n aignet aignet2 cutsdb copy strash2 refcounts2 rewrite-stats config))
-       ((rewrite-config config))
        (eba4 (maybe-grow-eba (num-fanins aignet2) eba4))
        
        ((mv new-lit aignet2 eba eba2 copy2 eba3 eba4 strash2 refcounts2 rewrite-stats)

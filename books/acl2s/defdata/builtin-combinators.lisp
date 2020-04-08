@@ -49,8 +49,10 @@ data last modified: [2017-06-22 Thu]
 
 (defun member-pred-I (x s) `(and (member-equal ,x ,(cadr s)) t))
 (defun member-enum-I (i s) `(nth (mod ,i (len ,(cadr s))) ,(cadr s)))
-(defun member-enum/acc-I (i s) (declare (ignorable i))
-  `(mv-let (idx _SEED) (random-index-seed (len ,(cadr s)) _SEED)
+(defun member-enum/acc-I (i s)
+  (declare (ignorable i))
+  `(mv-let (idx _SEED)
+           (random-index-seed (len ,(cadr s)) _SEED)
            (mv (nth idx ,(cadr s)) (the (unsigned-byte 31) _SEED))))
 
 
@@ -73,14 +75,14 @@ data last modified: [2017-06-22 Thu]
                  'acl2::integerp
                'acl2::rationalp)))
   (case-match rexp
-    ((lo lo-rel-sym '_ hi-rel-sym hi) `((,dom ,x)
-                                        ,@(and (rationalp lo) `((,lo-rel-sym ,lo ,x)))
-                                        ,@(and (rationalp hi) `((,hi-rel-sym ,x  ,hi))))))))
+    ((lo lo-rel-sym '_ hi-rel-sym hi)
+     `((,dom ,x)
+       ,@(and (rationalp lo) `((,lo-rel-sym ,lo ,x)))
+       ,@(and (rationalp hi) `((,hi-rel-sym ,x  ,hi))))))))
 
 
 ;(defun range-pred-I (x s) `(acl2::in-tau-intervalp ,x ',(get-tau-int (cadr s) (third s))))
 (defun range-pred-I (x s) `(AND . ,(make-acl2-range-constraints x (cadr s) (third s))))
-
 
 
 (defun make-enum-body-for-range (r domain lo hi lo-rel hi-rel)
@@ -110,7 +112,7 @@ data last modified: [2017-06-22 Thu]
                          `(acl2s::nth-rational-between ,r ,lo ,hi))
 
                         (lo ;hi is positive infinity
-                         `(+ ,lo (acl2s::nth-positive-rational-testing ,r)))
+                         `(+ ,lo (acl2s::nth-pos-rational-testing ,r)))
                         
                         ((> hi 0) ;lo is neg infinity and hi is is >= 1
                          `(let ((rat-ans (acl2s::nth-rational ,r)))
@@ -119,7 +121,7 @@ data last modified: [2017-06-22 Thu]
                               rat-ans))) ;ans shud be less than or equal to hi
                         
                         (t ;lo is neg infinity and hi is is <= 0
-                         `(- ,hi (acl2s::nth-positive-rational-testing ,r))))))))
+                         `(- ,hi (acl2s::nth-pos-rational-testing ,r))))))))
 
 (defun range-enum-I (i s)
   (b* ((tau-interval (get-tau-int (cadr s) (third s)))
@@ -127,9 +129,7 @@ data last modified: [2017-06-22 Thu]
        (hi (tau-interval-hi tau-interval))
        (lo-rel (tau-interval-lo-rel tau-interval))
        (hi-rel (tau-interval-hi-rel tau-interval)))
-
-  (make-enum-body-for-range i (cadr s) lo hi lo-rel hi-rel)))
-
+    (make-enum-body-for-range i (cadr s) lo hi lo-rel hi-rel)))
 
 
 (defun minimum-range-lo-builtin ()
@@ -164,11 +164,12 @@ data last modified: [2017-06-22 Thu]
       (1 :eq ,mid2)
       (10 :uniform ,small-low ,small-hi)
       (19 :geometric :around ,mid1)
-      (45 :uniform ,min ,max)
+      (47 :uniform ,min ,max)
       (10 :geometric :leq ,max)
       (10 :geometric :geq ,min)
-      (1 :geometric :geq ,(1+ max))
-      (1 :geometric :leq ,(1- min)))))
+;     (1 :geometric :geq ,(1+ max))
+;     (1 :geometric :leq ,(1- min))
+      )))
 
 #|
 
@@ -209,7 +210,6 @@ data last modified: [2017-06-22 Thu]
 (defun sampling-dist-lo (min max mid1 mid2)
   (b* ((small-low (if (< min -100) -100 min))
        (small-hi (if (> max 100) 100 max)))
-
     `((1 :eq ,min)
       (1 :eq ,max)
       (1 :eq ,mid1)
@@ -217,10 +217,11 @@ data last modified: [2017-06-22 Thu]
       (1 :geometric :around ,mid1)
       (22 :uniform ,min ,max)
       (1 :geometric :leq ,max)
-      (30 :uniform ,small-low ,small-hi)
+      (32 :uniform ,small-low ,small-hi)
       (40 :geometric :geq ,min)
-      (1 :geometric :geq ,(1+ max))
-      (1 :geometric :leq ,(1- min)))))
+;      (1 :geometric :geq ,(1+ max))
+;      (1 :geometric :leq ,(1- min))
+      )))
 
 (defun sampling-dist-hi (min max mid1 mid2)
   (b* ((small-low (if (< min -100) -100 min))
@@ -231,11 +232,12 @@ data last modified: [2017-06-22 Thu]
       (1 :eq ,mid2)
       (1 :geometric :around ,mid1)
       (22 :uniform ,min ,max)
-      (30 :uniform ,small-low ,small-hi)
+      (32 :uniform ,small-low ,small-hi)
       (40 :geometric :leq ,max)
       (1 :geometric :geq ,min)
-      (1 :geometric :geq ,(1+ max))
-      (1 :geometric :leq ,(1- min)))))
+;      (1 :geometric :geq ,(1+ max))
+;      (1 :geometric :leq ,(1- min))
+      )))
 
 (defun midpoints (lo hi)
   (if (and (integerp lo) (integerp hi)
@@ -253,7 +255,7 @@ data last modified: [2017-06-22 Thu]
                  'acl2s::nth-rational))
        (nth-pos-fn (if (eq dom 'acl2s::integer)
                        'acl2s::nth-nat
-                     'acl2s::nth-positive-rational))
+                     'acl2s::nth-pos-rational))
        (between-fn (if (eq dom 'acl2s::integer)
                        'defdata::random-integer-between-seed
                      'defdata::random-rational-between-seed)))
@@ -273,7 +275,6 @@ data last modified: [2017-06-22 Thu]
          (& (mv (er hard ',ctx "~| Impossible case ~x0.~%" sp) ,seedvar))))))
 
 
-
 (defun make-enum/acc-body-for-range (ivar seedvar domain lo hi lo-rel hi-rel)
   (b* ((gap (if (eq domain 'acl2s::integer)
                 1
@@ -291,7 +292,9 @@ data last modified: [2017-06-22 Thu]
                   (t (make-enum-exp-for-bounded-range
                        ivar seedvar domain (sampling-dist-hi lo1 hi1 mid1 mid2))))))
 
-    `(mv-let (,ivar ,seedvar) (random-natural-seed ,seedvar) ;;overwrite original value of ivar
+    `(mv-let (,ivar ,seedvar)
+             (random-natural-seed ,seedvar) ;;overwrite original value of ivar
+             (declare (ignorable ,ivar))
              ,exp)))
 
 (defun range-enum/acc-I (ivar s)
@@ -457,14 +460,14 @@ Mainly to be used for evaluating enum lists "
 (push-untouchable acl2::ev-fncall-w t) ; see Matt K. comment above
 
 (defun trans-my-ev-w (form ctx w hard-error-returns-nilp)
-(declare (xargs :mode :program
-                :guard (and (plist-worldp w)
-                            (booleanp hard-error-returns-nilp))))
+  (declare (xargs :mode :program
+                  :guard (and (plist-worldp w)
+                              (booleanp hard-error-returns-nilp))))
 
   (mv-let
    (erp term x)
    (acl2::translate11 form nil nil nil nil nil nil
-                ctx w (acl2::default-state-vars nil))
+                      ctx w (acl2::default-state-vars nil))
    (declare (ignore x))
    (if erp
        (if hard-error-returns-nilp
@@ -562,7 +565,7 @@ Mainly to be used for evaluating enum lists "
        (list 'acl2s::range domain (list lo lo-rel-sym '_ hi-rel-sym hi))))
     (& (bad-range-syntax rexp1)))))
 
-
+#|
 (defun parse-enum-exp (eexp ctx w)
   (declare (xargs :mode :program))
   (b* (((when (proper-symbolp eexp)) eexp) ;name TODO.Bug -- But what if its not a name! We should catch this error...
@@ -572,3 +575,19 @@ Mainly to be used for evaluating enum lists "
        ((unless (and (true-listp list-val) (consp list-val)))
         (er hard ctx "Enum argument ~x0 expected to be a non-empty list expression.~%" eexp)))
     (list 'acl2s::member (kwote list-val))))
+|#
+
+;; This removes duplicate elements and uses 'or, which works better
+;; with tau because we can exactly characterize the type.
+(defun parse-enum-exp (eexp ctx w)
+  (declare (xargs :mode :program))
+  (b* (((when (proper-symbolp eexp)) eexp) ;name TODO.Bug -- But what if its not a name! We should catch this error...
+       ((mv erp list-val) (trans-my-ev-w eexp ctx w nil))
+       ((when erp)
+        (er hard ctx "Evaluating list expression ~x0 failed!~%" eexp))
+       ((unless (and (true-listp list-val) (consp list-val)))
+        (er hard ctx "Enum argument ~x0 expected to be a non-empty list expression.~%" eexp))
+       (list-val (remove-duplicates list-val)))
+    (if (consp (cdr list-val))
+        (cons 'or (kwote-lst list-val))
+      (kwote (car list-val)))))

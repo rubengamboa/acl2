@@ -9,7 +9,7 @@ package edu.kestrel.acl2.aij;
 import java.util.Map;
 
 /**
- * Representation of ACL2 quoted constants.
+ * Representation of ACL2 quoted constants, in translated form.
  * These are translated terms of the form {@code (quote ...)}.
  */
 public final class Acl2QuotedConstant extends Acl2Term {
@@ -17,38 +17,77 @@ public final class Acl2QuotedConstant extends Acl2Term {
     //////////////////////////////////////// private members:
 
     /**
-     * ACL2 value of the quoted constant.
-     * This is never {@code null}.
+     * Value of the quoted constant.
+     * Invariant: not null.
      */
     private final Acl2Value value;
 
     /**
-     * Constructs an ACL2 quoted constant from its value.
+     * Constructs an quoted constant with the given value.
+     *
+     * @param value The value of the quoted constant.
+     *              Invariant: not null.
      */
     private Acl2QuotedConstant(Acl2Value value) {
-        assert value != null;
         this.value = value;
     }
 
     //////////////////////////////////////// package-private members:
 
     /**
-     * Evaluates this ACL2 quoted constant to an ACL2 value,
-     * with respect to the given binding of values to variable symbols.
+     * Validates all the function calls in this quoted constants.
+     * Since a quoted constant contains no function calls,
+     * this method does nothing.
+     */
+    @Override
+    void validateFunctionCalls() {
+    }
+
+    /**
+     * Sets the indices of all the variables in this quoted constant,
+     * starting with the supplied map from variable symbols to indices.
+     * Since a quoted constant contains no variables, this method does nothing.
+     * See {@link Acl2Variable} for more information about variable indices.
+     *
+     * @param indices Map from variable symbols to indices.
+     *                Invariants:
+     *                not null,
+     *                no null keys,
+     *                no null values,
+     *                no negative values.
+     */
+    @Override
+    void setVariableIndices(Map<Acl2Symbol, Integer> indices) {
+    }
+
+    /**
+     * Evaluates this quoted constant to a value,
+     * with respect to the given binding of variable indices to values.
      * The result is the value of the quoted constant,
      * which is actually independent from the bindings.
      * This evaluation never fails.
+     *
+     * @param binding The binding of variable indices to values.
+     *                Invariants:
+     *                not null,
+     *                no null keys,
+     *                no null values,
+     *                no negative values.
+     * @return The value that results from evaluation.
      */
     @Override
-    Acl2Value eval(Map<Acl2Symbol, Acl2Value> bindings) {
-        assert bindings != null;
+    Acl2Value eval(Acl2Value[] binding) {
         return this.value;
     }
 
     //////////////////////////////////////// public members:
 
     /**
-     * Checks if this ACL2 quoted constant is equal to the argument object.
+     * Compares this quoted constant with the argument object for equality.
+     *
+     * @param o The object to compare this quoted constant with.
+     * @return {@code true} if the object is equal to this quoted constant,
+     * otherwise {@code false}.
      */
     @Override
     public boolean equals(Object o) {
@@ -59,7 +98,9 @@ public final class Acl2QuotedConstant extends Acl2Term {
     }
 
     /**
-     * Returns a hash code for this ACL2 quoted constant.
+     * Returns a hash code for this quoted constant.
+     *
+     * @return The hash code for this quoted constant.
      */
     @Override
     public int hashCode() {
@@ -67,17 +108,18 @@ public final class Acl2QuotedConstant extends Acl2Term {
     }
 
     /**
-     * Compares this ACL2 quoted constant with the argument ACL2 term for order.
+     * Compares this quoted constant with the argument term for order.
      * This is not the order on terms documented in the ACL2 manual.
      * Instead, this order consists of:
      * first variables, ordered according to their underlying symbols;
      * then quoted constants, ordered according to their underlying symbols;
-     * finally applications, ordered lexicographically according to
+     * finally function calls, ordered lexicographically according to
      * the function followed by the arguments.
      *
-     * @return a negative integer, zero, or a positive integer as
-     * this term is less than, equal to, or greater than the argument
-     * @throws NullPointerException if the argument is null
+     * @param o The term to compare this quoted constant with.
+     * @return A negative integer, zero, or a positive integer as
+     * this term is less than, equal to, or greater than the argument.
+     * @throws NullPointerException If the argument is null.
      */
     @Override
     public int compareTo(Acl2Term o) {
@@ -90,12 +132,14 @@ public final class Acl2QuotedConstant extends Acl2Term {
             Acl2QuotedConstant that = (Acl2QuotedConstant) o;
             return this.value.compareTo(that.value);
         }
-        // quoted constants are less than applications:
+        // quoted constants are less than function calls:
         return -1;
     }
 
     /**
-     * Returns a printable representation of this ACL2 quoted constant.
+     * Returns a printable representation of this quoted constant.
+     *
+     * @return A printable representation of this quoted constant.
      */
     @Override
     public String toString() {
@@ -103,9 +147,11 @@ public final class Acl2QuotedConstant extends Acl2Term {
     }
 
     /**
-     * Returns an ACL2 quoted quoted constant with the given ACL2 value.
+     * Returns a quoted quoted constant with the given value.
      *
-     * @throws IllegalArgumentException if value is null
+     * @param value The value of the quoted constant.
+     * @return The quoted constant.
+     * @throws IllegalArgumentException If {@code value} is null.
      */
     public static Acl2QuotedConstant make(Acl2Value value) {
         if (value == null)
@@ -113,4 +159,5 @@ public final class Acl2QuotedConstant extends Acl2Term {
         else
             return new Acl2QuotedConstant(value);
     }
+
 }

@@ -57,6 +57,7 @@
 (include-book "prefixp")
 (include-book "remove")
 (include-book "remove-duplicates")
+(include-book "remove1-equal")
 (include-book "repeat")
 (include-book "resize-list")
 (include-book "revappend")
@@ -71,6 +72,7 @@
 (include-book "true-listp")
 (include-book "update-nth")
 (include-book "list-defuns")
+(include-book "union")
 
 ; BOZO it might be best to move these disables into the corresponding
 ; books, to make things more consistent when you load the individual
@@ -84,7 +86,7 @@
                     revappend
                     no-duplicatesp-equal
                     make-character-list
-                    take-redefinition
+                    take
                     nthcdr
                     subseq-list
                     resize-list
@@ -192,5 +194,3 @@ rev), etc.</dd>
 <p>These rules allow for some very powerful equivalence-based reasoning.  When
 introducing new list-processing functions, it is generally a good idea to
 define the appropriate @(see congruence) rules for these relations.</p>")
-
-

@@ -1,7 +1,3 @@
-; Copyright (C) 2017, Regents of the University of Texas
-; Written by Mihir Mehta
-; License: A 3-clause BSD license.  See the LICENSE file distributed with ACL2.
-
 (in-package "ACL2")
 
 ;  file-system-5.lisp                                  Mihir Mehta
@@ -98,20 +94,20 @@
   l5-make-regular-file-correctness-2
   (let ((entry (l5-make-regular-file contents length user-read user-write
                                      other-read other-write user)))
-       (and (equal (l5-regular-file-contents entry)
-                   contents)
-            (equal (l5-regular-file-length entry)
-                   length)
-            (equal (l5-regular-file-user-read entry)
-                   user-read)
-            (equal (l5-regular-file-user-write entry)
-                   user-write)
-            (equal (l5-regular-file-other-read entry)
-                   other-read)
-            (equal (l5-regular-file-other-write entry)
-                   other-write)
-            (equal (l5-regular-file-user entry)
-                   user)))
+    (and (equal (l5-regular-file-contents entry)
+                contents)
+         (equal (l5-regular-file-length entry)
+                length)
+         (equal (l5-regular-file-user-read entry)
+                user-read)
+         (equal (l5-regular-file-user-write entry)
+                user-write)
+         (equal (l5-regular-file-other-read entry)
+                other-read)
+         (equal (l5-regular-file-other-write entry)
+                other-write)
+         (equal (l5-regular-file-user entry)
+                user)))
   :hints (("goal" :in-theory (enable l5-regular-file-entry-p
                                      l5-make-regular-file
                                      l5-regular-file-contents
@@ -307,18 +303,18 @@
             ))))))
 
 (defun l5-to-l4-fs (fs)
-    (declare (xargs :guard (l5-fs-p fs)))
+  (declare (xargs :guard (l5-fs-p fs)))
   (if (atom fs)
       nil
     (cons (let ((directory-or-file-entry (car fs)))
-           (let ((name (car directory-or-file-entry))
-                 (entry (cdr directory-or-file-entry)))
-             (if (l5-regular-file-entry-p entry)
-                 (list* name
-                        (l5-regular-file-contents entry)
-                        (l5-regular-file-length entry))
-               (cons name (l5-to-l4-fs entry)))))
-         (l5-to-l4-fs (cdr fs)))))
+            (let ((name (car directory-or-file-entry))
+                  (entry (cdr directory-or-file-entry)))
+              (if (l5-regular-file-entry-p entry)
+                  (list* name
+                         (l5-regular-file-contents entry)
+                         (l5-regular-file-length entry))
+                (cons name (l5-to-l4-fs entry)))))
+          (l5-to-l4-fs (cdr fs)))))
 
 (defthm
   l5-to-l4-fs-correctness-1
@@ -369,17 +365,17 @@
         (l5-fs-p fs)
         (block-listp disk))
    (let
-    ((file (l5-stat hns fs disk)))
-    (implies
-     (and (l5-regular-file-entry-p file)
-          (l5-regular-file-readable-p file user))
-     (equal
-      (l3-stat hns (l5-to-l4-fs fs) disk)
-      (coerce
-       (unmake-blocks
-        (fetch-blocks-by-indices disk (l5-regular-file-contents file))
-        (l5-regular-file-length file))
-       'string)))))
+       ((file (l5-stat hns fs disk)))
+     (implies
+      (and (l5-regular-file-entry-p file)
+           (l5-regular-file-readable-p file user))
+      (equal
+       (l3-stat hns (l5-to-l4-fs fs) disk)
+       (coerce
+        (unmake-blocks
+         (fetch-blocks-by-indices disk (l5-regular-file-contents file))
+         (l5-regular-file-length file))
+        'string)))))
   :rule-classes
   (:rewrite
    (:rewrite
@@ -389,18 +385,18 @@
           (l5-fs-p fs)
           (block-listp disk))
      (let
-      ((file (l5-stat hns fs disk)))
-      (implies
-       (and (l5-regular-file-entry-p file)
-            (l5-regular-file-readable-p file user)
-            (natp user))
-       (equal
-        (l4-stat hns (l5-to-l4-fs fs) disk)
-        (coerce
-         (unmake-blocks
-          (fetch-blocks-by-indices disk (l5-regular-file-contents file))
-          (l5-regular-file-length file))
-         'string))))))))
+         ((file (l5-stat hns fs disk)))
+       (implies
+        (and (l5-regular-file-entry-p file)
+             (l5-regular-file-readable-p file user)
+             (natp user))
+        (equal
+         (l4-stat hns (l5-to-l4-fs fs) disk)
+         (coerce
+          (unmake-blocks
+           (fetch-blocks-by-indices disk (l5-regular-file-contents file))
+           (l5-regular-file-length file))
+          'string))))))))
 
 (defthm
   l5-stat-correctness-2-lemma-1
@@ -646,7 +642,7 @@
                            new-disk new-alv))))))
   :hints
   (("goal" :in-theory (enable l3-regular-file-entry-p)
-               :induct (l5-stat hns fs disk))))
+    :induct (l5-stat hns fs disk))))
 
 (defthm l5-rdchs-correctness-1-lemma-1
   (implies (and (symbol-listp hns)
@@ -677,9 +673,9 @@
       (l5-regular-file-contents (cdr (assoc-equal (car hns) fs))))
      (l5-regular-file-length (cdr (assoc-equal (car hns) fs))))))
   :hints
-  (("goal" :in-theory (enable l3-regular-file-entry-p))
-   ("subgoal *1/1''" :in-theory (disable l5-stat-correctness-1-lemma-2)
-    :use l5-stat-correctness-1-lemma-2)))
+  (("goal" :in-theory (e/d (l3-regular-file-entry-p)
+                           (l5-stat-correctness-1-lemma-2)))
+   ("subgoal *1/1" :use l5-stat-correctness-1-lemma-2)))
 
 ;; This theorem proves the equivalence of the l5 and l4 versions of rdchs.
 (defthm l5-rdchs-correctness-1
@@ -689,8 +685,8 @@
                 (natp n)
                 (block-listp disk)
                 (let ((file (l5-stat hns fs disk)))
-                     (and (or (not (l5-regular-file-entry-p file))
-                              (l5-regular-file-readable-p file user))))
+                  (and (or (not (l5-regular-file-entry-p file))
+                           (l5-regular-file-readable-p file user))))
                 (natp user))
            (equal (l4-rdchs hns (l5-to-l4-fs fs)
                             disk start n)
@@ -802,19 +798,19 @@
         (integerp user)
         (<= 0 user))
    (let
-    ((file (l5-stat hns fs disk))
-     (new-file (l5-stat hns
-                        (mv-nth 0
-                                (l5-wrchs hns fs disk alv start text user))
-                        (mv-nth 1
-                                (l5-wrchs hns fs disk alv start text user)))))
-    (implies (l5-regular-file-entry-p file)
-             (and (equal (l5-regular-file-user-read new-file)
-                         (l5-regular-file-user-read file))
-                  (equal (l5-regular-file-user new-file)
-                         (l5-regular-file-user file))
-                  (equal (l5-regular-file-other-read new-file)
-                         (l5-regular-file-other-read file)))))))
+       ((file (l5-stat hns fs disk))
+        (new-file (l5-stat hns
+                           (mv-nth 0
+                                   (l5-wrchs hns fs disk alv start text user))
+                           (mv-nth 1
+                                   (l5-wrchs hns fs disk alv start text user)))))
+     (implies (l5-regular-file-entry-p file)
+              (and (equal (l5-regular-file-user-read new-file)
+                          (l5-regular-file-user-read file))
+                   (equal (l5-regular-file-user new-file)
+                          (l5-regular-file-user file))
+                   (equal (l5-regular-file-other-read new-file)
+                          (l5-regular-file-other-read file)))))))
 
 (defthm
   l5-read-after-write-1-lemma-3
@@ -838,9 +834,9 @@
                            (l5-wrchs hns fs disk alv start text user2))
                    (mv-nth 1
                            (l5-wrchs hns fs disk alv start text user2)))))
-        (implies (l5-regular-file-entry-p file)
-                 (equal (l5-regular-file-readable-p new-file user1)
-                        (l5-regular-file-readable-p file user1)))))
+     (implies (l5-regular-file-entry-p file)
+              (equal (l5-regular-file-readable-p new-file user1)
+                     (l5-regular-file-readable-p file user1)))))
   :hints (("goal" :in-theory (enable l5-regular-file-readable-p))))
 
 (defthm
@@ -1006,20 +1002,16 @@
       :in-theory
       (disable (:definition take)
                (:definition nth)
-               (:linear non-nil-nth)
                (:definition make-blocks)
                (:definition unmake-blocks)
                (:definition l2-fs-p)
-               (:definition first-n-ac)
                (:definition true-listp)
                (:type-prescription l3-regular-file-entry-p)
                (:rewrite default-cdr)
                (:type-prescription l2-fs-p)
                (:rewrite default-car)
-               (:rewrite already-a-character-list)
                (:rewrite l2-stat-correctness-1-lemma-5)
                (:definition l3-fs-p)
-               (:rewrite character-listp-of-first-n-ac)
                (:definition character-listp)
                (:rewrite l2-wrchs-returns-fs-lemma-3)
                (:rewrite l2-fs-p-assoc)
@@ -1038,12 +1030,10 @@
                (:definition boolean-listp)
                (:rewrite insert-text-correctness-1)
                (:rewrite l2-create-correctness-1-lemma-2)
-               (:definition remove1-assoc-equal)
                (:definition set-indices)
                (:type-prescription fetch-blocks-by-indices)
                (:rewrite fetch-blocks-by-indices-correctness-2)
                (:rewrite default-<-1)
-               (:rewrite non-nil-nth)
                (:rewrite default-<-2)
                (:type-prescription true-listp)
                (:rewrite l4-wrchs-correctness-1-lemma-18)
@@ -1058,7 +1048,6 @@
                (:rewrite commutativity-of-+)
                (:rewrite l5-regular-file-entry-p-correctness-1)
                (:type-prescription nat-listp)
-               (:type-prescription true-listp-first-n-ac-type-prescription)
                (:rewrite rationalp-implies-acl2-numberp)
                (:type-prescription indices-marked-p)
                (:definition nat-listp)
@@ -1198,21 +1187,17 @@
                         l4-read-after-write-2
                         (:DEFINITION L5-WRCHS)
                         (:DEFINITION NTH)
-                        (:LINEAR NON-NIL-NTH)
                         (:DEFINITION UNMAKE-BLOCKS)
                         (:DEFINITION MAKE-BLOCKS)
-                        (:DEFINITION FIRST-N-AC)
                         (:DEFINITION TRUE-LISTP)
                         (:TYPE-PRESCRIPTION L3-REGULAR-FILE-ENTRY-P)
                         (:DEFINITION L4-WRCHS)
                         (:DEFINITION L5-STAT)
                         (:DEFINITION L2-FS-P)
                         (:REWRITE DEFAULT-CDR)
-                        (:REWRITE ALREADY-A-CHARACTER-LIST)
                         (:REWRITE
                          L5-REGULAR-FILE-ENTRY-P-CORRECTNESS-3 . 2)
                         (:REWRITE DEFAULT-CAR)
-                        (:REWRITE CHARACTER-LISTP-OF-FIRST-N-AC)
                         (:REWRITE DEFAULT-+-2)
                         (:DEFINITION L3-STAT)
                         (:REWRITE DEFAULT-+-1)
@@ -1231,12 +1216,10 @@
                         (:TYPE-PRESCRIPTION L3-FS-P)
                         (:REWRITE L5-FS-P-ASSOC)
                         (:REWRITE UNMAKE-MAKE-BLOCKS-LEMMA-1)
-                        (:DEFINITION REMOVE1-ASSOC-EQUAL)
                         (:REWRITE
                          L3-REGULAR-FILE-ENTRY-P-CORRECTNESS-1)
                         (:DEFINITION BOOLEAN-LISTP)
                         (:TYPE-PRESCRIPTION MAKE-BLOCKS)
-                        (:REWRITE NON-NIL-NTH)
                         (:REWRITE L5-WRCHS-CORRECTNESS-1-LEMMA-1)
                         (:REWRITE L5-STAT-CORRECTNESS-2-LEMMA-1)
                         (:DEFINITION MAKE-CHARACTER-LIST)

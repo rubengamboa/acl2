@@ -38,6 +38,7 @@
 (include-book "std/basic/arith-equiv-defs" :dir :system)
 ;; (include-book "centaur/bitops/part-select" :dir :system)
 (include-book "bitstruct-theory")
+(include-book "misc/without-waterfall-parallelism" :dir :system)
 (local (include-book "centaur/bitops/equal-by-logbitp" :dir :system))
 (local (include-book "centaur/bitops/ihsext-basics" :dir :system))
 (local (include-book "arithmetic/top-with-meta" :dir :system))
@@ -268,8 +269,8 @@
 		 (intern-in-package-of-symbol "X" name)))
 
 
-       ((mv fields width fields-fullp) 
-        (parse-bitstruct-fields 
+       ((mv fields width fields-fullp)
+        (parse-bitstruct-fields
          (if msb-first (rev orig-fields) orig-fields)
          0 name bitstruct-table)))
     (make-bitstruct :name name
@@ -351,7 +352,6 @@
 (define bitstruct-pred (x)
   (b* (((bitstruct x))
        (short (cat "Recognizer for @(see " (xdoc::full-escape-symbol x.name) ") bit structures."))
-       (bool (intern-in-package-of-symbol "BOOL" x.name))
        (def (if x.signedp
 		`(signed-byte-p ,x.width ,x.xvar)
 	      `(unsigned-byte-p ,x.width ,x.xvar)))
@@ -369,7 +369,6 @@
     `(define ,x.pred (,x.xvar)
        :parents (,x.name)
        :short ,short
-       :returns ,bool
        :progn t
        :guard-hints (("goal" :in-theory (enable unsigned-byte-p signed-byte-p)))
        ,full-def
@@ -507,6 +506,9 @@
   (b* (((bitstruct x))
        (fieldnames (bitstruct-primary-fields->names x.fields)))
     `(define ,x.name ,(bitstruct-fields->ctor-formals x.fields)
+       ;; The parent is nil here to avoid xdoc topic name clash with the
+       ;; defsection introduced by the defbitstruct event.
+       :parents nil
        :returns (,x.name ,x.pred
 			 ,@(and (not x.fullp)
 				`(:hints (("goal" :in-theory
@@ -625,22 +627,23 @@
 	    (local (in-theory (enable equal-of-bool->bit)))
 
 	    (local
-	     (defthm defbitstruct-write-with-mask-lemma
-	       (implies (,x.equiv-under-mask ,x.xvar y ,(ash (logmask field.width) field.lsb))
-			(equal (,field.accessor ,x.xvar)
-			       (,field.accessor y)))
-	      :hints (("goal" :in-theory (enable ,x.equiv-under-mask
-						 int-equiv-under-mask
-						 equal-of-bit->bool
-						 logand-mask-logxor-equal-0
-						 logand-const-of-logapp
-						 ,@(and (not field.fullp)
-							`(,x.fix))
-						 . ,subfield-accs))
-		      (bitstruct-logbitp-reasoning)
-		      (and stable-under-simplificationp
-			   '(:in-theory (enable bool->bit))))
-	      :rule-classes nil))
+             (acl2::without-waterfall-parallelism ; because of bitstruct-logbitp-reasoning
+              (defthm defbitstruct-write-with-mask-lemma
+                (implies (,x.equiv-under-mask ,x.xvar y ,(ash (logmask field.width) field.lsb))
+                         (equal (,field.accessor ,x.xvar)
+                                (,field.accessor y)))
+                :hints (("goal" :in-theory (enable ,x.equiv-under-mask
+                                                   int-equiv-under-mask
+                                                   equal-of-bit->bool
+                                                   logand-mask-logxor-equal-0
+                                                   logand-const-of-logapp
+                                                   ,@(and (not field.fullp)
+                                                          `(,x.fix))
+                                                   . ,subfield-accs))
+                        (bitstruct-logbitp-reasoning)
+                        (and stable-under-simplificationp
+                             '(:in-theory (enable bool->bit))))
+                :rule-classes nil)))
 
 
 	    ;; ,@(and (not field.fullp)
@@ -907,7 +910,7 @@
 	   ,@(and (or x.signedp field.signedp)
 		  '(signed-byte-p-+1
 		    signed-byte-p-one-bigger-when-unsigned-byte-p))
-	   ,@(and field.subfield-hierarchy                  
+	   ,@(and field.subfield-hierarchy
                   `(,@subfield-fns
                     simplify-subfield-updater-guard-expression-with-inner-logext
                     simplify-subfield-updater-guard-expression-with-more-logext
@@ -964,19 +967,20 @@
 			 ;; (bitstruct-logbitp-reasoning)
 			 ))
 
-	    (defret ,(intern-in-package-of-symbol
-		      (cat (symbol-name field.updater) "-EQUIV-UNDER-MASK")
-		      x.name)
-	      (,x.equiv-under-mask ,new-x ,x.xvar
-				   ,(if last-field
-					(lognot (ash -1 field.lsb))
-				      (lognot (ash (logmask field.width) field.lsb))))
-	      :hints(("Goal" :in-theory (e/d (,x.equiv-under-mask
-					      int-equiv-under-mask)
-					     (,field.updater)))
-		     (and stable-under-simplificationp
-			  '(:in-theory (enable ,field.updater)))
-		     (bitstruct-logbitp-reasoning))))))))
+            (acl2::without-waterfall-parallelism ; because of bitstruct-logbitp-reasoning
+             (defret ,(intern-in-package-of-symbol
+                       (cat (symbol-name field.updater) "-EQUIV-UNDER-MASK")
+                       x.name)
+               (,x.equiv-under-mask ,new-x ,x.xvar
+                                    ,(if last-field
+                                         (lognot (ash -1 field.lsb))
+                                       (lognot (ash (logmask field.width) field.lsb))))
+               :hints(("Goal" :in-theory (e/d (,x.equiv-under-mask
+                                               int-equiv-under-mask)
+                                              (,field.updater)))
+                      (and stable-under-simplificationp
+                           '(:in-theory (enable ,field.updater)))
+                      (bitstruct-logbitp-reasoning)))))))))
 
 
 (define bitstruct-field-accessors (fields x)
@@ -1094,7 +1098,7 @@
                            (if x.signedp "signed" "unsigned")
                            " bitstruct type."))
           :long ,long
-          (set-inhibit-warnings "non-rec" "disable" "subsume") ;; implicitly local 
+          (set-inhibit-warnings "non-rec" "disable" "subsume") ;; implicitly local
           (local (include-book "centaur/bitops/ihsext-basics" :dir :system))
           (local (include-book "centaur/bitops/equal-by-logbitp" :dir :system))
           (local (include-book "arithmetic/top-with-meta" :dir :system))
@@ -1290,8 +1294,8 @@ correspond to sub-subfields of the subfield type.  For example:</p>
  (defbitstruct toplevel
    ((ss innermost :subfields (saa sbb))
     (tt midlevel  :subfields ((tii (tiaa tibb))
-			      tqq
-			      tjj))))
+                              tqq
+                              tjj))))
  })
 
 <p>For the @('toplevel') bitstruct, this generates the following subfield

@@ -1,7 +1,3 @@
-; Copyright (C) 2017, Regents of the University of Texas
-; Written by Mihir Mehta
-; License: A 3-clause BSD license.  See the LICENSE file distributed with ACL2.
-
 (in-package "ACL2")
 
 (defun bounded-nat-listp (l b)
@@ -40,11 +36,17 @@
   (implies (and (<= x y) (bounded-nat-listp l x))
            (bounded-nat-listp l y)))
 
-(defthm bounded-nat-listp-correctness-6
+(defthm bounded-nat-listp-of-make-list-ac
   (implies (and (bounded-nat-listp ac b) (natp val) (< val b))
            (bounded-nat-listp (make-list-ac n val ac) b)))
 
-(defund lower-bounded-integer-listp (l b)
+(defthm car-of-last-when-bounded-nat-listp
+  (implies (and (< 0 b) (bounded-nat-listp l b))
+           (< (car (last l)) b))
+  :hints (("goal" :induct (bounded-nat-listp l b)))
+  :rule-classes :linear)
+
+(defun lower-bounded-integer-listp (l b)
   (declare (xargs :guard (integerp b)))
   (if (atom l)
       (equal l nil)
@@ -58,10 +60,12 @@
            (equal (lower-bounded-integer-listp (binary-append x y)
                                      b)
                   (and (lower-bounded-integer-listp x b)
-                       (lower-bounded-integer-listp y b))))
-  :hints (("Goal" :in-theory (enable lower-bounded-integer-listp))))
+                       (lower-bounded-integer-listp y b)))))
 
 (defthmd lower-bounded-integer-listp-correctness-5
   (implies (and (<= y x) (lower-bounded-integer-listp l x))
-           (lower-bounded-integer-listp l y))
-  :hints (("Goal" :in-theory (enable lower-bounded-integer-listp))))
+           (lower-bounded-integer-listp l y)))
+
+(defthm lower-bounded-integer-listp-of-remove
+  (implies (lower-bounded-integer-listp l b)
+           (lower-bounded-integer-listp (remove-equal x l) b)))

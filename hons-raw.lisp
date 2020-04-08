@@ -1,5 +1,5 @@
-; ACL2 Version 8.1 -- A Computational Logic for Applicative Common Lisp
-; Copyright (C) 2018, Regents of the University of Texas
+; ACL2 Version 8.2 -- A Computational Logic for Applicative Common Lisp
+; Copyright (C) 2019, Regents of the University of Texas
 
 ; This version of ACL2 is a descendent of ACL2 Version 1.9, Copyright
 ; (C) 1997 Computational Logic, Inc.  See the documentation topic NOTE-2-0.
@@ -913,7 +913,18 @@
 ; is fixed in CCL, in which case this code could be simplified.
 
   (let ((table (hl-mht :test #'eq :size (max 100 fal-ht-size)
-; We could specify :lock-free t, but perhaps it's faster with default nil.
+
+; In early 2019, Rob Sumners told us that Centaur was hitting an apparent bug
+; in how CCL resizes :weak :key hash-tables with :lock-free nil.  He and the
+; Centaur folks suggested, after he did some timing tests, that we work around
+; that issue by using :lock-free t here.  Our own stress test (see the comment
+; in mf-mht about an experiment in directory books/centaur/esim/tutorial/)
+; showed about 1/2% slowdown with :lock-free t here.  On March 22, 2019, Rob
+; Sumners followed up to request that :lock-free is once again (the default of)
+; nil.  He let us know at that time that CCL has been stable for awhile and
+; that there were issues when :lock-free t tables were stressed.  Thus, we no
+; longer include :lock-free t for #+ccl.
+
                        :weak :key)))
     #+ccl
     ;; This isn't necessary with lock-free, but doesn't hurt.  Note that T is
@@ -2282,15 +2293,35 @@
 
   (let ((action (get-slow-alist-action *the-live-state*)))
     (when action
-      (format *error-output* "
+      (let ((normal-string "
 *****************************************************************
 Fast alist discipline violated in ~a.
 See :DOC slow-alist-warning to suppress or break on this warning.
+*****************************************************************~%"))
+        #-acl2-par
+        (format *error-output* normal-string name)
+        #+acl2-par
+        (let ((prover-par (and (f-get-global 'waterfall-parallelism *the-live-state*)
+                               (f-get-global 'in-prove-flg *the-live-state*))))
+          (cond ((or prover-par
+                     (f-get-global 'parallel-execution-enabled *the-live-state*))
+                 (format *error-output* "
+*****************************************************************
+Fast alist discipline violated in ~a.  (May be from
+~aparallelism; see :DOC unsupported-~aparallelism-features.)
+See :DOC slow-alist-warning to suppress or break on this warning.
 *****************************************************************~%"
-              name)
+                         name
+                         (if prover-par
+                             "waterfall-"
+                           "")
+                         (if prover-par
+                             "waterfall-"
+                           "")))
+                (t (format *error-output* normal-string name)))))
       (when (eq action :break)
         (format *error-output* "
-To avoid the following break and get only the above warning:~%  ~a~%"
+To avoid the following break and get only the above warning:~%  ~s~%"
                 '(set-slow-alist-action :warning))
         (break$)))))
 
@@ -2555,7 +2586,7 @@ or suppress this warning message with~%  ~a~%
               '(set-slow-alist-action nil))
       (when (eq action :break)
         (format *error-output* "
-To avoid the following break and get only the above warning:~%  ~a~%"
+To avoid the following break and get only the above warning:~%  ~s~%"
                 '(set-slow-alist-action :warning))
         (break$)))))
 

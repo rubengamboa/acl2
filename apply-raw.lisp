@@ -1,5 +1,5 @@
-; ACL2 Version 8.1 -- A Computational Logic for Applicative Common Lisp
-; Copyright (C) 2018, Regents of the University of Texas
+; ACL2 Version 8.2 -- A Computational Logic for Applicative Common Lisp
+; Copyright (C) 2019, Regents of the University of Texas
 
 ; This version of ACL2 is a descendent of ACL2 Version 1.9, Copyright
 ; (C) 1997 Computational Logic, Inc.  See the documentation topic NOTE-2-0.
@@ -28,9 +28,9 @@
 ; executable functions attached to badge-userfn and apply$-userfn.  We proceed
 ; in four main steps:
 
-; * define concrete-badge-userfn, which will be attached to badge-userfn
+; * define doppelganger-badge-userfn, which will be attached to badge-userfn
 
-; * define concrete-apply$-userfn, which will be attached to apply$-userfn
+; * define doppelganger-apply$-userfn, which will be attached to apply$-userfn
 
 ; * optimize apply$-lambda with compilation and caching
 
@@ -38,7 +38,7 @@
 ;   full version of the proof sketched in the paper ``Limited Second Order
 ;   Functionality in a First Order Setting''
 
-; The two concrete- functions mentioned above are actually partially
+; The two doppelganger- functions mentioned above are actually partially
 ; constrained in other-events.lisp; the definitions here are their raw Lisp
 ; implementations.  The model described in the paper (and justified in the
 ; essay here) is relevant because, in addition to making the warrants valid, it
@@ -60,14 +60,14 @@
 
 ;    (include-book "projects/apply/apply" :dir :system)
 ;    (defattach
-;      (badge-userfn concrete-badge-userfn)
-;      (apply$-userfn concrete-apply$-userfn)
+;      (badge-userfn doppelganger-badge-userfn)
+;      (apply$-userfn doppelganger-apply$-userfn)
 ;      :hints
-;      (("Goal" :use (concrete-badge-userfn-type
-;                     concrete-apply$-userfn-takes-arity-args))))
+;      (("Goal" :use (doppelganger-badge-userfn-type
+;                     doppelganger-apply$-userfn-takes-arity-args))))
 ;    (value :q)
 ;    (defun apply$-lambda (fn args) (concrete-apply$-lambda fn args))
-;    (setq *allow-concrete-execution-of-apply-stubs* t)
+;    (setq *allow-doppelganger-execution-of-apply-stubs* t)
 ;    (lp)
 ;    (quote (end of rubric))
 
@@ -79,24 +79,21 @@
 ; -----------------------------------------------------------------
 
 ; In the days when The Rubric was necessary, the raw lisp variable
-; *allow-concrete-execution-of-apply-stubs* told us whether it had been
+; *allow-concrete-execution-of-apply-stubs* (which we would now call
+; *allow-doppelganger-execution-of-apply-stubs*) told us whether it had been
 ; executed.  Later, we just set that variable to t.  Since then (after
 ; Version_8.0) we have eliminated that variable.
 
 (defun query-badge-userfn-structure (msgp fn wrld)
 
 ; This function takes a purported function symbol, fn, and determines if it has
-; been assigned a badge by def-warrant.  We return one of three answers:
+; been assigned a badge by defwarrant.  We return one of three answers:
 
 ; - (mv nil badge): fn was found in the badge-table and the badge is badge.
-;      Note that fn may or may not have a warrant!  It does have a warrant if
-;      (access apply$-badge badge :authorization-flg) = (cadr badge) = t, and
-;      it doesn't have a warrant otherwise.  Because we haven't included the
-;      defrec for apply$-badge we have to use the cadr form rather than the
-;      access form.  If fn has a warrant, it is named APPLY$-WARRANT-fn.
+;      Fn's warrant is named APPLY$-WARRANT-fn.
 
 ; - (mv msg nil): there is no entry for fn in the badge-table, so no
-;      def-warrant has been successful on fn; msg is a tilde-@ msg possibly
+;      defwarrant has been successful on fn; msg is a tilde-@ msg possibly
 ;      explaining in a little more detail why fn doesn't have a badge.
 
 ; - (mv t nil): same as above but we don't bother to explain why.
@@ -135,16 +132,16 @@
        (t (mv nil bdg)))))))
 
 ; The (extensible) attachments for badge-userfn and apply$-userfn are
-; concrete-badge-userfn and concrete-apply$-userfn.  They will be attached to
-; badge-userfn and apply$-userfn to extend the evaluation theory appropriately.
-; See the defattach event at the end of apply.lisp.  We define the two
-; concrete- functions below.
+; doppelganger-badge-userfn and doppelganger-apply$-userfn.  They will be
+; attached to badge-userfn and apply$-userfn to extend the evaluation theory
+; appropriately.  See the defattach event at the end of apply.lisp.  We define
+; the two doppelganger- functions below.
 
 ; Because we want to implement their bodies in raw Lisp, we would like to
 ; introduce them with defun-overrides commands like
 
-; (defun-overrides concrete-badge-userfn (fn) ...)
-; (defun-overrides concrete-apply$-userfn (fn args) ...)
+; (defun-overrides doppelganger-badge-userfn (fn) ...)
+; (defun-overrides doppelganger-apply$-userfn (fn args) ...)
 
 ; But the defun-overrides macro requires that STATE be among the formals of the
 ; function introduced and it is not.  So we can't use defun-overrides per se.
@@ -157,27 +154,27 @@
 ; (b) is that we cannot apply$ functions to stobjs or state.
 
 ; Here is the STATE-free expansion of
-; (defun-overrides concrete-badge-userfn (fn) ...)
+; (defun-overrides doppelganger-badge-userfn (fn) ...)
 ; ==>
 ;  (assert (member 'state formals :test 'eq))
-(progn (push 'concrete-badge-userfn *defun-overrides*) ; see add-trip
+(progn (push 'doppelganger-badge-userfn *defun-overrides*) ; see add-trip
 
 ; The next two items are pushed to the left margin so they get picked up by
 ; etags.  But they're really part of the progn!
 
 ; The following defun has two notes in it which are given afterwards.
 
-; (Note: for now we leave comments of the form ``Error {[x]}'', to support our
-; own testing that provokes these messages.)
+(defun doppelganger-badge-userfn (fn)
 
-(defun concrete-badge-userfn (fn)
+; See the Essay on Evaluation of Apply$ and Loop$ Calls During Proofs.
+
   (cond
-   ((not *aokp*)    ; See Note 1.
+   ((and (null *aokp*) ; See Note 1.
+         (null *warrant-reqs*))
     (throw-raw-ev-fncall ; See Note 2.
      (list* 'ev-fncall-null-body-er
             nil
-; Error {[1]}
-            'concrete-badge-userfn
+            'doppelganger-badge-userfn
             (print-list-without-stobj-arrays
              (list fn)))))
 
@@ -199,58 +196,40 @@
    (t (mv-let (failure-msg bdg)
         (query-badge-userfn-structure t fn (w *the-live-state*))
         (cond
-         ((and (null failure-msg)
-               (cadr bdg)) ; = (access apply$-badge bdg :authorization-flg)
+         ((null failure-msg)
+          (maybe-extend-warrant-reqs fn nil 'badge-userfn)
           bdg)
-         (t (let* ((failure-msg
-                    (if failure-msg
-                        failure-msg
-; Error {[4.5]}
-                        (msg "~x0 returns multiple values, so it has a badge ~
-                              but no warrant"
-                             fn)))
-                   (msg
-                    (cond
-                     ((eq *aokp* 'badge-userfn)
-; Error {[2]}
-                      (msg "The value of BADGE-USERFN is not specified on ~
-                            ~x0 because ~@1."
-                           fn failure-msg))
-                     ((eq *aokp* t)
-; Error {[3]}
-                      (msg "The value of CONCRETE-BADGE-USERFN is not ~
-                            specified on ~x0 because ~@1."
-                           fn failure-msg))
-                     (t
-; Error {[4]}
-                      (msg "The value of ~x0 is not specified.  ~x0 is a ~
-                            constrained function with ~x1 as its attachment ~
-                            and in this instance that attachment calls ~
-                            CONCRETE-BADGE-USERFN on ~x2 and is not ~
-                            specified because ~@3."
-                           *aokp*
-                           (symbol-value
-                            (attachment-symbol *aokp*))
-                           fn
-                           failure-msg)))))
-              (throw-raw-ev-fncall ; See Note 3.
-               (list* 'ev-fncall-null-body-er
-                      nil
-                      msg
-                      (print-list-without-stobj-arrays
-                       (list fn)))))))))))
+         (t (throw-raw-ev-fncall
+             (list* 'ev-fncall-null-body-er
+                    nil
 
-; Notes on CONCRETE-BADGE-USERFN
+; See the comment under the second throw-raw-ev-fncall in
+; doppelganger-apply$-userfn, for why we assume here that this call has come
+; from badge-userfn.
+
+                    (msg "The value of ~x0 is not specified on ~x1 because ~
+                          ~@2."
+                         'BADGE-USERFN fn failure-msg)
+                    (print-list-without-stobj-arrays
+                     (list fn))))))))))
+
+; Notes on DOPPELGANGER-BADGE-USERFN
 
 ; Note 1. on the test of *aokp*: We once thought that it was unnecessary to
-; test *aokp* in concrete-badge-userfn.  The (faulty) reasoning was that
-; concrete-badge-userfn is the attachment for badge-userfn.  We wouldn't be
-; running concrete-badge-userfn if attachments weren't ok.  The flaw in that
-; reasoning is that concrete-badge-userfn is itself a :logic mode function and
-; might be called directly by the user at the top level of the ACL2 loop, or
-; used in some other function used in proofs or hints.  So we might find
-; ourselves executing concrete-badge-userfn even though *aokp* is nil.  We need
-; for it to act undefined when *aokp* is nil.
+; test *aokp* in doppelganger-badge-userfn.  The (faulty) reasoning was that
+; doppelganger-badge-userfn is the attachment for badge-userfn.  We wouldn't be
+; running doppelganger-badge-userfn if attachments weren't ok.  The flaw in
+; that reasoning is that doppelganger-badge-userfn is itself a :logic mode
+; function and might be called directly by the user at the top level of the
+; ACL2 loop, or used in some other function used in proofs or hints.  So we
+; might find ourselves executing doppelganger-badge-userfn even though *aokp*
+; is nil.  We need for it to act undefined when *aokp* is nil.  This same
+; reasoning applies to doppelganger-apply$-userfn.  More recently, however, we
+; have made doppelganger-badge-userfn untouchable; thus, we could now remove
+; the *aokp* test.  (The issue for the *warrant-reqs* test is similar.)  But
+; for now, at least, we'll leave this *aokp* test, mainly to protect against
+; inappropriate execution if untouchability is removed, but with the bonus that
+; this test provides extra protection in case our thinking here is flawed!
 
 ; Note 2.  on throw-raw-ev-fncall: Throughout this function we cause errors
 ; when the answer is not determined by the known warrants.  The various errors
@@ -272,10 +251,10 @@
 ; we do above.  So instead of throw-without-attach we use its expansion,
 ; without the quote on the ``fn'' arg.
 
-; End of Notes on CONCRETE-BADGE-USERFN
+; End of Notes on DOPPELGANGER-BADGE-USERFN
 
-(defun-*1* concrete-badge-userfn (fn)
-  (concrete-badge-userfn fn))
+(defun-*1* doppelganger-badge-userfn (fn)
+  (doppelganger-badge-userfn fn))
 
 ; End of progn from ``defun-overrides''
 )
@@ -283,7 +262,7 @@
 ; Essay on a Misguided Desire for Erroneous APPLY$s to Print Exactly the
 ; Same Error Messages whether Evaluation of APPLY$ Stubs is Supported or Not
 
-; One possible objection to our handling of errors in concrete-badge-userfn
+; One possible objection to our handling of errors in doppelganger-badge-userfn
 ; arises with the question: If we attempt an evaluation of apply$ that is bound
 ; to fail, do we get exactly the same error message regardless of whether
 ; evaluation of the critical apply$ constrained functions is supported or not?
@@ -336,135 +315,133 @@
               (concrete-check-apply$-hyp-tamep-hyp (cdr ilks) (cdr args) wrld)))
         (t (concrete-check-apply$-hyp-tamep-hyp (cdr ilks) (cdr args) wrld))))
 
+(defun maybe-extend-warrant-reqs (fn args caller)
+
+; See the Essay on Evaluation of Apply$ and Loop$ Calls During Proofs.
+
+; This function is evaluated only for side effect, to update *warrant-reqs* as
+; appropriate to reflect the need for a true warrant on fn when applying fn to
+; args.  Caller is used only in an error message (which quite possibly nobody
+; will see), to reflect that caller, which is apply$-userfn or badge-userfn as
+; of this writing.
+
+; See *warrant-reqs* for a description of the values of that variable, which
+; should serve to explain the code below.
+
+  (let ((warrant-reqs *warrant-reqs*)) ; bind the special, for efficiency
+    (cond ((null warrant-reqs) nil)
+          ((eq t warrant-reqs)
+           (setq *warrant-reqs* (list fn)))
+          ((eq :nil! warrant-reqs)
+           (setq *warrant-reqs* fn) ; the function responsible for the abort
+           (throw-raw-ev-fncall
+            (list* 'ev-fncall-null-body-er
+                   nil
+                   (msg "The value of ~x0 is not specified on ~x1 because the ~
+                         use of warrants is not permitted in this context."
+                        caller fn)
+                   (print-list-without-stobj-arrays
+                    (list fn args)))))
+          ((symbolp warrant-reqs) ; invalid value for *warrant-reqs*
+           (er hard! 'maybe-extend-warrant-reqs
+               "Implementation error: *warrant-reqs* has an input value of ~
+                ~x0."
+               warrant-reqs))
+          ((member fn warrant-reqs :test #'eq) nil)
+          (t (push fn *warrant-reqs*)))))
+
 ; Here is the STATE-free expansion of
-; (defun-overrides concrete-apply$-userfn (fn args) ...)
+; (defun-overrides doppelganger-apply$-userfn (fn args) ...)
 ; ==>
 ;  (assert (member 'state formals :test 'eq))
-(progn (push 'concrete-apply$-userfn *defun-overrides*) ; see add-trip
+(progn (push 'doppelganger-apply$-userfn *defun-overrides*) ; see add-trip
 
 ; The next two items are pushed to the left margin so they get picked up by
 ; etags.  But they're really part of the progn!
 
-(defun concrete-apply$-userfn (fn args)
-;           (progn (chk-live-state-p ',name state)
+(defun doppelganger-apply$-userfn (fn args)
+
+; See the Essay on Evaluation of Apply$ and Loop$ Calls During Proofs.
+
   (cond
-   ((not *aokp*)
-    (throw-raw-ev-fncall
+   ((and (null *aokp*) ; See Note 1.
+         (null *warrant-reqs*))
+    (throw-raw-ev-fncall ; See Note 2.
      (list* 'ev-fncall-null-body-er
             nil
-; Error {[5]}
-            'concrete-apply$-userfn
+            'doppelganger-apply$-userfn
             (print-list-without-stobj-arrays
              (list fn args)))))
    (t (mv-let (failure-msg bdg)
         (query-badge-userfn-structure t fn (w *the-live-state*))
         (cond
-         ((or failure-msg        ; there is no badge for fn
-              (null (cadr bdg))) ; fn is not warranted
-          (let* ((failure-msg
-                  (if failure-msg
-                      failure-msg
-; Error {[8.5]}
-                      (msg "~x0 returns multiple values, so it has a badge ~
-                            but no warrant"
-                           fn)))
-                 (msg (cond
-                       ((eq *aokp* 'apply$-userfn)
-; Error {[6]}
-                        (msg "The value of APPLY$-USERFN is not specified on ~
-                              ~x0 because ~@1."
-                             fn failure-msg))
-                       ((eq *aokp* t)
-; Error {[7]}
-                        (msg "The value of CONCRETE-APPLY$-USERFN is not ~
-                              specified on ~x0 because ~@1."
-                             fn failure-msg))
-                       (t
-; Error {[8]}
-                        (msg "The value of ~x0 is not specified.  ~x0 is a ~
-                              constrained function with ~x1 as its attachment ~
-                              and in this instance that attachment calls ~
-                              CONCRETE-APPLY$-USERFN on ~x2 and is not ~
-                              specified because ~@3."
-                             *aokp*
-                             (symbol-value
-                              (attachment-symbol *aokp*))
-                             fn
-                             failure-msg)))))
-            (throw-raw-ev-fncall
-             (list* 'ev-fncall-null-body-er
-                    nil
-                    msg
-                    (print-list-without-stobj-arrays
-                     (list fn args))))))
-          ((eq (cdddr bdg) t) ; = (access apply$-badge bdg :ilks)
-           (apply (*1*-symbol fn)
-                  (if (= (caddr bdg) ; = (access apply$-badge bdg :arity)
-                         (length args))
-                      args
-                      (take (caddr bdg) ; = (access apply$-badge bdg :arity)
-                            args))))
-          ((concrete-check-apply$-hyp-tamep-hyp
-            (cdddr bdg) ; = (access apply$-badge bdg :ilks)
-            args
-            (w *the-live-state*))
-           (apply (*1*-symbol fn)
-                  (if (= (caddr bdg) ; = (access apply$-badge bdg :arity)
-                         (length args))
-                      args
-                      (take (caddr bdg) ; = (access apply$-badge bdg :arity)
-                            args))))
-          (t
-           (let ((msg
-                  (cond
-                   ((eq *aokp* 'apply$-userfn)
-; Error {[9]}
-                    (msg "The value of APPLY$-USERFN is not specified~ ~
-                          when the first argument, fn, is ~x0, and the ~
-                          second argument, args, is ~x1.  Fn has badge ~x2 ~
-                          and args is not known to satisfy the tameness ~
-                          requirement of that badge."
-                         fn args bdg))
-                   ((eq *aokp* t)
-; Error {[10]}
-                    (msg "The value of CONCRETE-APPLY$-USERFN is not ~
-                          specified when the first argument, fn, is ~x0, and ~
-                          the second argument, args, is ~x1.  Fn has badge ~
-                          ~x2 and args is not known to satisfy the tameness ~
-                          requirement of that badge."
-                         fn args bdg))
-                   (t
-; Error {[11]}
-                    (msg "The value of ~x0 is not specified. ~x0 is a ~
-                          constrained function with ~x1 as its attachment and ~
-                          in this instance that attachment calls ~
-                          CONCRETE-APPLY$-USERFN with first argument, fn, ~
-                          being ~x2 and second argument, args, being ~x3.  ~
-                          But fn has badge ~x4 and args is not known to ~
-                          satisfy the tameness requirement of fn's badge."
-                         *aokp*
-                         (symbol-value
-                          (attachment-symbol *aokp*))
-                         fn
-                         args
-                         bdg)))))
-              (throw-raw-ev-fncall
-               (list* 'ev-fncall-null-body-er
-                      nil
-                      msg
-                      (print-list-without-stobj-arrays
-                       (list fn args)))))))))))
+         (failure-msg ; no badge for fn
+          (throw-raw-ev-fncall
+           (list* 'ev-fncall-null-body-er
+                  nil
 
-(defun-*1* concrete-apply$-userfn (fn args)
-  (concrete-apply$-userfn fn args))
+; The following message assumes that we got here by way of a call to
+; apply$-userfn.  Since doppelganger-apply$-userfn is untouchable, that must be
+; the case unless the user has changed that, in which case the error message
+; below might be confusing -- but surely nobody should remove untouchability of
+; doppelganger-apply$-userfn!  See the Essay on Memoization with Attachments.
+
+                  (msg "The value of ~x0 is not specified on ~x1 because ~@2."
+                       'APPLY$-USERFN fn failure-msg)
+                  (print-list-without-stobj-arrays
+                   (list fn args)))))
+         ((eq (access apply$-badge bdg :ilks) t)
+          (maybe-extend-warrant-reqs fn args 'apply$-userfn)
+          (if (int= (access apply$-badge bdg :out-arity) 1)
+              (apply (*1*-symbol fn)
+                     (if (= (access apply$-badge bdg :arity) (length args))
+                         args
+                       (take (access apply$-badge bdg :arity) args)))
+            (multiple-value-list
+             (apply (*1*-symbol fn)
+                    (if (= (access apply$-badge bdg :arity) (length args))
+                        args
+                      (take (access apply$-badge bdg :arity) args))))))
+         ((concrete-check-apply$-hyp-tamep-hyp
+           (access apply$-badge bdg :ilks)
+           args
+           (w *the-live-state*))
+          (maybe-extend-warrant-reqs fn args 'apply$-userfn)
+          (if (int= (access apply$-badge bdg :out-arity) 1)
+              (apply (*1*-symbol fn)
+                     (if (= (access apply$-badge bdg :arity) (length args))
+                         args
+                       (take (access apply$-badge bdg :arity) args)))
+            (multiple-value-list
+             (apply (*1*-symbol fn)
+                    (if (= (access apply$-badge bdg :arity) (length args))
+                        args
+                      (take (access apply$-badge bdg :arity) args))))))
+         (t
+          (throw-raw-ev-fncall
+           (list* 'ev-fncall-null-body-er
+                  nil
+
+; See a comment above about a corresponding msg in the previous
+; throw-raw-ev-fncall.
+
+                  (msg "The value of ~x0 is not specified when the first ~
+                        argument, fn, is ~x1, and the second argument, args, ~
+                        is ~x2.  Fn has badge ~x3 and args is not known to ~
+                        satisfy the tameness requirement of that badge."
+                       'APPLY$-USERFN fn args bdg)
+                  (print-list-without-stobj-arrays
+                   (list fn args))))))))))
+
+(defun-*1* doppelganger-apply$-userfn (fn args)
+  (doppelganger-apply$-userfn fn args))
 
 ; End of progn from ``defun-overrides''
 )
 
 ; What we've described so far is adequate to run APPLY$ and EV$ forms in the
-; evaluation theory after attaching the concrete- ``doppelgangers'' of
-; badge-userfn and apply$-userfn for the current world to those critical
-; functions.
+; evaluation theory after attaching the ``doppelgangers'' of badge-userfn and
+; apply$-userfn for the current world to those critical functions.
 
 ; Now we turn to the optimization of APPLY$-LAMBDA.  The following is provable:
 
@@ -473,7 +450,7 @@
 ;             (pairlis$ (lambda-object-formals fn)
 ;                       args)))
 
-; Indeed, it is apply$-lambda-opener in books/projects/apply/apply-lemmas.lisp.
+; Indeed, it is apply$-lambda-opener in books/projects/apply/base.lisp.
 ; The *1* version of apply$-lambda is what we call apply$-lambda-logical,
 ; essentially defined as the right-hand side of the equation above: interpret
 ; the body with ev$ under the alist binding the formals to the actuals.
@@ -490,17 +467,18 @@
 
 ; Essay on the CL-Cache Implementation Details
 
-; The cl-cache is a raw Lisp, not ACL2, structure that stores (by default) the
-; 1000 most recent LAMBDA-expressions applied in this session.  Technically,
-; *cl-cache* is a defrec triple consisting of a size, a circular alist, and a
-; pointer to the ``last'' cell in the alist before it closes the loop.  But
-; intuitively it is just an alist whose maximum size is as given but whose
-; virtual size is the number of entries from the beginning to the first nil.
-; The circularity gives us an extremely efficient way to add new entries at the
-; front without consing.  This abstract view of the *cl-cache* is violated in a
-; very important way: the *cl-cache* is intially a natural number greater than
-; 2 that is the size of the circular alist.  The first time we need to add a
-; lambda to the cache we allocate the full structure.
+; The cl-cache (compliant lambda cache) is a raw Lisp, not ACL2, structure that
+; stores (by default) the 1000 most recent LAMBDA-expressions applied in this
+; session.  Technically, *cl-cache* is a defrec triple consisting of a size, a
+; circular alist, and a pointer to the ``last'' cell in the alist before it
+; closes the loop.  But intuitively it is just an alist whose maximum size is
+; as given but whose virtual size is the number of entries from the beginning
+; to the first nil.  The circularity gives us an extremely efficient way to add
+; new entries at the front without consing.  This abstract view of the
+; *cl-cache* is violated in a very important way: the *cl-cache* is intially a
+; natural number greater than 2 that is the size of the circular alist.  The
+; first time we need to add a lambda to the cache we allocate the full
+; structure.
 
 ; To clear the *cl-cache* just set it to the desired size with (setq *cl-cache*
 ; k).  Initially, k=1000.  [It might be better to implement a function for
@@ -539,9 +517,9 @@
 ;    :GOOD.  If the line's status is not :GOOD, the :absolute-event-number is
 ;    nil.
 
-; - :extracts is a tuple (satisfies-exprs guard body) that allows us to
-;    re-check well-formedness and guard verification without re-parsing the
-;    lambda expression
+; - :extracts is a list of 3-tuples (satisfies-exprs guard . body) that allows
+;    us to re-check well-formedness and guard verification without re-parsing
+;    the lambda expression
 
 ; - :problem is an object that indicates why the :status isn't :GOOD
 
@@ -603,8 +581,10 @@
 ; whether the object is well-formed in w.  This can be done more efficiently
 ; than might at first appear since we know the object had status :GOOD or :BAD
 ; in some other world and hence is basically the right shape.  The :extracts of
-; the cache line give us the relevant TYPE expressions, guard, and body without
-; having to re-parse the object.  We basically make termp checks on these
+; the cache line give us the relevant TYPE expressions, guards, and bodies
+; without having to re-parse the object.  (:Extracts is a list of 3-tuples,
+; (satisfies-exprs guard . body), and extracted from the lambda object and from
+; every lambda object within it.)  We basically make termp checks on these
 ; components, additionally checking Common Lisp compliant symbol-classes for
 ; the functions involved in the guard and body, and tameness of the body.
 ; Provided these checks succeed we generate the guard obligations of the
@@ -613,7 +593,7 @@
 
 ; The algorithm sketched above is implemented by fetch-cl-cache-line.
 
-; Before Version 8.2, the cache management generated warnings about whether we
+; Through Version-8.1, the cache management generated warnings about whether we
 ; were running *1* apply$-lambda, i.e., Slow APPLY$ Warning.  There was a
 ; rather subtle use of eq versus equal that allowed us to keep these warnings
 ; to a minimum when the very same lambda was repeatedly applied as by a mapping
@@ -878,11 +858,11 @@
 
 ; - We need apply$ to reduce to apply$-userfn.
 ; - We need to look up the attachment of apply$-userfn, to get
-;   concrete-apply$-userfn, which amounts to evaluating special
+;   doppelganger-apply$-userfn, which amounts to evaluating special
 ;   variable (attachment-symbol apply$-userfn) =
 ;   ACL2_*1*_ACL2::APPLY$-USERFN (see throw-or-attach).
-; - Apply$-userfn calls concrete-apply$-userfn.
-; ... then, looking at the defun of concrete-apply$-userfn:
+; - Apply$-userfn calls doppelganger-apply$-userfn.
+; ... then, looking at the defun of doppelganger-apply$-userfn:
 ; - We need to look up the value of special variable *aokp*.
 ; - We need to compute query-badge-userfn-structure.
 ; - We need to call apply.
@@ -950,8 +930,8 @@
 ; - :absolute-event-number is nil or a number.  This entry is a number iff the
 ;    status is :GOOD and the number is the greatest absolute-event-number of
 ;    the world at the time the line was detected as :GOOD.
-; - :extracts is a tuple (list type-exprs guard body)
-;    that allows us to re-check well-formedness and guard verification without
+; - :extracts is a list of 3-tuples, (satisfies-exprs guard . body), that
+;    allows us to re-check well-formedness and guard verification without
 ;    re-parsing the lambda expression
 ; - :problem is an object that indicates why the :status is :BAD
 ; - :hits is the number of times we have fetched this line
@@ -1075,17 +1055,17 @@
         (hits (access cl-cache-line line :hits))
         (guard-code (access cl-cache-line line :guard-code))
         (lambda-code (access cl-cache-line line :lambda-code)))
-    (cw "~c0. :lambda-object ~y1
+    (cw "(~c0. :lambda-object ~y1
           ~t2:status         ~x3
           ~t2:abs-event-no   ~x4
           ~t2:extracts       ~y5
           ~t2:problem        ~y6
           ~t2:hits           ~x7~%~
           ~t2:guard-code     ~s8~%~
-          ~t2:lambda-code    ~s9~%~%"
+          ~t2:lambda-code    ~s9)~%"
          (cons i 4)
          lambda-object
-         6
+         7
          status
          absolute-event-number
          extracts
@@ -1094,21 +1074,46 @@
          (if guard-code "<code>" "NIL")
          (if lambda-code "<code>" "NIL"))))
 
-(defun print-cl-cache ()
+(defun print-cl-cache-fn (i j)
 
 ; This is just a debugging utility.  It returns nil but prints to the comment
-; window.  It is the raw Lisp code for the :logic mode constant nil function of
-; the same name, so the user can call (print-cl-cache) in the ACL2 loop and see
-; the cache.  We only print up to the first nil line.
+; window.  It is the raw Lisp workhorse for the :logic mode constant nil
+; ``function'' named print-cl-cache (which is really a macro so the arguments
+; can be optional).  The user can call (print-cl-cache ...) in the ACL2 loop and
+; see the cache.
+
+; I and j, when supplied, must be natural numbers corresponding to cache lines,
+; 0 <= i <= j < size.
+
+; We print all the cache lines between lines i and j (inclusive) or until we
+; see a nil line.  I defaults to 0.  J defaults to i if i was supplied and
+; otherwise to size-1.  If i and/or j are non-nil but not legal cache lines, i
+; defaults to 0 and j to size-1.
+
 
   (let ((cl-cache *cl-cache*))
     (cond ((consp cl-cache)
            (cw "See the defun of print-cl-cache for a comment containing ~
                 reminders about the cache!~%~%")
-           (loop for i from 0 to (- (access cl-cache cl-cache :size) 1)
-                 as line in (access cl-cache cl-cache :alist)
-                 until (null line)
-                 do (print-cl-cache-line i line))
+           (let* ((min
+                   (cond ((and (natp i)
+                               (< i (access cl-cache cl-cache :size)))
+                          i)
+                         (t 0)))
+                  (max
+                   (cond ((and (natp j)
+                               (<= min j)
+                               (< j (access cl-cache cl-cache :size)))
+                          j)
+                         ((and i (null j)) i)
+                         (t (- (access cl-cache cl-cache :size) 1)))))
+; This is a really dumb way to print from min to max but stops at the first
+; nil!
+             (loop for i from 0 to (- (access cl-cache cl-cache :size) 1)
+                   as line in (access cl-cache cl-cache :alist)
+                   until (null line)
+                   when (and (<= min i) (<= i max))
+                   do (print-cl-cache-line i line)))
            nil)
           (t (cw "Cl-cache is uninitialized with size ~x0.~%"
                  *cl-cache*)
@@ -1150,30 +1155,6 @@
       (setf (cdr last) new-alist))
     line))
 
-(defun compile-lambda-object (x)
-
-; We know x is a well-formed lambda object and we compile it after stripping
-; off the lambda$-bodyp tag if present.  This might be made more efficient: If
-; the body is tagged as having come from a lambda$, e.g., is (RETURN-LAST
-; 'PROGN '(LAMBDA$ ...) body), we might be tempted to compile the (LAMBDA$ ...)
-; as a LAMBDA, rather than to compiler the body.  The (LAMBDA$ ...) is what the
-; user typed whereas the body is fully translated, e.g., the former might use *
-; where the latter uses binary-*.  This would be ok since we only run the
-; compiled code if the guards are verified and hold on the actuals.  But there
-; is a major problem with this attempt at efficiency: how do we know that the
-; tagged body actually corresponds to the (LAMBDA ...) given that the user can
-; counterfeit a tagged lambda?  Rather than think that out, we just use the
-; body!
-
-  (let ((body (lambda-object-body x))
-        (dcl (lambda-object-dcl x)))
-    (cond ((lambda$-bodyp body)
-           (compile nil (make-lambda-object
-                         (lambda-object-formals x)
-                         dcl
-                         (remove-guard-holders body))))
-          (t (compile nil x)))))
-
 (defun invalidate-some-cl-cache-lines (flg wrld)
 
 ; Flg is either EXTENSION or RETRACTION.  Wrld is the about-to-be-installed
@@ -1214,6 +1195,28 @@
 ; Restore the cache.
          (setq *cl-cache* cl-cache)
          nil)))
+
+(defun collect-from-extracts (key extracts acc)
+
+; Key should be one of :satisfies-exprs, :guard, or :body.  Extracts is a list
+; of 3-tuples (satisfies-exprs guard . body).  We map over exports and collect
+; all the terms in the key slot and union them into acc.  The order of the terms
+; is reversed from their appearance-order in extracts.
+
+  (cond
+   ((endp extracts) acc)
+   (t (collect-from-extracts
+       key
+       (cdr extracts)
+       (case key
+         (:satisfies-exprs
+; We use the -removing-duplicates version here to reverse the satisfies-exprs
+; as they're added to the accumulator.
+          (union-equal-removing-duplicates (car (car extracts)) acc))
+         (:guard
+          (add-to-set-equal (cadr (car extracts)) acc))
+         (otherwise
+          (add-to-set-equal (cddr (car extracts)) acc)))))))
 
 (defun maybe-re-validate-cl-cache-line (line w state)
 
@@ -1263,24 +1266,25 @@
 ; recompile anyway.
 
   (let* ((ens (ens state))
-         (formals (lambda-object-formals
-                   (access cl-cache-line line :lambda-object)))
-         (extracts (access cl-cache-line line :extracts))
-         (type-exprs (car extracts))
-         (guard (cadr extracts))
-         (body (caddr extracts)))
+         (extracts (access cl-cache-line line :extracts)))
     (assert (eq (access-cl-cache-line line :status) :UNKNOWN))
     (setf (access-cl-cache-line line :problem) 're-validation-interrupted)
     (cond
-     ((well-formed-lambda-objectp1 formals type-exprs guard body w)
+     ((well-formed-lambda-objectp1 extracts w)
       (let* ((non-compliant-fns1
               (collect-non-common-lisp-compliants
-               (all-fnnames-exec guard)
+               (all-fnnames1-exec
+                t
+                (collect-from-extracts :guard extracts nil)
+                nil)
                w))
              (non-compliant-fns2
               (or non-compliant-fns1
                   (collect-non-common-lisp-compliants
-                   (all-fnnames-exec body)
+                   (all-fnnames1-exec
+                    t
+                    (collect-from-extracts :body extracts nil)
+                    nil)
                    w))))
         (cond
          ((null non-compliant-fns2)
@@ -1315,7 +1319,7 @@
                  (access cl-cache-line line :lambda-object)
                  nil ; debug-p
                  ens w
-                 nil nil nil)) ; safe-mode gc-off ttree
+                 nil nil nil))       ; safe-mode gc-off ttree
             (declare (ignore ttree)) ; assumption-free ttree
             (mv-let (cl-set1 ttree calist)
               (tau-clausep-lst cl-set ens w nil nil state nil)
@@ -1327,19 +1331,19 @@
 ; line's :absolute-event-number to the most recent such number in w, and set
 ; :status to :GOOD.
 
-                (setf (access-cl-cache-line line :guard-code)
-                      (compile-lambda-object
-                       (make-lambda-object formals
-                                           `(DECLARE (IGNORABLE ,@formals))
-                                           guard)))
-                (setf (access-cl-cache-line line :lambda-code)
-                      (compile-lambda-object
-                       (access-cl-cache-line line :lambda-object)))
-                (setf (access-cl-cache-line line :problem) nil)
-                (setf (access-cl-cache-line line :absolute-event-number)
-                      (max-absolute-event-number w))
-                (setf (access-cl-cache-line line :status) :GOOD)
-                line)
+                (mv-let (guard-lambda body-lambda)
+                  (make-compileable-guard-and-body-lambdas
+                   (access cl-cache-line line :lambda-object)
+                   state)
+                  (setf (access-cl-cache-line line :guard-code)
+                        (compile nil guard-lambda))
+                  (setf (access-cl-cache-line line :lambda-code)
+                        (compile nil body-lambda))
+                  (setf (access-cl-cache-line line :problem) nil)
+                  (setf (access-cl-cache-line line :absolute-event-number)
+                        (max-absolute-event-number w))
+                  (setf (access-cl-cache-line line :status) :GOOD)
+                  line))
 
 ; All other exits set the status to :BAD but we attribute that to different
 ; problems.
@@ -1561,10 +1565,14 @@
 ; :GOOD and :BAD lambdas but for the moment we just do the full syntactic
 ; plausibility check.
 
-    (mv-let (flg formals satisfies-exprs guard body)
-      (syntactically-plausible-lambda-objectp fn)
+    (let ((extracts (syntactically-plausible-lambda-objectp fn)))
+
+; Extracts is either nil, indicating that fn is not syntactically plausible, or
+; a list of 3-tuples, (satisfies-exprs guard . body), to further check wrt
+; wrld.
+
       (cond
-       ((null flg)
+       ((null extracts)
         (cond ((or (eq status :GOOD) (eq status :BAD))
                (er hard 'make-new-cl-cache-line
                    "The caller of make-new-cl-cache-line said the status of ~
@@ -1572,6 +1580,11 @@
                     :UGLY.  Please contact the ACL2 developers."
                    fn status))
               (t
+; Note that the :extracts field below is nil, upon which
+; well-formed-lambda-objectp1 would return t if it were called on it, when in
+; fact fn is syntactically ill-formed.  Because fn's :status is :UGLY,
+; well-formed-lambda-objectp1 should never be called on these extracts.
+
                (make cl-cache-line
                      :lambda-object fn
                      :status :UGLY
@@ -1581,8 +1594,7 @@
                      :hits 1
                      :guard-code nil
                      :lambda-code nil))))
-       ((or (eq status :GOOD)
-            (eq status :BAD))
+       ((eq status :GOOD)
 
 ; For status = :GOOD, the fn should be well-formed in w and w must be able to
 ; prove the guard conjectures, and for status = :BAD, there should (probably)
@@ -1590,30 +1602,39 @@
 ; in this w.  We don't check these things because we assume the caller knows
 ; what it's doing.
 
+        (mv-let (guard-lambda body-lambda)
+          (make-compileable-guard-and-body-lambdas fn state)
+          (make cl-cache-line
+                :lambda-object fn
+                :status status
+                :absolute-event-number (+ 1 (max-absolute-event-number w))
+                :extracts extracts
+                :problem nil
+                :hits 1
+                :guard-code (compile nil guard-lambda)
+                :lambda-code (compile nil body-lambda))))
+       ((eq status :BAD)
+
+; For status = :GOOD, the fn should be well-formed in w and w must be able to
+; prove the guard conjectures, and for status = :BAD, there should (probably)
+; exist a world in which fn is well-formed and guard-verifiable but it is not
+; in this w.  We don't check these things because we assume the caller knows
+; what it's doing.
+
+
         (make cl-cache-line
               :lambda-object fn
-              :status status
-              :absolute-event-number
-              (if (eq status :GOOD)
-                  (+ 1 (max-absolute-event-number w))
-                  nil)
-              :extracts (list satisfies-exprs guard body)
+              :status :BAD
+              :absolute-event-number nil
+              :extracts extracts
               :problem nil
               :hits 1
-              :guard-code (if (eq status :GOOD)
-                              (compile-lambda-object
-                               (make-lambda-object
-                                formals
-                                `(DECLARE (IGNORABLE ,@formals))
-                                guard))
-                              nil)
-              :lambda-code (if (eq status :GOOD)
-                               (compile-lambda-object fn)
-                               nil)))
+              :guard-code nil
+              :lambda-code nil))
 
 ; Otherwise, the caller says the status is :UNKNOWN.
 
-       ((well-formed-lambda-objectp1 formals satisfies-exprs guard body w)
+       ((well-formed-lambda-objectp1 extracts w)
 
 ; We create a cache line with status :UNKNOWN and then re-validate it, which
 ; leaves its status :GOOD or :BAD.  Re-validation also compiles the guard and
@@ -1624,16 +1645,25 @@
                :lambda-object fn
                :status :UNKNOWN
                :absolute-event-number nil
-               :extracts (list satisfies-exprs guard body)
+               :extracts extracts
                :problem nil
                :hits 1
                :guard-code nil
                :lambda-code nil)
          w state))
-       ((eq (potential-term-listp (append satisfies-exprs
-                                          (list guard body))
-                                  nil
-                                  w)
+       ((eq (potential-term-listp
+             (collect-from-extracts
+              :satisfies-exprs
+              extracts
+              (collect-from-extracts
+               :guard
+               extracts
+               (collect-from-extracts
+                :body
+                extracts
+                nil)))
+             nil
+             w)
             :illegal)
         (make cl-cache-line
               :lambda-object fn
@@ -1653,7 +1683,7 @@
               :lambda-object fn
               :status :BAD
               :absolute-event-number nil
-              :extracts (list satisfies-exprs guard body)
+              :extracts extracts
               :problem 'not-well-formed
               :hits 1
               :guard-code nil
@@ -1696,10 +1726,14 @@
 
             (setq *cl-cache* (access cl-cache cl-cache :size))
             (cond
-             ((equal (access cl-cache-line
-                             (car valid-cl-alist)
-                             :lambda-object)
-                     fn)
+
+; To see why we use hons-equal-lite when comparing lambda objects below instead
+; of EQUAL, see the comment about hons-copy in translate11-lambda-object.
+
+             ((hons-equal-lite (access cl-cache-line
+                                       (car valid-cl-alist)
+                                       :lambda-object)
+                               fn)
 
 ; The call to valid-cl-cache-line below destructively changes the line.
 ; Furthermore, this line is still the top (first) line in cl-cache :alist, so
@@ -1734,10 +1768,10 @@
 ; effect of that optimization, so we don't bother with it here.
 
                     when (or (null (car tail)) ; fn not found
-                             (equal (access cl-cache-line
-                                            (car tail)
-                                            :lambda-object)
-                                    fn))
+                             (hons-equal-lite (access cl-cache-line
+                                                      (car tail)
+                                                      :lambda-object)
+                                              fn))
                     do
 
 ; We have either found fn's line in the cache or have searched all lines
@@ -1775,7 +1809,7 @@
                             previous-tail (cdr previous-tail))
                       (assert (eq tail (access cl-cache cl-cache :last)))
                       (let* ((found
-                              (equal
+                              (hons-equal-lite
                                (access cl-cache-line (car tail) :lambda-object)
                                fn))
                              (line
@@ -1894,7 +1928,6 @@
 ; changed, but it indicates the idea!
 
 ; (trace
-;  (compile-lambda-object :exit (list 'code))
 ;  (syntactically-plausible-lambda-objectp)
 ;  (well-formed-lambda-objectp1)
 ;  (maybe-re-validate-cl-cache-line
@@ -1969,17 +2002,17 @@
 ; and sometimes by a Common Lisp compliant (with guard T) function symbol.
 
 ; Fire up this version of ACL2 and run The Rubric EXCEPT the redefinition of
-; apply$-lambda!  [Remember:  these instructions cannot be followed any more!
+; apply$-lambda!  [Remember: these instructions cannot be followed any more!
 ; For example, we don't redefine apply$-lambda anymore, so you can't not
 ; redefine it!  But you can sort of guess what we mean just knowing that
 ; (concrete-apply$-lambda fn args) is raw Lisp for what you now see in the raw
 ; Lisp code of the defun apply$-lambda.]
 
 ;   (include-book "projects/apply/apply" :dir :system)
-;   (defattach (badge-userfn concrete-badge-userfn)
+;   (defattach (badge-userfn doppelganger-badge-userfn)
 ;     :hints
-;     (("Goal" :use concrete-badge-userfn-type)))
-;   (defattach apply$-userfn concrete-apply$-userfn)
+;     (("Goal" :use doppelganger-badge-userfn-type)))
+;   (defattach apply$-userfn doppelganger-apply$-userfn)
 ;   (value :q)
 ;   ; (defun apply$-lambda (fn args) (concrete-apply$-lambda fn args))
 ;   (setq *allow-concrete-execution-of-apply-stubs* t)
@@ -2376,7 +2409,7 @@
 ; [The following essay is meant as supplementary material to the proof sketch
 ; in the paper ``Limited Second Order Functionality in a First Order Setting''.
 ; It does not necessarily describe the implemented version of apply$,
-; def-warrant, badger, etc., in ACL2 Version_8.0 or later.  However, as always,
+; defwarrant, badger, etc., in ACL2 Version_8.0 or later.  However, as always,
 ; we base our belief that ACL2 is sound on careful coding with attention to
 ; proofs like this.  When new features are added, we work out extensions of
 ; these proofs to explain those features, but we do not always re-write the
@@ -2488,16 +2521,19 @@
 ; thought had obvious importance and also for the unconscious clear violations
 ; of our own conventions.
 
-; A function that returns multiple values can have a badge but will not have a
-; warrant.
-
 ; Functions with badges are partitioned into primitives (e.g., CAR and
 ; BINARY-APPEND), boot functions (e.g., TAMEP and APPLY$), and user-defined
 ; (e.g., SQUARE and COLLECT).
 
 ; Non-primitive badged functions are partitioned into:
-; G1 -- ancestrally independent of APPLY$-USERFN, and
-; G2 -- ancestrally dependent on APPLY$-USERFN.
+; G1 -- ancestrally independent of APPLY$-USERFN in both body and justification
+;       (and ancestrally independent of inapplicable functions like sys-call
+;       in the body -- a separate check since we don't require all functions in
+;       G1 functions to be badged)
+
+; G2 -- ancestrally independent of APPLY$-USERFN in justification but dependent
+;       on APPLY$-USERFN in body
+
 ; Thus ``all non-primitive badged functions'' is the same set as ``all G1 and
 ; G2 functions.''
 
@@ -2517,9 +2553,8 @@
 
 ; We believe every tame expression is G1 definable in the sense that an
 ; equivalent expression could be written in terms of (possibly newly
-; introduced) G1 functions.  See the discussion in
-; acceptable-warranted-justificationp in apply.lisp.  However, we do not
-; exploit that belief (or prove it) here.
+; introduced) G1 functions.  However, we do not exploit that belief (or prove
+; it) here.
 
 ; If a formal has ilk :FN or has ilk :EXPR we call it a :FN/:EXPR formal or say
 ; it has ilk :FN/:EXPR.  That's technically a misnomer: there is no :FN/:EXPR
@@ -2527,19 +2562,24 @@
 ; :EXPR.
 
 ; Some important facts about any user-defined badged function, f, with formals
-; (x1 ... xn), and body, b, include the following.  Note that the first three
-; bullet points apply to both G1 and G2 functions but the final ones are
-; relevant only to G2 functions (because no G1 function can call a function
-; with :FN/:EXPR ilks or else it would be dependent on APPLY$-USERFN):
+; (x1 ... xn), and body, b, include the following.  Note that the first bullet
+; point applies to both G1 and G2 functions but the rest are relevant only to
+; G2 functions (because no G1 function can call a function with :FN/:EXPR ilks
+; or else it would be dependent on APPLY$-USERFN):
 
-; - f's measure term is entirely in G1 functions.  In our model, this is
-;   insured by the acceptable-warranted-justificationp called from badger in
-;   apply.lisp: the measure is tame (all badged) and ancestrally independent of
-;   APPLY$-USERFN, i.e., G1.
+; - f's measure, well-founded relation and domain predicate are pre-apply$
+;   definable.  See badger.  So we needn't worry about modeling measures as we
+;   model apply$.
 
-; - f's measure is natural number valued and its well-founded relation is O<
-;   over O-P.  We assume without loss of generality that the measure takes all
-;   of the formals.
+; - f's measure is natural number valued or is an LLIST expression (in both
+;   cases, with the appropriate well-founded relation and domain).  This means
+;   that the user's measures are all bounded ordinal and there is a largest
+;   one, e.g., with k components.  We pretend all the user measures are
+;   lexicographic with k components, with 0s in the more significant (but
+;   unused) slots of user functions using fewer than k components.  To justify
+;   the apply$! clique, we use a lexicographic measure of 4+k components.
+;   Without loss of generality we can assume that the measure of f takes all of
+;   the formals.
 
 ; - f is singly recursive, not in a mutually recursive clique.
 
@@ -2562,7 +2602,7 @@
 ;   Corollary: f is not used as a function symbol in any quoted tame object in
 ;   a :FN/:EXPR slot of its body.  Clarification 1: A function g may be defun'd
 ;   and not immediately assigned a warrant: no warrant is generated until
-;   (def-warrant g) occurs.  But if g appears in, say, a lambda object in a :FN
+;   (defwarrant g) occurs.  But if g appears in, say, a lambda object in a :FN
 ;   slot in the definition of f after g has been defun'd but before g has been
 ;   warranted, that LAMBDA expression would not be tame and hence the function
 ;   f would not have a badge.  Clarification 2: the notion of the functions
@@ -2574,17 +2614,19 @@
 ;   and thus that they have been defined.
 
 
-; All of these facts (and others) are checked by (def-warrant f) which fails if
+; All of these facts (and others) are checked by (defwarrant f) which fails if
 ; any of the checks fail.
 
-; We could loosen some of the restrictions.  The insistence that the measure be
-; a natp is only relevant for G2 functions and even then could be loosened to
-; bounded ordinal.  We'd have to change the proof here.  We could eliminate the
-; restriction that measures be independent of APPLY$-USERFN if we were sure of
-; the claim that every tame expression is G1 definable.  See the discussion in
-; acceptable-warranted-justificationp.  We could allow mutual recursion if we
-; generalized the badger to handle it; we'd have to allow it in our G2
-; doppelganger construction.
+; We could loosen some of the restrictions.  Two relaxations have occurred to
+; us.  One is to abandon the restriction that G2 functions be justified by
+; LLIST measures (or naturals) and replace that restriction by recognition of a
+; ``bounded ordinal.''  Then we'd have to replace the LLISTs measuring all of
+; the functions in the apply$! clique with an ordinal subsumes that bounded
+; ordinal and that behaves analogously to the current LLIST construction.
+
+; The second relaxation would be to allow the badging of mutually recursive
+; functions, but we'd have to extend the doppelganger construction to sweep in
+; all the user-defined functions in the clique.
 
 ; In the evaluation theory, all G1 functions will be defined exactly as in the
 ; user's history, except that we omit any mention of guards.
@@ -2596,48 +2638,51 @@
 ; =================================================================
 ; The Standard Doppelganger Construction:
 
+; The model construction is illustrated in books/projects/apply-model-2/,
+; specifically in subdirectories ex1/ and ex2/, both of which contain a file
+; named doppelganger.lisp, to which we refer below when examples are called
+; for.
+
 ; In constructing the model we will define every G1 function exactly as the
 ; user did, except that we will omit any :guards because we don't need guards
-; in this application.  We know that every G1 function is justified in terms of
-; G1 functions (every justification of a badged function has well-founded
-; relation O< on domain O-P with a tame measure that is ancestrally independent
-; of APPLY$-USERFN (and, coincidentally, natp valued, though while always
-; enforced that observation needn't be for G1 functions)).  That means that if
-; we just copy the user's unguarded G1 definitions down in the same order they
-; will be admissible for the same reasons as before.  None of them rely on G2
-; functions for admission.
+; in this application.  We know that every G1 function is pre-apply$ definable.
+; That means that if we just copy the user's unguarded G1 definitions down in
+; the same order they will be admissible for the same reasons as before.  None
+; of them rely on apply$ or G2 functions for admission.
 
 ; So now we describe how to define the doppelgangers for G2 functions.
 
 ; Suppose f is a user-defined G2 function with formals (v1 ... vn), and body b.
 ; Let (m v1 ... vn) be the measure used to admit f.  Note that the measure is
-; entirely in G1 and so can be written after the G1 functions are defined.
-; The measure is also a natp, which will be discussed when we discuss the
-; measure for the G2 doppelgangers.   Then the definition of the
-; doppelganger of f, namely f!, is (DEFUN f! (v1 ... vn) b''), where b'' is
-; obtained in two steps as follows.  First, let b' be the result of
-; renaming in b every G2 function called, replacing the called function
-; by its doppelganger name.  (Here we truly mean only ACL2 function calls, not
-; ``calls'' within lambda objects and terms.)  Next, consider a call of f! in b'
-; ``marked'' if the measure conjecture for that call,
+; pre-apply$ definable and so can be written after the G1 functions are
+; defined.  (Indeed, G1 functions might be used in the measures, since they're
+; all pre-apply$ definable.)  Then the definition of the doppelganger of f,
+; namely f!, is (DEFUN f! (v1 ... vn) b''), where b'' is obtained in two steps
+; as follows.  First, let b' be the result of renaming in b every G2 function
+; called, replacing the called function by its doppelganger name.  (Here we
+; truly mean only ACL2 function calls, not ``calls'' within lambda objects and
+; terms.)  Next, consider a call of f! in b' ``marked'' if the measure
+; conjecture for that call,
 
 ; (IMPLIES (AND t1 ... tn) (O< (m a1 ... an) (m v1 ... vn)))
 
 ; mentions a G2 function.  Create b'' by visiting every marked call, c, in b'
 ; and replacing c by
 
-; (IF (O< (m a1 ... an)
-;         (m v1 ... vn))
+; (IF (rel (m a1 ... an)
+;          (m v1 ... vn))
 ;     c
 ;     NIL).
 
-; We call the O< term above the ``O< condition'' for the marked call.  The O<
-; condition will be sufficient to justify call c during the admission of the
-; clique.  These conditions cannot be proved until all the G2 functions are
-; defined.  However, once all the G2 functions are defined, each O< condition
-; is implied by the tests governing it.  Logically this follows from the proof
-; that the doppelgangers are equivalent to their counterparts in the evaluation
-; theory.  But, practically speaking, to prove that equivalence may require
+; We call the rel term above the ``rel condition'' for the marked call.  Rel
+; here is the well-founded relation used by the user's definition and is
+; pre-apply$ definable and so is available.  The rel condition will be
+; sufficient to justify call c during the admission of the clique.  These
+; conditions cannot be proved until all the G2 functions are defined.  However,
+; once all the G2 functions are defined, each rel condition is implied by the
+; tests governing it.  Logically this follows from the proof that the
+; doppelgangers are equivalent to their counterparts in the evaluation theory.
+; But, practically speaking, to prove that equivalence may require
 ; recapitulating for the doppelgangers the lemma development the user used
 ; during the admission of f.
 
@@ -2652,19 +2697,36 @@
 ;          (APPLY$ FN (LIST LST LST)))
 ;         (T (PROW* (PROW LST FN) FN))))
 
+; While the measure shown above is numeric, assume the longest lexicographic
+; measure among the G2 user functions is (LLIST x1 x2 x3), e.g., has length 3.
+
 ; To create the doppelganger definition we carry out the steps described.
 ; First, rename the G2 functions to their doppelgangers.  Note that the G2
-; functions mentioned in PROW* are APPLY$, PROW, and PROW*.  So the renaming
-; produces:
+; functions mentioned in PROW* are APPLY$, PROW, and PROW*.  Also, change the
+; measure to that used by the apply$! clique, which is, in this case, an LLIST
+; of length 4+3.  In the defun$ below we do not specify the first three or the
+; last component and just write a1-a4 in those slots.  See The Measure for the
+; APPLY$! Clique, below, for the actual expressions.  Here we're just
+; interested in how we integrate the user's measure for PROW* to the measure
+; used in PROW*!.  This produces:
 
 ; (DEFUN$ PROW*! (LST FN)
-;   (DECLARE (XARGS :MEASURE (LEN LST)))
+;   (DECLARE (XARGS :MEASURE (LLIST a1 a2 a3 0 0 (LEN LST) a4)
+;                   :WELL-FOUNDED-RELATION L<))
 ;   (COND ((OR (ENDP LST)
 ;              (ENDP (CDR LST)))
 ;          (APPLY$! FN (LIST LST LST)))
 ;         (T (PROW*! (PROW! LST FN) FN))))
 
-; The call (PROW*! (PROW! LST FN) FN) is marked because the
+; Note that the user's measure, (LEN LST), is slotted into a 3-slot wide
+; section of the larger measure.  Numeric user measures, as here, are in the
+; least significant of the 3 slots.  In general, we add as many
+; more-significant 0's as necessary to the user's measure to produce a measure
+; of length 3.  This work is actually done in the file
+; weights-and-measures.lisp of books/projects/apply-model-2/ and wrapped up in
+; the macro standard-g2-userfn-measure.
+
+; The call (PROW*! (PROW! LST FN) FN) is ``marked'' because the
 ; measure conjecture for that call is:
 
 ; (IMPLIES (AND (NOT (ENDP LST))
@@ -2676,7 +2738,8 @@
 ; the final definition of the doppelganger for prow*:
 
 ; (DEFUN$ PROW*! (LST FN)
-;   (DECLARE (XARGS :MEASURE (LEN LST)))
+;   (DECLARE (XARGS :MEASURE (LLIST a1 a2 a3 0 0 (LEN LST) a4)
+;                   :WELL-FOUNDED-RELATION L<))
 ;   (COND ((OR (ENDP LST)
 ;              (ENDP (CDR LST)))
 ;          (APPLY$! FN (LIST LST LST)))
@@ -2684,7 +2747,7 @@
 ;                (PROW*! (PROW! LST FN) FN)
 ;                NIL))))
 
-; We claim that the O< condition inserted is implied by the governing tests --
+; We claim that the rel condition inserted is implied by the governing tests --
 ; or will be once all the G2 functions are defined.  Intuitively, the proof is
 ; ``the same'' as that of the measure conjecture proved for that case in the
 ; user's chronology:
@@ -2805,7 +2868,7 @@
 ; must be proved simultaneously along with the proofs that the inserted O<
 ; conditions on marked calls are implied by their governors.  The latter can be
 ; proved because the induction hypotheses equating doppelgangers and their
-; counterparts allow us to rewrite the O< conditions (which are stated in
+; counterparts allow us to rewrite the rel conditions (which are stated in
 ; doppelganger terms) into their counterparts, and the resulting conjecture is
 ; known to be a theorem by the measure conjectures proved during the admission
 ; of the user's functions.
@@ -3017,11 +3080,22 @@
 ; functions and only afterwards do we present the measures for APPLY$!, EV$!,
 ; and EV$-LIST!.
 
+; Let k be the length of the longest LLIST measure used by a user-defined G2
+; function.
+
 ; Let f be a user-defined G2 function with doppelganger f!.
 
-; The measure for f! is a lexicographic 5-tuple where the first four components
-; are computed by the macro expressions given below.  The fifth component is
-; always 1.
+; The measure for f! is a lexicographic 4+k-tuple where the first three
+; components are computed by the macro expressions given below.  The last
+; component is always 1 (for user G2 functions).  The middle k components are
+; the user-specified measure for f, padded on the left with 0s to make it k
+; wide.  For example, if f is justified with a numeric measure, say m, and k is
+; 3, then the middle k components are 0, 0, and m.  If f is justified with
+; (LLIST m1 m2), then the middle k components are 0, m1, and m2.
+
+; See standard-g2-userfn-measure defined in
+; books/projects/apply-model-2/weights-and-measures.lisp for the code that
+; generates the entire 4+k tuple for user-defined G2 functions.
 
 ; (tameness-bit f): 0 if all of the :FN/:EXPR formals of f are tame, 1
 ;    otherwise.  Here by ``tame'' we mean accepted by tamep-functionp! or
@@ -3029,14 +3103,10 @@
 
 ; (max-internal-weight f): maximal weight of the internals: see below
 
-; (chronological-position f): the position of (def-warrant f) in the user's
+; (chronological-position f): the position of (defwarrant f) in the user's
 ;    chronology.  The position of APPLY$ and APPLY$-USERFN is 0, the positions
 ;    of EV$ and EV$-LIST are 1, the position of the first badged user-defined
 ;    function is 2, the next such function 3, etc.
-
-; (original-measure f): measure term used to admit f in the user's chronology
-;    (which we have required to exist rather than being local; indeed to be
-;    definable in terms of G1 functions).
 
 ; Implementation Note: Each component above requires knowledge of how f was
 ; defined and so requires looking at the world created by the user's
@@ -3044,16 +3114,16 @@
 ; described below:
 
 ; *USER-FNS*                      list of user-defined badged functions in
-;                                  chronological order of their def-warrant
+;                                  chronological order of their defwarrant
 ;                                  events
 
 ; *G2-FNS*                        list of all G2 functions, including APPLY$
 ;                                  and EV$, which are the first two elements,
 ;                                  listed in chronological order of their
-;                                  def-warrants
+;                                  defwarrants
 
 ; *G1-FNS*                        list of all G1 functions in chronological
-;                                  order of their def-warrants
+;                                  order of their defwarrants
 
 ; *TAMENESS-CONDITIONS*           alist pairing each user-defined G2 function
 ;                                  symbol to the list of tameness expressions
@@ -3069,6 +3139,14 @@
 ; *ORIGINAL-MEASURES-ALIST*       alist pairing each user-defined G2 function
 ;                                  symbol with the original measure
 ;                                  term used in its admission
+
+; *MAX-LEX-LENGTH*                length of the longest LLIST justifying a 
+;                                  user-defined G2 function
+
+; *BIG-0*                         a list of *MAX-LEX-LENGTH* zeros to fill the
+;                                  slots dedicated to user-defined functions in
+;                                  measures for apply$!, ev$!, ev$!-list, and
+;                                  apply$-userfn1!.
 
 ; The values of these constants are computed from the world by make-event forms
 ; in doppelgangers.lisp, run after locally including "user-defs".  We list the
@@ -3188,7 +3266,7 @@
 ; and is just ACL2-COUNT except for the symbols bound in the alist.
 
 ; To determine the weights of the G2 symbols we process the G2 functions
-; (except for APPLY$ and EV$) in chronological order of their def-warrants,
+; (except for APPLY$ and EV$) in chronological order of their defwarrants,
 ; binding each symbol to the weight of its beta-reduced body as computed with
 ; respect to the weights of the preceding function symbols.
 
@@ -3257,7 +3335,7 @@
 ;                   (+ 1 (MAXIMAL-WEIGHT (FN/EXPR-ARGS FN ARGS)))
 ;                   0))
 ;          (CHRONOLOGICAL-POSITION APPLY$)
-;          0
+;          0 ... 0  ; e.g., ,@*BIG-0*
 ;          1))
 
 ; The function FN/EXPR-ARGS returns the elements of its second argument that
@@ -3273,16 +3351,16 @@
 ;                   (+ 1 (MAX-WEIGHT (FN/EXPR-ARGS FN ARGS)))
 ;                   0))
 ;          (CHRONOLOGICAL-POSITION APPLY$-USERFN)
-;          0
+;          0 ... 0  ; e.g., ,@*BIG-0*
 ;          0))
 
 ; The measures of EV$! and EV$-LIST! are:
 
 ; (DEFUN EV$!-MEASURE (X A)
-;   (LLIST 0 (WEIGHT X) (CHRONOLOGICAL-POSITION EV$) 0 1))
+;   (LLIST 0 (WEIGHT X) (CHRONOLOGICAL-POSITION EV$) 0...0 1))
 
 ; (DEFUN EV$!-LIST-MEASURE (X A)
-;   (LLIST 0 (WEIGHT X)  (CHRONOLOGICAL-POSITION EV$-LIST) 0 1))
+;   (LLIST 0 (WEIGHT X)  (CHRONOLOGICAL-POSITION EV$-LIST) 0...0 1))
 
 ; As already explained, the measure of each user-defined doppelganger, f!, is
 
@@ -3290,7 +3368,7 @@
 ;   (LLIST (TAMENESS-BIT f)
 ;          (MAX-INTERNAL-WEIGHT f)
 ;          (CHRONOLOGICAL-POSITION f)
-;          (ORIGINAL-MEASURE f)
+;          0 ... (ORIGINAL-MEASURE f) ; left-padded with 0s
 ;          1))
 
 ; As mentioned earlier, APPLY$-USERFN1! is only called by APPLY$! and is could
@@ -3929,16 +4007,21 @@
 
 ; Because the :FN/:EXPR a_i are equal to the corresponding v_i the first three
 ; components of the two measures are equal and the comparison above can be
-; decided by the comparison of the fourth components.  Let the original measure
-; function used to admit f be m.  Thus, the conjecture above reduces to
+; decided by the comparison of the so-called ``middle'' components in which the
+; user's measure of f occupy the right-most (least significant) slots with 0s
+; padding the left-most (more significant) slots.  The last component is always
+; 1.  The original measure of f is either some numeric measure m or else (LLIST
+; (m1 v_1 ... vn_n) ...).  Without loss of generality we can focus on the LLIST
+; case, treating the numeric case as (LLIST m).  Thus, the conjecture above
+; reduces to
 
 ; (IMPLIES tst
-;          (O< (m a_1 ... a_n)
-;              (m v_1 ... v_n)))
+;          (L< (LLIST (m1 a_1 ... a_n) ...)
+;              (LLIST (m1 v_1 ... v_n) ...)))
 
 ; If this formula involves any G2 function then the call of recursive f! was
 ; considered marked by the standard doppelganger construction and thus the
-; concluding O< comparison is one of the tests governing the recursive call.
+; concluding L< comparison is one of the tests governing the recursive call.
 ; Hence, the formula trivially holds.
 
 ; Otherwise, up to the renaming of G1 functions to their doppelgangers, the
@@ -4039,8 +4122,8 @@
          (list 'ev-fncall-guard-er
                fn
                args
-               (untranslate ; guard
-                (cadr (access cl-cache-line line :extracts))
+               (untranslate ; guard of first 3-tuple
+                (cadr (car (access cl-cache-line line :extracts)))
                 t
                 (w *the-live-state*))
                (make-list ; stobjs-in = (nil ... nil)

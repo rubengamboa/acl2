@@ -84,12 +84,12 @@
 (local (in-theory (enable apply$-primp badge-prim)))
 
 ; We now prove that badge-prim returns either nil or a badge of the form
-; (APPLY$-BADGE flg arity . T).  This would be trivial except for the fact that
-; there are so many cases (because the alist is so long).  So we resort to a
-; standard trick for proving something about a big constant: define a function,
-; named check-it! below, to check the property computationally, prove that the
-; property holds of x if (check-it x) is t, then derive the main theorem by
-; instantiating that lemma with {x <-- '<big-constant>}.
+; (APPLY$-BADGE arity out-arity . T).  This would be trivial except for the
+; fact that there are so many cases (because the alist is so long).  So we
+; resort to a standard trick for proving something about a big constant: define
+; a function, named check-it! below, to check the property computationally,
+; prove that the property holds of x if (check-it x) is t, then derive the main
+; theorem by instantiating that lemma with {x <-- '<big-constant>}.
 
 (encapsulate
   nil
@@ -98,6 +98,7 @@
      (implies (apply$-badgep x)
               (and (consp x)
                    (natp (access apply$-badge x :arity))
+                   (natp (access apply$-badge x :out-arity))
                    (or (eq (access apply$-badge x :ilks) t)
                        (and (true-listp (access apply$-badge x :ilks))
                             (equal (len (access apply$-badge x :ilks))
@@ -114,6 +115,12 @@
                            (consp x)))
       (:linear
        :corollary (implies (apply$-badgep x)
+                           (<= 0 (CAR (CDR x)))))
+      (:rewrite
+       :corollary (implies (apply$-badgep x)
+                           (integerp (CAR (CDR x)))))
+      (:linear
+       :corollary (implies (apply$-badgep x)
                            (<= 0 (CAR (CDR (CDR x))))))
       (:rewrite
        :corollary (implies (apply$-badgep x)
@@ -123,7 +130,7 @@
                                 (not (eq (CDR (CDR (CDR x))) t)))
                            (and (true-listp (CDR (CDR (CDR x))))
                                 (equal (len (CDR (CDR (CDR x))))
-                                       (CAR (CDR (CDR x))))))))))
+                                       (CAR (CDR x)))))))))
 
   (local
    (defun check-it! (alist)
@@ -191,7 +198,7 @@
   (declare (xargs :guard (pseudo-termp term)
 
 ; There is no need to verify guards here.  For that, see
-; books/projects/apply/apply-lemmas.lisp.
+; books/projects/apply/base.lisp.
 
                   :verify-guards nil))
   (cond ((and (consp term)
@@ -202,12 +209,16 @@
                 (args (fargn term 2))
                 (temp (hons-get fn *badge-prim-falist*)))
            (cond
-            ((or (null temp)
-                 (null (access apply$-badge (cdr temp) :authorization-flg)))
+            ((null temp)
              term)
-            (t `(,fn ,@(n-car-cadr-caddr-etc
-                        (access apply$-badge (cdr temp) :arity)
-                        args))))))
+            (t (if (int= (access apply$-badge (cdr temp) :out-arity) 1)
+                   `(,fn ,@(n-car-cadr-caddr-etc
+                            (access apply$-badge (cdr temp) :arity)
+                            args))
+                   `(mv-list ',(access apply$-badge (cdr temp) :out-arity)
+                             (,fn ,@(n-car-cadr-caddr-etc
+                                     (access apply$-badge (cdr temp) :arity)
+                                     args))))))))
         (t term)))
 
 ; Occasionally the value of *first-order-like-terms-and-out-arities*, computed
@@ -255,13 +266,41 @@
 ; If the above fix is ever made, it would be good to add a well-formedness
 ; guarantee lemma.
 
-    (with-output
-      :off (prove event)
-      (defthm apply$-prim-meta-fn-correct
-        (equal (apply$-prim-meta-fn-ev term alist)
-               (apply$-prim-meta-fn-ev (meta-apply$-prim term) alist))
-        :hints (("Goal" :in-theory (disable (:executable-counterpart break$))))
-        :rule-classes ((:meta :trigger-fns (apply$-prim)))))
+; The original proof of the next lemma didn't involve the proof-builder, but
+; has been observed to take considerably longer that way.
+
+;   (with-output
+;     :off (prove event)
+;     (defthm apply$-prim-meta-fn-correct
+;       (equal (apply$-prim-meta-fn-ev term alist)
+;              (apply$-prim-meta-fn-ev (meta-apply$-prim term) alist))
+;       :hints (("Goal" :in-theory (disable (:executable-counterpart break$))))
+;       :rule-classes ((:meta :trigger-fns (apply$-prim)))))
+
+    (defthm apply$-prim-meta-fn-correct
+      (equal (apply$-prim-meta-fn-ev term alist)
+             (apply$-prim-meta-fn-ev (meta-apply$-prim term)
+                                     alist))
+      :instructions
+      ((quiet!
+        (:bash ("Goal" :in-theory '((:definition hons-assoc-equal)
+                                    (:definition hons-equal)
+                                    (:definition hons-get)
+                                    (:definition meta-apply$-prim)
+                                    (:definition quotep)
+                                    (:executable-counterpart car)
+                                    (:executable-counterpart cdr)
+                                    (:executable-counterpart consp))))
+        (:in-theory (union-theories
+                     '((:definition apply$-prim)
+                       (:definition n-car-cadr-caddr-etc))
+                     (union-theories *expandable-boot-strap-non-rec-fns*
+                                     (set-difference-theories
+                                      (current-theory :here)
+                                      (cons '(:rewrite default-car)
+                                            (function-theory :here))))))
+        (:repeat :prove)))
+      :rule-classes ((:meta :trigger-fns (apply$-prim))))
 
     (defthm apply$-primp-implies-symbolp
       (implies (apply$-primp fn)

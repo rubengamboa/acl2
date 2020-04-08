@@ -75,6 +75,8 @@ deps_dfs
 check_up_to_date
 collect_bottom_out_of_date
 collect_top_up_to_date
+collect_top_up_to_date_modulo_local
+collect_all_up_to_date
 );
 
 
@@ -89,7 +91,7 @@ collect_top_up_to_date
 # 				rec_visited => '%' ];   # already seen files for depends_rec
 
 # database:
-my $cache_version_code = 6;
+my $cache_version_code = 8;
 
 # Note: for debugging you can enable this use and then print an error message
 # using
@@ -203,7 +205,7 @@ sub abs_canonical_path {
     my $voldir = File::Spec->catpath($vol, $dir, "");
     # print "voldir: $voldir\n";
     if (! -d $voldir) {
-	print "Oops, trying to go into $voldir\n";
+	print STDERR "Oops, trying to go into $voldir\n";
 	return 0;
     }
     # fast_abs_path is supposed to be faster, but it seems not to be
@@ -219,7 +221,7 @@ sub abs_canonical_path {
 	    return $absdir;
 	}
     } else {
-	print "Warning: canonical_path: Directory not found: " . $voldir . "\n";
+	print STDERR "Warning: canonical_path: Directory not found: " . $voldir . "\n";
 	return 0;
     }
 }
@@ -836,7 +838,7 @@ sub parallelism_stats {
 	$lasttime = $time;
     }
     if ($curr_parallel != 0) {
-	print "Error: Ended with jobs still running??\n"
+	print STDERR "Error: Ended with jobs still running??\n"
     }
     my $avg_parallel = ($lasttime != 0) ? $running_total / $lasttime : "???";
 
@@ -863,7 +865,7 @@ sub to_basename {
 sub lookup_colon_dir {
     my $name = uc(shift);
     my $local_dirs = shift;
-
+    print "lookup_colon_dir $name\n" if $debugging;
     my $dirpath;
     if ($local_dirs && exists $local_dirs->{$name}) {
 	$dirpath = $local_dirs->{$name};
@@ -918,6 +920,7 @@ sub excludep {
 
 
 sub print_dirs {
+    # Print debugging output on stdout
     my $local_dirs = shift;
     print "dirs:\n";
     while ( (my $k, my $v) = each (%{$local_dirs})) {
@@ -935,20 +938,21 @@ sub src_events {
     my $entry_ok = 0;
 
     if ($entry && ($believe_cache || $checked->{$fname})) {
+	# Print debugging output on stdout
 	print "cache believed for $fname\n" if $debugging;
 	$checked->{$fname} = 1;
 	$entry_ok = 1;
     }
 
     if (! $entry_ok && ! -e $fname) {
-	print "Warning: missing file $fname";
+	print STDERR "Warning: missing file $fname";
 	if ($parent) {
-	    print " (required by $parent)";
+	    print STDERR " (required by $parent)";
 	}
 	else {
-	    print " (no parent; top level target? cached target?)";
+	    print STDERR " (no parent; top level target? cached target?)";
 	}
-	print "\n";
+	print STDERR "\n";
 	# Add an entry with no events and a negative timestamp.
 	# signalling that the file didn't exist.
 	my $cache_entry =  [[], 0];
@@ -959,12 +963,14 @@ sub src_events {
 
     # check timestamp: to be valid, the entry's timestamp must equal the file's.
     if ($entry && ! $entry_ok && (ftimestamp($fname) == $entry->[1])) {
+	# Print debugging output on stdout
 	print "timestamp of $fname ok\n" if $debugging;
 	$checked->{$fname} = 1;
 	$entry_ok = 1;
     }
 
     if ($entry_ok) {
+	# Print debugging output on stdout
 	print "returning cached events for $fname\n" if $debugging;
 	return $entry->[0];
     }
@@ -986,7 +992,7 @@ sub expand_dirname_cmd {
     if ($dirname) {
 	my $dirpath = lookup_colon_dir($dirname, $local_dirs);
 	unless ($dirpath) {
-	    print "Warning: Unknown :dir entry in ($cmd \"$relname\" :dir $dirname) for $basename\n";
+	    print STDERR "Warning: Unknown :dir entry in ($cmd \"$relname\" :dir $dirname) for $basename\n";
 	    print_dirs($local_dirs) if $debugging;
 	    return 0;
 	}
@@ -995,7 +1001,7 @@ sub expand_dirname_cmd {
 	# $fullname = canonical_path(rel_path($dirpath, $relname . $ext));
 	$fullname = canonical_path(File::Spec->catfile($dirpath, $relname . $ext));
 	if (! $fullname) {
-	    print ":dir entry in ($cmd \"$relname\" :dir $dirname) produced bad path\n";
+	    print STDERR ":dir entry in ($cmd \"$relname\" :dir $dirname) produced bad path\n";
 	}
     } else {
 	my $dir = dirname($basename);
@@ -1006,18 +1012,18 @@ sub expand_dirname_cmd {
 	# $fullname = canonical_path(rel_path($dir, $relname . $ext));
 	$fullname = canonical_path($fullpath);
 	if (! $fullname) {
-	    print "bad path in ($cmd \"$relname\")\n";
+	    print STDERR "bad path in ($cmd \"$relname\")\n";
 	}
     }
     return $fullname;
 }
 
 sub print_event {
-    my $event = shift;
-    print $event->[0];
+    my ($stream, $event) = @_;
+    $stream->print($event->[0]);
     my $i = 1;
     while ($i < @$event) {
-	$event->[$i] && print " $event->[$i]";
+	$event->[$i] && $stream->print(" $event->[$i]");
 	$i = $i+1;
     }
 }
@@ -1025,7 +1031,7 @@ sub print_event {
 sub print_events {
     my $events = shift;
     foreach my $event (@$events) {
-	print "\n"; print_event($event);
+	print "\n"; print_event(*STDOUT, $event);
     }
     print "\n";
 }
@@ -1049,13 +1055,12 @@ sub src_deps {
 	$certinfo,          # certinfo accumulator
         $ldp,               # allow following LD commands
 	$portp,             # Add books to port rather than bookdeps
-        $defines,           # Hash of names that have been defined or undefined, overriding environment
 	$seen,              # seen table for detecting circular dependencies
 	$parent)            # file that required this one
 	= @_;
 
     if ($seen->{$fname}) {
-	print "Circular dependency found in src_deps of $fname\n";
+	print STDERR "Circular dependency found in src_deps of $fname\n";
 	return 0;
     }
     
@@ -1083,6 +1088,10 @@ sub src_deps {
     # track the level of ifdefs
     my $ifdef_level = 0;           # nesting depth
     my $ifdef_skipping_level = 0;  # min level of a false ifdef (0 means all surrounding ifdefs were true)
+
+
+    my $defines = $certinfo->local_defines;
+    my $incdirs = $certinfo->local_include_dirs;
 
     foreach my $event (@$events) {
 	my $type = $event->[0];
@@ -1112,10 +1121,9 @@ sub src_deps {
 	} elsif ($ifdef_skipping_level == 0) {
 	    # Only pay attention to other events if we're not skipping due to ifdefs.
 	    if ($type eq add_dir_event) {
-		my $name = $event->[1];
-		my $dir = $event->[2];
+		my (undef, $name, $dir, $localp) = @$event;
 
-		print "add_dir_event: name=$name, dir=$dir\n" if $debugging;
+		print "add_dir_event: name=$name, dir=$dir, localp=$localp\n" if $debugging;
 		my $newdir;
 		if (File::Spec->file_name_is_absolute($dir)) {
 		    $newdir = canonical_path($dir);
@@ -1132,32 +1140,46 @@ sub src_deps {
 		print "add_dir_event: newdir is $newdir\n" if $debugging;
 
 		if (! $newdir) {
-		    print "Bad path processing (add-include-book-dir :$name \"$dir\") in $fname\n";
+		    print STDERR "Bad path processing (add-include-book-dir :$name \"$dir\") in $fname\n";
 		}
-		$certinfo->include_dirs->{$name} = $newdir;
-		print "src_deps: add_dir $name " . $certinfo->include_dirs->{$name} . "\n" if $debugging;
+		$incdirs->{$name} = $newdir;
+		if ($portp || ! $localp) {
+		    print "add_dir: adding nonlocal incdir $name -> $newdir\n" if $debugging;
+		    $certinfo->include_dirs->{$name} = $newdir;
+		}
+		print "src_deps: add_dir $name " . $newdir . "\n" if $debugging;
 	    } elsif ($type eq include_book_event) {
-		my $bookname = $event->[1];
-		my $dir = $event->[2];
+		my (undef, $bookname, $dir, $noport, $localp) = @$event;
 		my $fullname = expand_dirname_cmd($bookname, $fname, $dir,
-						  $certinfo->include_dirs,
+						  $incdirs,
 						  "include-book",
 						  ".cert");
 		if (! $fullname) {
-		    print "Bad path in (include-book \"$bookname\""
+		    print STDERR "Bad path in (include-book \"$bookname\""
 			. ($dir ? " :dir $dir)" : ")") . " in $fname\n";
 		} else {
 		    print "include-book fullname: $fullname\n" if $debugging;
 		    if ($portp) {
 			push(@{$certinfo->portdeps}, $fullname);
+			push(@{$certinfo->portdeps_local}, $localp);
 		    } else {
 			push(@{$certinfo->bookdeps}, $fullname);
+			push(@{$certinfo->bookdeps_local}, $localp);
 		    }
 		    add_deps($fullname, $depdb, $fname);
 		    my $book_certinfo = $depdb->certdeps->{$fullname};
 		    if ($book_certinfo) {
 			while (my ($kwd, $path) = each(%{$book_certinfo->include_dirs})) {
-			    $certinfo->include_dirs->{$kwd} = $path;
+			    $incdirs->{$kwd} = $path;
+			    if ($portp || ! $localp) {
+				$certinfo->include_dirs->{$kwd} = $path;
+			    }
+			}
+			while (my ($kwd, $val) = each(%{$book_certinfo->defines})) {
+			    $defines->{$kwd} = $val;
+			    if ($portp || ! $localp) {
+				$certinfo->defines->{$kwd} = $val;
+			    }
 			}
 		    } else {
 			# Presumably we've printed an error message already?
@@ -1170,7 +1192,7 @@ sub src_deps {
 						  $certinfo->include_dirs,
 						  "depends-on", "");
 		if (! $fullname) {
-		    print "Bad path in (depends-on \"$depname\""
+		    print STDERR "Bad path in (depends-on \"$depname\""
 			. ($dir ? " :dir $dir)" : ")") . " in $fname\n";
 		} else {
 		    push(@{$certinfo->otherdeps}, $fullname);
@@ -1183,7 +1205,7 @@ sub src_deps {
 						  $certinfo->include_dirs,
 						  "depends-rec", ".cert");
 		if (! $fullname) {
-		    print "Bad path in (depends-rec \"$depname\""
+		    print STDERR "Bad path in (depends-rec \"$depname\""
 			. ($dir ? " :dir $dir)" : ")") . " in $fname\n";
 		} else {
 		    print "depends_rec $fullname\n" if $debugging;
@@ -1199,9 +1221,9 @@ sub src_deps {
 		my $fullname = expand_dirname_cmd($srcname, $fname, $dir,
 						  $certinfo->include_dirs, "loads", "");
 		if ($fullname) {
-		    src_deps($fullname, $depdb, $certinfo, $ldp, $portp, $defines, $seen, $fname);
+		    src_deps($fullname, $depdb, $certinfo, $ldp, $portp, $seen, $fname);
 		} else {
-		    print "Bad path in (loads \"$srcname\""
+		    print STDERR "Bad path in (loads \"$srcname\""
 			. ($dir ? " :dir $dir)" : ")") . " in $fname\n";
 		}
 	    } elsif ($type eq cert_param_event) {
@@ -1216,22 +1238,25 @@ sub src_deps {
 		my $fullname = expand_dirname_cmd($srcname, $fname, $dir,
 						  $certinfo->include_dirs, "ld", "");
 		if ($fullname) {
-		    src_deps($fullname, $depdb, $certinfo, $ldp, $portp, $defines, $seen, $fname);
+		    src_deps($fullname, $depdb, $certinfo, $ldp, $portp, $seen, $fname);
 		} else {
-		    print "Bad path in (ld \"$srcname\""
+		    print STDERR "Bad path in (ld \"$srcname\""
 			. ($dir ? " :dir $dir)" : ")") . " in $fname\n";
 		}
 		if (! $ldp) {
-		    print "Warning: LD event in book context in $fname:\n";
-		    print_event($event);
-		    print "\n";
+		    print STDERR "Warning: LD event in book context in $fname:\n";
+		    print_event(*STDERR, $event);
+		    print STDERR "\n";
 		}
 	    } elsif ($type eq ifdef_define_event) {
-		my $negate = $event->[1];
-		my $var = $event->[2];
-		$defines->{$var} = $negate ? "" : "1";
+		my (undef, $negate, $var, $localp) = @$event;
+		my $val = $negate ? "" : "1";
+		$defines->{$var} = $val;
+		if ($portp || ! $localp) {
+		    $certinfo->defines->{$var} = $val;
+		}
 	    } elsif (! ($type eq set_max_mem_event || $type eq set_max_time_event || $type eq pbs_event)) {
-		print "unknown event type: $type\n";
+		print STDERR "unknown event type: $type\n";
 	    }
 	}
     }
@@ -1295,12 +1320,12 @@ sub find_deps {
 	# Scan the .acl2 file first so that we get the add-include-book-dir
 	# commands before the include-book commands.
 	if ($acl2file) {
-	    src_deps($acl2file, $depdb, $certinfo, 1, 1, {}, {}, $lispfile);
+	    src_deps($acl2file, $depdb, $certinfo, 1, 1, {}, $lispfile);
 	}
     }
 
     # Scan the lisp file for include-books.
-    src_deps($lispfile, $depdb, $certinfo, (! $certifiable), 0, {}, {}, $parent);
+    src_deps($lispfile, $depdb, $certinfo, (! $certifiable), 0, {}, $parent);
 
     if ($debugging) {
 	print "find_deps $lispfile: bookdeps:\n";
@@ -1332,13 +1357,14 @@ sub find_deps {
 	    # Won't check the result of canonical_path because we're
 	    # already in the right directory.
 	    push(@{$certinfo->otherdeps}, $imfilepath);
+	    $depdb->others->{$imfilepath} = 1;
 	    my $line;
 	    if (open(my $im, "<", $imagefile)) {
 		$line = <$im>;
 		close $im;
 		chomp $line;
 	    } else {
-		print "Warning: find_deps: Could not open image file $imagefile: $!\n";
+		print STDERR "Warning: find_deps: Could not open image file $imagefile: $!\n";
 	    }
 	    $certinfo->image($line);
 	}
@@ -1480,33 +1506,112 @@ sub collect_top_up_to_date {
     # up_to_date is the hash returned by check_up_to_date
     my ($targets, $depdb, $up_to_date) = @_;
 
+    # This tracks whether each target is under an up-to-date target,
+    # but also doubles as a seen list.
     my %under_up_to_date = ();
     my $dfs;
     $dfs = sub {
 	my ($target, $under) = @_;
 	if (exists $under_up_to_date{$target}) {
+	    # Seen already. Skip, but first update under_up_to_date if
+	    # it needs it.
+	    if ($under) {
+		$under_up_to_date{$target} = 1;
+	    }
 	    return;
 	}
 	$under_up_to_date{$target} = $under;
-	$under = $under || $up_to_date->{$target};
 
 	my $certdeps = $depdb->cert_deps($target);
 	foreach my $cert (@$certdeps) {
-	    $dfs->($cert, $under);
+	    $dfs->($cert, $up_to_date->{$target});
+	}
+    };
+
+    foreach my $target (@$targets) {
+	$dfs->($target, 0);
+    }
+    my @top_up_to_date = ();
+    while ((my $cert, my $updated) = each %$up_to_date) {
+	if ($updated && exists $under_up_to_date{$cert} && $under_up_to_date{$cert} == 0) {
+	    push (@top_up_to_date, $cert);
+	}
+    }
+    return \@top_up_to_date;
+}
+
+sub collect_top_up_to_date_modulo_local {
+    # up_to_date is the hash returned by check_up_to_date
+    my ($targets, $depdb, $up_to_date) = @_;
+
+    # This tracks whether each target is under an up-to-date target,
+    # but also doubles as a seen list.
+    my %under_up_to_date = ();
+    my $dfs;
+    $dfs = sub {
+	my ($target, $under) = @_;
+	if (exists $under_up_to_date{$target}) {
+	    # Seen already. Skip, but first update under_up_to_date if
+	    # it needs it.
+	    if ($under) {
+		$under_up_to_date{$target} = 1;
+	    }
+	    return;
+	}
+	$under_up_to_date{$target} = $under;
+
+	my $certdeps = $depdb->cert_nonlocal_deps($target);
+	foreach my $cert (@$certdeps) {
+	    $dfs->($cert, $up_to_date->{$target});
+	}
+    };
+
+    foreach my $target (@$targets) {
+	$dfs->($target, 0);
+    }
+    my @top_up_to_date = ();
+    while ((my $cert, my $updated) = each %$up_to_date) {
+	if ($updated && exists $under_up_to_date{$cert} && $under_up_to_date{$cert} == 0) {
+	    push (@top_up_to_date, $cert);
+	}
+    }
+    return \@top_up_to_date;
+}
+
+
+
+sub collect_all_up_to_date {
+    # up_to_date is the hash returned by check_up_to_date
+    my ($targets, $depdb, $up_to_date) = @_;
+
+    my @all_up_to_date = ();
+    my @all_out_of_date = ();
+    my %visited = ();
+    my $dfs;
+    $dfs = sub {
+	my $target = shift;
+	if ($visited{$target}) {
+	    return;
+	}
+	$visited{$target} = 1;
+	my $certdeps = $depdb->cert_deps($target);
+	foreach my $cert (@$certdeps) {
+	    $dfs->($cert);
+	}
+	if ($up_to_date->{$target}) {
+	    push (@all_up_to_date, $target);
+	} else {
+	    push (@all_out_of_date, $target);
 	}
     };
 
     foreach my $target (@$targets) {
 	$dfs->($target);
     }
-    my @top_up_to_date = ();
-    while ((my $cert, my $updated) = each %$up_to_date) {
-	if ($updated && ! $under_up_to_date{$cert}) {
-	    push (@top_up_to_date, $cert);
-	}
-    }
-    return \@top_up_to_date;
+
+    return (\@all_up_to_date, \@all_out_of_date);
 }
+
 
 sub collect_bottom_out_of_date {
     # up_to_date is the hash returned by check_up_to_date
@@ -1562,10 +1667,10 @@ sub add_deps {
     if (exists $depdb->certdeps->{$target}) {
 	# We've already calculated this file's dependencies, or we're in a self-loop.
 	if ($depdb->certdeps->{$target} == 0) {
-	    print "Dependency loop on $target!\n";
-	    print "Current stack:\n";
+	    print STDERR "Dependency loop on $target!\n";
+	    print STDERR "Current stack:\n";
 	    foreach my $book (@{$depdb->stack}) {
-		print "   $book\n";
+		print STDERR "   $book\n";
 	    }
 	}
 	print "depdb entry exists\n" if $debugging;
@@ -1653,7 +1758,7 @@ sub add_deps {
 
     my $topstack = pop(@{$depdb->stack});
     if (! ($topstack eq $target) ) {
-	print "Stack discipline failed on $target! was $topstack\n";
+	print STDERR "Stack discipline failed on $target! was $topstack\n";
     }
 
     $depdb->certdeps->{$target} = $certinfo ;
@@ -1727,7 +1832,7 @@ sub read_targets {
 	}
 	close $tfile;
     } else {
-	print "Warning: Could not open $fname: $!\n";
+	print STDERR "Warning: Could not open $fname: $!\n";
     }
 }
 
@@ -1800,7 +1905,7 @@ sub process_labels_and_targets {
 		push (@targets, @{$certinfo->portdeps});
 		push (@$label_targets, @{$certinfo->bookdeps}) if $label_started;
 	    } else {
-		print "Bad path for target: $str\n";
+		print STDERR "Bad path for target: $str\n";
 	    }
 	} elsif (substr($str, -1, 1) eq ':') {
 	    # label.
@@ -1827,7 +1932,7 @@ sub process_labels_and_targets {
 		push(@targets, $target);
 		push(@$label_targets, $target) if $label_started;
 	    } else {
-		print "Bad path for target: $str\n";
+		print STDERR "Bad path for target: $str\n";
 	    }
 	}
     }
@@ -1907,13 +2012,13 @@ sub retrieve_cache {
 
     my $pair = retrieve($fname);
     if (! (ref($pair) eq 'ARRAY')) {
-	print "Invalid cache format; starting from empty cache\n";
+	print STDERR "Invalid cache format; starting from empty cache\n";
 	return {};
     } elsif ( $pair->[0] != $cache_version_code ) {
-	print "Wrong cache version code; starting from empty cache\n";
+	print STDERR "Wrong cache version code; starting from empty cache\n";
 	return {};
     } elsif (! (ref($pair->[1]) eq 'HASH')) {
-	print "Right cache version code, but badly formatted! Starting from empty\n";
+	print STDERR "Right cache version code, but badly formatted! Starting from empty\n";
 	return {};
     } else {
 	return $pair->[1];

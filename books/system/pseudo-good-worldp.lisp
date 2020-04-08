@@ -6,6 +6,40 @@
 
 ; -----------------------------------------------------------------
 
+; The files included here were originally part of this file, but they have been
+; factored out so that they can be used by other files in the community books
+; in a more modular way.
+
+(include-book "std/typed-alists/keyword-to-keyword-value-list-alistp" :dir :system)
+(include-book "std/typed-lists/string-or-symbol-listp" :dir :system)
+(include-book "pseudo-event-form-listp")
+(include-book "pseudo-command-formp")
+(include-book "pseudo-event-landmarkp")
+(include-book "pseudo-command-landmarkp")
+(include-book "pseudo-tests-and-calls-listp")
+
+; -----------------------------------------------------------------
+
+; This book is used by the book worldp-check.lisp to check the concept of a
+; ``good world'', as discussed below.  If that check fails, proceed as follows.
+
+;   (include-book "pseudo-good-worldp")
+;   (chk-pseudo-good-worldp "pseudo-good-worldp")
+
+; You will typically see an error message of the following form, for some value
+; of N:
+
+;   Bad World detected by PSEUDO-GOOD-WORLDP2:  (nth N ...) is an illegal
+;   triple.
+
+; In the loop, execute (nth N (w state)), which should evaluate to the
+; offending form.  Then you need to figure out why that form causes a failure.
+; (There are other error messages, probably much less common.  The context, in
+; this case PSEUDO-GOOD-WORLDP2, gives you a function to look at as a starting
+; point.)
+
+; -----------------------------------------------------------------
+
 ; This file defines the concept of a ``good world''.  But we wrestled with the
 ; question of how strong it should be.  Ultimately what we define is the
 ; concept pseudo-good-worldp.  This is a relatively weak approximation of the
@@ -216,16 +250,6 @@
 
 ; EVENT-LANDMARK [GLOBAL-VALUE]
 
-; A ``form'' in the sense used here is an untranslated event or command form or
-; even a raw List form.  Because of macros it is almost impossible to put
-; constraints on forms.  For example, with an appropriate defmacro of barf,
-; this could be a form (barf (1 . 2)).  But even macros have to be symbols and
-; take a true-list of args.  So we know that much at the top but all bets are
-; off after that.  The most rigorous test would translate the alleged form, but
-; that would require state and the specification of translate's many options
-; like whether stobjs are treated specially.  Until we need it, we're not going
-; to try to implement the stronger test.
-
 (defun pseudo-function-symbolp (fn n)
 
 ; The n above is just a placeholder to allow me to record the requirements on
@@ -242,94 +266,15 @@
       (and (pseudo-function-symbolp (car lst) n)
            (pseudo-function-symbol-listp (cdr lst) n))))
 
-(defun pseudo-formp (x)
-  (or (atom x)
-      (and (consp x)
-           (true-listp x)
-           (symbolp (car x)))))   ; This symbolp could be a macro or a function.
-
-(defun pseudo-form-listp (x)
-  (if (atom x)
-      (equal x nil)
-      (and (pseudo-formp (car x))
-           (pseudo-form-listp (cdr x)))))
-
-(defun string-or-symbol-listp (x)
-  (if (atom x)
-      (null x)
-      (and (or (stringp (car x))
-               (symbolp (car x)))
-           (string-or-symbol-listp (cdr x)))))
-
-
-(defun pseudo-event-landmarkp (val)
-
-; If this function has to be changed, see whether there is more to say in the
-; comment, labeled Event Tuples, just above make-event-tuple, or the comment in
-; make-event-tuple.
-
-; xxx change the commment in make-event-tuple:
-
-; An event tuple is always a cons.  Except in the initial case created by
-; primordial-world-globals, the car is always either a natural (denoting n and
-; implying d=0) or a cons of two naturals, n and d.    Its cadr is
-; either a symbol, denoting its type and signalling that the cdr is the form,
-; the symbol-class is :program and that the namex can be recovered from the
-; form, or else the cadr is the pair (ev-type namex . symbol-class) signalling
-; that the form is the cddr.
-
-; Generally, the val encodes:
-;  n - absolute event number
-;  d - embedded event depth
-;  form - form that created the event
-;  ev-type - name of the primitive event macro we use, e.g., defun, defthm, defuns
-;  namex - name or names introduced (0 is none)
-;  symbol-class - of names (or nil)
-
-  (or (equal val '(-1 ((NIL) 0)))   ; bogus tuple by primordial-world-globals
-      (and (consp val)
-           (or (natp (car val))       ; n = (car val), d = 0
-               (and (consp (car val))
-                    (natp (car (car val)))  ; = n
-                    (natp (cdr (car val))))) ; = d
-           (consp (cdr val))
-           (if (symbolp (cadr val))    ; ev-type is recoverable from form
-               (pseudo-formp (cdr val))  ; (cdr val) here is the event form
-               (and (consp (cadr val))
-                    (consp (car (cadr val))) ; (ev-type . skipped-proofs-p)
-                    (symbolp (car (car (cadr val)))) ; ev-type
-                    (booleanp (cdr (car (cadr val)))) ; skipped-proofs-p
-                    (consp (cdr (cadr val)))
-                    (or (symbolp (cadr (cadr val))) ; name introduced
-                        (stringp (cadr (cadr val))) ; name introduced
-                        (equal 0 (cadr (cadr val))) ; no names introduced
-                        (string-or-symbol-listp (cadr (cadr val)))) ; list of names introduced
-                    (member-eq (cddr (cadr val)) ; symbol-class
-                               '(nil :program :ideal :common-lisp-compliant))
-                    (pseudo-formp (cddr val))))))) ; (cddr val) here is the event form
+; See pseudo-event-landmarkp in pseudo-event-landmarkp.lisp.
+; That function was originally here in this file.
 
 ; -----------------------------------------------------------------
 
 ; COMMAND-LANDMARK [GLOBAL-VALUE]
 
-(defun pseudo-command-landmarkp (val)
-
-; Warning: Keep this in sync with (defrec command-tuple ...) in the ACL2
-; sources.
-
-  (and (consp val)
-       (or (eql (car val) -1) (natp (car val)))
-       (consp (cdr val))
-       (consp (cadr val))
-       (if (keywordp (car (cadr val)))
-           (and (eq (car (cadr val)) :logic)
-                (pseudo-formp (cdr (cadr val))))
-           (pseudo-formp (cadr val)))
-       (consp (cddr val))
-       (or (null (caddr val))
-           (stringp (caddr val)))
-       (or (null (cdddr val))
-           (pseudo-formp (cdddr val)))))
+; See pseudo-command-landmarkp in pseudo-command-landmarkp.lisp.
+; That function was originally here in this file.
 
 ; -----------------------------------------------------------------
 ; KNOWN-PACKAGE-ALIST [GLOBAL-VALUE]
@@ -361,15 +306,12 @@
         (t nil)))
 
 ; -----------------------------------------------------------------
-; RECOGNIZER-ALIST [GLOBAL-VALUE]
+; BUILT-IN-CLAUSES [GLOBAL-VALUE]
 
-; The recognizer-alist contains records of the following form:
+; Built-in-clauses is an alist associating function symbols with lists of
+; built-in-clause records.
 
-; (defrec recognizer-tuple
-;   (fn (nume . true-ts)
-;       (false-ts . strongp)
-;       . rune)
-;   t)
+; (defrec built-in-clause ((nume . all-fnnames) clause . rune) t)
 
 (defun pseudo-numep (n)
 
@@ -379,36 +321,6 @@
 ; many as there are runes (a function of the world).
 
   (natp n))
-
-
-(defun type-setp (n)
-  (and (integerp n)
-       (<= *min-type-set* n)
-       (<= n *max-type-set*)))
-
-(defun pseudo-recognizer-tuplep (x)
-  (case-match x
-    ((fn (nume . true-ts) (false-ts . strongp) . rune)
-     (and (pseudo-function-symbolp fn 1)
-          (or (null nume) (pseudo-numep nume))  ; nil corresponds to the fake rune
-          (type-setp true-ts)
-          (type-setp false-ts)
-          (booleanp strongp)
-          (pseudo-runep rune)))
-    (& nil)))
-
-(defun pseudo-recognizer-alistp (x)
-  (if (atom x)
-      (null x)
-      (and (pseudo-recognizer-tuplep (car x))
-           (pseudo-recognizer-alistp (cdr x)))))
-
-; -----------------------------------------------------------------
-; BUILT-IN-CLAUSES [GLOBAL-VALUE]
-
-; Built-in-clauses is an alist associating function symbols with lists of built-in-clause records.
-
-; (defrec built-in-clause ((nume . all-fnnames) clause . rune) t)
 
 (defun pseudo-built-in-clause-recordp (x)
   (case-match x
@@ -432,6 +344,14 @@
            (pseudo-function-symbolp (car (car x)) nil)
            (pseudo-built-in-clause-record-listp (cdr (car x)))
            (pseudo-built-in-clausesp (cdr x)))))
+
+; -----------------------------------------------------------------
+; ATTACH-NIL-LST [GLOBAL-VALUE]
+
+; Attach-nil-lst is a list of function symbols.
+
+(defun pseudo-attach-nil-lst (lst)
+  (pseudo-function-symbol-listp lst nil))
 
 ; -----------------------------------------------------------------
 ; ATTACHMENT-RECORDS [GLOBAL-VALUE]
@@ -501,6 +421,11 @@
 
 ; This is a list of records:
 ; (defrec type-set-inverter-rule ((nume . ts) terms . rune) nil)
+
+(defun type-setp (n)
+  (and (integerp n)
+       (<= *min-type-set* n)
+       (<= n *max-type-set*)))
 
 (defun pseudo-type-set-inverter-rule-recordp (x)
   (case-match x
@@ -665,8 +590,20 @@
                    (eq (car ignorep) 'defstobj)
                    (pseudo-function-symbolp (cdr ignorep) nil)) ; really must be stobj-name
               (null ignorep))
-          (pseudo-form-listp defs)))
-    (& (pseudo-formp val))))
+
+; We could do better than (true-listp defs) below.  For example
+; (pseudo-event-form-listp defs) should be true, as it is defined in late
+; December 2019 (but perhaps it won't be true in the future -- after all, defs
+; is a list of CDRs of events).  Much more should also be true, but in the
+; "pseudo" spirit we keep this simple.
+
+          (true-listp defs)))
+    (&
+
+; We could probably insist that val be a true-listp in this case, but that is
+; such a weak check that given our lack of certainty, we don't bother.
+
+     t)))
 
 ; The value of TOP-LEVEL-CLTL-COMMAND-STACK is a list of CLTL-COMMAND objects.
 
@@ -899,7 +836,8 @@
 ; -----------------------------------------------------------------
 ; CURRENT-THEORY-INDEX [GLOBAL-VALUE]
 
-; The current-theory-index is the highest nume in use as of the setting of current-theory.
+; The current-theory-index is the highest nume in use as of the setting of
+; current-theory.
 
 (defun pseudo-current-theory-indexp (val)
   (or (pseudo-numep val)
@@ -953,30 +891,28 @@
 
 (defun skip-proofs-seenp (val)
 
-; Legal values are nil, (:include-book full-book-name), or any translatable form which might be
-; found in a skip-proofs.
+; Legal values are nil, (:include-book full-book-name), or any event form.
 
   (or (null val)
       (and (true-listp val)
            (equal (len val) 2)
            (eq (car val) :include-book)
            (stringp (cadr val)))
-      (pseudo-formp val)))
+      (pseudo-event-formp val)))
 
 ; -----------------------------------------------------------------
 ; REDEF-SEEN [GLOBAL-VALUE]
 
 (defun redef-seenp (val)
 
-; Legal values are nil, (:include-book full-book-name), or any translatable form which might be
-; found in a skip-proofs.
+; Legal values are nil, (:include-book full-book-name), or any event form.
 
   (or (null val)
       (and (true-listp val)
            (equal (len val) 2)
            (eq (car val) :include-book)
            (stringp (cadr val)))
-      (pseudo-formp val)))
+      (pseudo-event-formp val)))
 
 ; -----------------------------------------------------------------
 ; CERT-REPLAY [GLOBAL-VALUE]
@@ -1015,6 +951,21 @@
 
 (defun pseudo-free-var-runes-oncep (val)
   (pseudo-theoryp1 val))
+
+; -----------------------------------------------------------------
+; TRANSLATE-CERT-DATA [GLOBAL-VALUE]
+
+(defun weak-translate-cert-data-record-listp (lst)
+  (cond ((atom lst) (null lst))
+        (t (and (weak-translate-cert-data-record-p (car lst))
+                (weak-translate-cert-data-record-listp (cdr lst))))))
+
+(defun pseudo-translate-cert-datap (val)
+  (cond ((atom val) (null val))
+        (t (and (consp (car val))
+                (symbolp (caar val))
+                (weak-translate-cert-data-record-listp (cdar val))
+                (pseudo-translate-cert-datap (cdr val))))))
 
 ; -----------------------------------------------------------------
 ; CHK-NEW-NAME-LST [GLOBAL-VALUE]
@@ -1293,6 +1244,15 @@
   (alistp val))
 
 ;-----------------------------------------------------------------
+; LOOP$-ALIST
+
+; Loop$-alist maps loop$ expressions to their logic translations.  We just
+; insist it is an alist.
+
+(defun loop$-alistp (val)
+  (alistp val))
+
+;-----------------------------------------------------------------
 ; COMMON-LISP-COMPLIANT-LAMBDAS [GLOBAL-VALUE]
 (defun common-lisp-compliant-lambdasp (val)
 ; This is really a list well-formed quoted lambda expressions (all of which
@@ -1419,13 +1379,6 @@
 
 ; This is a list of fully elaborated rule classes as returned by translate-rule-classes.
 ; For the present purposes we just check that it is an alist mapping keywords to keyword alists.
-
-(defun keyword-to-keyword-value-list-alistp (x)
-  (cond ((atom x) (null x))
-        (t (and (consp (car x))
-                (keywordp (car (car x)))
-                (keyword-value-listp (cdr (car x)))
-                (keyword-to-keyword-value-list-alistp (cdr x))))))
 
 (defun classesp (sym val)
   (declare (ignore sym))
@@ -1760,8 +1713,8 @@
     (COMMAND-LANDMARK (pseudo-command-landmarkp val))
     (KNOWN-PACKAGE-ALIST (known-package-alistp val))
     (WELL-FOUNDED-RELATION-ALIST (pseudo-well-founded-relation-alistp val))
-    (RECOGNIZER-ALIST (pseudo-recognizer-alistp val))
     (BUILT-IN-CLAUSES (pseudo-built-in-clausesp val))
+    (ATTACH-NIL-LST (pseudo-attach-nil-lst val))
     (ATTACHMENT-RECORDS (pseudo-attachment-recordsp val))
     (ATTACHMENTS-AT-GROUND-ZERO (pseudo-attachments-at-ground-zerop val))
     (HALF-LENGTH-BUILT-IN-CLAUSES (pseudo-half-length-built-in-clausesp val))
@@ -1786,6 +1739,7 @@
     (NONCONSTRUCTIVE-AXIOM-NAMES (nonconstructive-axiom-namesp val))
     (STANDARD-THEORIES (pseudo-standard-theoriesp val))
     (CURRENT-THEORY (pseudo-current-theoryp val))
+    (CURRENT-THEORY-LENGTH (natp val))
     (CURRENT-THEORY-AUGMENTED (pseudo-current-theory-augmentedp val))
     (CURRENT-THEORY-INDEX (pseudo-current-theory-indexp val))
     (GENERALIZE-RULES (pseudo-generalize-rulesp val))
@@ -1798,6 +1752,7 @@
     (PROOF-SUPPORTERS-ALIST (proof-supporters-alistp val))
     (FREE-VAR-RUNES-ALL (pseudo-free-var-runes-allp val))
     (FREE-VAR-RUNES-ONCE (pseudo-free-var-runes-oncep val))
+    (TRANSLATE-CERT-DATA (pseudo-translate-cert-datap val))
     (CHK-NEW-NAME-LST (chk-new-name-lstp val))
     (TAU-CONJUNCTIVE-RULES (pseudo-tau-conjunctive-rulesp val))
     (TAU-NEXT-INDEX (natp val))
@@ -1812,6 +1767,7 @@
       (pseudo-defined-hereditarily-constrained-fnsp val))
     (WORLD-GLOBALS (world-globalsp val))
     (LAMBDA$-ALIST (lambda$-alistp val))
+    (LOOP$-ALIST (loop$-alistp val))
     (COMMON-LISP-COMPLIANT-LAMBDAS (common-lisp-compliant-lambdasp val))
     (NEVER-IRRELEVANT-FNS-ALIST (never-irrelevant-fns-alistp val))
     (otherwise nil)))
@@ -1836,18 +1792,6 @@
 ; An induction machine is a list of tests-and-calls records:
 ; (defrec tests-and-calls (tests . calls) nil), where each of the two
 ; fields is a list of terms.
-
-(defun pseudo-tests-and-callsp (x)
-  (case-match x
-    (('TESTS-AND-CALLS tests . calls)
-     (and (pseudo-term-listp tests)
-          (pseudo-term-listp calls)))
-    (& nil)))
-
-(defun pseudo-tests-and-calls-listp (x)
-  (cond ((atom x) (null x))
-        (t (and (pseudo-tests-and-callsp (car x))
-                (pseudo-tests-and-calls-listp (cdr x))))))
 
 (defun pseudo-induction-machinep (sym val)
   (declare (ignore sym))
@@ -2042,6 +1986,13 @@
   (pseudo-linear-lemma-listp val))
 
 ;-----------------------------------------------------------------
+; LOOP$-RECURSION
+
+(defun loop$-recursionp (sym val)
+  (declare (ignore sym))
+  (booleanp val))
+
+;-----------------------------------------------------------------
 ; MACRO-ARGS
 
 (verify-termination legal-initp) ; and guards
@@ -2220,6 +2171,34 @@
 ; correct) accurately reflects the use of the arguments in recursion.
 
   (pseudo-quick-block-info-listp val))
+
+; -----------------------------------------------------------------
+; RECOGNIZER-ALIST
+
+; Each property's recognizer-alist contains records of the following form:
+
+; (defrec recognizer-tuple
+;   (fn (nume . true-ts)
+;       (false-ts . strongp)
+;       . rune)
+;   t)
+
+(defun pseudo-recognizer-tuplep (fn x)
+  (case-match x
+    ((!fn (nume . true-ts) (false-ts . strongp) . rune)
+     (and (pseudo-function-symbolp fn 1)
+          (or (null nume) (pseudo-numep nume))  ; nil corresponds to the fake rune
+          (type-setp true-ts)
+          (type-setp false-ts)
+          (booleanp strongp)
+          (pseudo-runep rune)))
+    (& nil)))
+
+(defun pseudo-recognizer-alistp (fn x)
+  (if (atom x)
+      (null x)
+      (and (pseudo-recognizer-tuplep fn (car x))
+           (pseudo-recognizer-alistp fn (cdr x)))))
 
 ;-----------------------------------------------------------------
 ; RECURSIVEP
@@ -2663,8 +2642,11 @@
 ; UNTRANSLATED-THEOREM
 
 (defun untranslated-theoremp (sym val)
+
+; The form of an untranslated theorem is quite arbitrary, because of macros.
+
   (declare (ignore sym))
-  (pseudo-formp val))
+  (true-listp val))
 
 ; -----------------------------------------------------------------
 
@@ -2860,6 +2842,7 @@
           (LEMMAS (pseudo-lemmasp sym val))
           (LEVEL-NO (level-nop sym val))
           (LINEAR-LEMMAS (pseudo-linear-lemmasp sym val))
+          (LOOP$-RECURSION (loop$-recursionp sym val))
           (MACRO-ARGS (pseudo-macro-argsp sym val))
           (MACRO-BODY (pseudo-macro-bodyp sym val))
           (NEG-IMPLICANTS (pseudo-neg-implicantsp sym val))
@@ -2872,6 +2855,7 @@
                           (predefinedp sym val)))
           (PRIMITIVE-RECURSIVE-DEFUNP (primitive-recursive-defunpp sym val))
           (QUICK-BLOCK-INFO (pseudo-quick-block-infop sym val))
+          (RECOGNIZER-ALIST (pseudo-recognizer-alistp sym val))
           (RECURSIVEP (pseudo-recursivepp sym val))
           (REDEFINED (redefinedp sym val))
           (REDUNDANCY-BUNDLE (pseudo-redundancy-bundlep sym val))

@@ -146,11 +146,11 @@
   :prepwork
   ((local (in-theory (e/d () (not (tau-system))))))
 
+  :modr/m t
+
   :body
 
-  (b* ((ctx 'x86-movs)
-
-       (group-1-prefix (the (unsigned-byte 8) (prefixes->rep prefixes)))
+  (b* ((group-1-prefix (the (unsigned-byte 8) (prefixes->rep prefixes)))
 
        ;; TODO: is the following already checked by GET-PREFIXES?
        (badlength? (check-instruction-length start-rip temp-rip 0))
@@ -161,9 +161,6 @@
        (p4? (equal #.*addr-size-override*
                    (the (unsigned-byte 8) (prefixes->adr prefixes))))
 
-       (r/m (modr/m->r/m modr/m))
-       (mod (modr/m->mod modr/m))
-
        ((the (unsigned-byte 1) df) (flgi :df x86))
 
        ((the (integer 2 8) counter/addr-size)
@@ -171,7 +168,8 @@
 
        (select-byte-operand (equal #xA4 opcode))
        ((the (integer 1 8) operand-size)
-        (select-operand-size proc-mode select-byte-operand rex-byte nil prefixes x86))
+        (select-operand-size
+         proc-mode select-byte-operand rex-byte nil prefixes nil nil nil x86))
 
        (counter/addr-size-2/4? (or (eql counter/addr-size 2)
                                    (eql counter/addr-size 4)))
@@ -186,7 +184,7 @@
 
        (inst-ac? (alignment-checking-enabled-p x86))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        ((mv flg0 src x86)
         (rme-size-opt
@@ -399,11 +397,11 @@
   :prepwork
   ((local (in-theory (e/d () (not (tau-system))))))
 
+  :modr/m t
+
   :body
 
-  (b* ((ctx 'x86-cmps)
-
-       (group-1-prefix (the (unsigned-byte 8) (prefixes->rep prefixes)))
+  (b* ((group-1-prefix (the (unsigned-byte 8) (prefixes->rep prefixes)))
 
        ;; TODO: is the following already checked by GET-PREFIXES?
        (badlength? (check-instruction-length start-rip temp-rip 0))
@@ -414,9 +412,6 @@
        (p4? (equal #.*addr-size-override*
                    (the (unsigned-byte 8) (prefixes->adr prefixes))))
 
-       (r/m (modr/m->r/m modr/m))
-       (mod (modr/m->mod modr/m))
-
        ((the (unsigned-byte 1) df) (flgi :df x86))
 
        ((the (integer 2 8) counter/addr-size)
@@ -424,7 +419,8 @@
 
        (select-byte-operand (equal #xA6 opcode))
        ((the (integer 1 8) operand-size)
-        (select-operand-size proc-mode select-byte-operand rex-byte nil prefixes x86))
+        (select-operand-size
+         proc-mode select-byte-operand rex-byte nil prefixes nil nil nil x86))
 
        (counter/addr-size-2/4? (or (eql counter/addr-size 2)
                                    (eql counter/addr-size 4)))
@@ -439,7 +435,7 @@
 
        (inst-ac? (alignment-checking-enabled-p x86))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        ((mv flg0 src x86)
         (rme-size-opt proc-mode operand-size src-addr seg-reg :r inst-ac? x86))
@@ -609,7 +605,7 @@
                 :hints
                 (("Goal" :in-theory (e/d ()
                                          (trunc
-                                          rme-size 
+                                          rme-size
                                           !rgfi-size
                                           !rgfi-size
                                           unsigned-byte-p
@@ -638,9 +634,7 @@
 
   :body
 
-  (b* ((ctx 'x86-stos)
-
-       (group-1-prefix (the (unsigned-byte 8) (prefixes->seg prefixes)))
+  (b* ((group-1-prefix (the (unsigned-byte 8) (prefixes->seg prefixes)))
 
        ;; TODO: is the following already checked by GET-PREFIXES?
        (badlength? (check-instruction-length start-rip temp-rip 0))
@@ -669,7 +663,8 @@
 
        (select-byte-operand (equal #xAA opcode))
        ((the (integer 1 8) operand-size)
-        (select-operand-size proc-mode select-byte-operand rex-byte nil prefixes x86))
+        (select-operand-size
+         proc-mode select-byte-operand rex-byte nil prefixes nil nil nil x86))
 
        (rAX (rgfi-size operand-size #.*rax* rex-byte x86))
 

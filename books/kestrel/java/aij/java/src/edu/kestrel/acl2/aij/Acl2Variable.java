@@ -10,53 +10,99 @@ import java.util.Map;
 
 /**
  * Representation of ACL2 variables.
- * These are translated terms that are ACL2 symbols.
+ * These are translated terms that are symbols.
  */
 public final class Acl2Variable extends Acl2Term {
 
     //////////////////////////////////////// private members:
 
     /**
-     * Symbol that the variable consists of.
-     * This is never {@code null}.
+     * Name of the variable.
+     * Invariant: not null.
      */
     private final Acl2Symbol name;
 
     /**
-     * Constructs an ACL2 variable from
-     * the ACL2 symbol that the variable consists of.
+     * Constructs a variable with the given name.
+     *
+     * @param name The symbol of the variable.
      */
     private Acl2Variable(Acl2Symbol name) {
-        assert name != null;
         this.name = name;
     }
+
+    /**
+     * Index of this variable.
+     * This is set, once, to a non-negative integer
+     * by {@link #setVariableIndices(Map)}.
+     * The purpose of this index is just to optimize the evaluation of terms,
+     * so that bindings of variables to values can be represented as
+     * arrays instead of maps, for faster access:
+     * see {@link Acl2Term#eval(Acl2Value[])}.
+     * Since variables with the same name may have different indices
+     * (when they occur in different terms),
+     * instances of this class must not be interned based on their names.
+     */
+    private int index = -1;
 
     //////////////////////////////////////// package-private members:
 
     /**
-     * Evaluates this ACL2 variable to an ACL2 value,
-     * with respect to the given binding of values to variable symbols.
-     * The result is the value bound to the symbol of the variable.
-     *
-     * @throws Acl2EvaluationException if bindings does not contain
-     *                                 the symbol of this variable
+     * Validates all the function calls in this variable.
+     * Since a variable contains no function calls, this method does nothing.
      */
     @Override
-    Acl2Value eval(Map<Acl2Symbol, Acl2Value> bindings)
-            throws Acl2EvaluationException {
-        assert bindings != null;
-        Acl2Value result = bindings.get(this.name);
-        if (result == null)
-            throw new Acl2EvaluationException
-                    ("Unbound variable: '" + this.name + "'.");
-        else
-            return result;
+    void validateFunctionCalls() {
+    }
+
+    /**
+     * Sets the index of this variable,
+     * according to the supplied map from variable symbols to indices.
+     *
+     * @param indices Map from variable symbols to indices.
+     *                Invariants:
+     *                not null,
+     *                no null keys,
+     *                no null values,
+     *                no negative values.
+     * @throws IllegalArgumentException If this variable index is already set,
+     *                                  or this variable is not
+     *                                  a key of the map.
+     */
+    @Override
+    void setVariableIndices(Map<Acl2Symbol, Integer> indices) {
+        if (this.index != -1)
+            throw new IllegalArgumentException
+                    ("Index of variable " + this.name
+                            + " already set to " + this.index + ".");
+        Integer index = indices.get(this.name);
+        if (index == null)
+            throw new IllegalArgumentException
+                    ("Variable " + this.name + " has no associated index.");
+        this.index = index;
+    }
+
+    /**
+     * Evaluates this variable to a value,
+     * with respect to the given binding of variable indices to values.
+     * The result is the value bound to the symbol of the variable.
+     * This evaluation never fails.
+     *
+     * @param binding The binding of variable indices to values.
+     *                Invariant: not null, no null elements.
+     * @return The value that results from the evaluation.
+     */
+    @Override
+    Acl2Value eval(Acl2Value[] binding) {
+        return binding[this.index];
     }
 
     //////////////////////////////////////// public members:
 
     /**
-     * Checks if this ACL2 variable is equal to the argument object.
+     * Compares this variable with the argument object for equality.
+     *
+     * @param o The object to compare this variable with.
      */
     @Override
     public boolean equals(Object o) {
@@ -67,7 +113,9 @@ public final class Acl2Variable extends Acl2Term {
     }
 
     /**
-     * Returns a hash code for this ACL2 variable.
+     * Returns a hash code for this variable.
+     *
+     * @return The hash code for this variable.
      */
     @Override
     public int hashCode() {
@@ -75,17 +123,18 @@ public final class Acl2Variable extends Acl2Term {
     }
 
     /**
-     * Compares this ACL2 variable with the argument ACL2 term for order.
+     * Compares this variable with the argument term for order.
      * This is not the order on terms documented in the ACL2 manual.
      * Instead, this order consists of:
      * first variables, ordered according to their underlying symbols;
      * then quoted constants, ordered according to their underlying symbols;
-     * finally applications, ordered lexicographically according to
+     * finally function calls, ordered lexicographically according to
      * the function followed by the arguments.
      *
-     * @return a negative integer, zero, or a positive integer as
-     * this term is less than, equal to, or greater than the argument
-     * @throws NullPointerException if the argument is null
+     * @param o The term to compare this variable with.
+     * @return A negative integer, zero, or a positive integer as
+     * this term is less than, equal to, or greater than the argument.
+     * @throws NullPointerException If the argument is null.
      */
     @Override
     public int compareTo(Acl2Term o) {
@@ -95,12 +144,14 @@ public final class Acl2Variable extends Acl2Term {
             Acl2Variable that = (Acl2Variable) o;
             return this.name.compareTo(that.name);
         }
-        // variables are less than quoted constants and applications:
+        // variables are less than quoted constants and function calls:
         return -1;
     }
 
     /**
-     * Returns a printable representation of this ACL2 variable.
+     * Returns a printable representation of this variable.
+     *
+     * @return A printable representation of this variable.
      */
     @Override
     public String toString() {
@@ -108,9 +159,11 @@ public final class Acl2Variable extends Acl2Term {
     }
 
     /**
-     * Returns an ACL2 variable with the given ACL2 name.
+     * Returns a variable with the given name.
      *
-     * @throws IllegalArgumentException if name is null
+     * @param name The name of the variable.
+     * @return The variable.
+     * @throws IllegalArgumentException If {@code name} is null.
      */
     public static Acl2Variable make(Acl2Symbol name) {
         if (name == null)
@@ -118,4 +171,5 @@ public final class Acl2Variable extends Acl2Term {
         else
             return new Acl2Variable(name);
     }
+
 }

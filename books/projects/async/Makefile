@@ -26,7 +26,7 @@ JOBS ?= 4
 #======================================================================
 
 all:
-	$(BUILD_DIR)/cert.pl -j $(JOBS) -a $(ACL2) *.lisp arbitration/*.lisp fifo/*.lisp gcd/*.lisp serial-adder/*.lisp serial-adder/32-bit-serial-adder-old/*.lisp
+	$(BUILD_DIR)/cert.pl -j $(JOBS) -a $(ACL2) *.lisp arbitration/*.lisp fifo/*.lisp gcd/*.lisp serial-adder/*.lisp serial-adder/32-bit-serial-adder-old/*.lisp telescope/*.lisp
 
 clean:
 	$(BUILD_DIR)/clean.pl

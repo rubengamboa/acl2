@@ -4,7 +4,7 @@
 ;; ACL2.
 
 ;; Cuong Chau <ckcuong@cs.utexas.edu>
-;; November 2018
+;; May 2019
 
 (in-package "ADE")
 
@@ -44,31 +44,30 @@
 
 (defconst *arb-merge$select-num* 1)
 (defconst *arb-merge$go-num* 2)
-(defconst *arb-merge$st-len* 2)
 
-(defun arb-merge$data-ins-len (data-width)
-  (declare (xargs :guard (natp data-width)))
-  (+ 3 (* 2 (mbe :logic (nfix data-width)
-                 :exec  data-width))))
+(defun arb-merge$data-ins-len (data-size)
+  (declare (xargs :guard (natp data-size)))
+  (+ 3 (* 2 (mbe :logic (nfix data-size)
+                 :exec  data-size))))
 
-(defun arb-merge$ins-len (data-width)
-  (declare (xargs :guard (natp data-width)))
-  (+ (arb-merge$data-ins-len data-width)
+(defun arb-merge$ins-len (data-size)
+  (declare (xargs :guard (natp data-size)))
+  (+ (arb-merge$data-ins-len data-size)
      *arb-merge$select-num*
      *arb-merge$go-num*))
 
 ;; DE module generator of ARB-MERGE
 
 (module-generator
- arb-merge* (data-width)
- (si 'arb-merge data-width)
+ arb-merge* (data-size)
+ (si 'arb-merge data-size)
  (list* 'full-in0 'full-in1 'empty-out-
-        (append (sis 'data0-in 0 data-width)
-                (sis 'data1-in 0 data-width)
+        (append (sis 'data0-in 0 data-size)
+                (sis 'data1-in 0 data-size)
                 (cons 'select ;; An oracle signal performing random selections
                       (sis 'go 0 *arb-merge$go-num*))))
  (list* 'act 'act0 'act1
-        (sis 'data-out 0 data-width))
+        (sis 'data-out 0 data-size))
  '(arb arb-buf)
  (list
   ;; LINKS
@@ -115,11 +114,11 @@
   '(arb-merge-cntl (act) b-or (act0 act1))
 
   (list 'arb-merge-op0
-        (sis 'data-out 0 data-width)
-        (si 'tv-if (tree-number (make-tree data-width)))
+        (sis 'data-out 0 data-size)
+        (si 'tv-if (tree-number (make-tree data-size)))
         (cons 'act1
-              (append (sis 'data1-in 0 data-width)
-                      (sis 'data0-in 0 data-width))))
+              (append (sis 'data1-in 0 data-size)
+                      (sis 'data0-in 0 data-size))))
   '(i0 (low) vss ())
   '(i1 (high) vdd ())
   '(i2 (reset0) b-and (full-in0 empty-in1-))
@@ -140,7 +139,7 @@
         (si 'v-buf 2)
         '(excl-buf-out arb-buf-out)))
 
- (declare (xargs :guard (natp data-width))))
+ (declare (xargs :guard (natp data-size))))
 
 (make-event
  `(progn
@@ -149,29 +148,29 @@
 ;; DE netlist generator.  A generated netlist will contain an instance of
 ;; ARB-MERGE.
 
-(defund arb-merge$netlist (data-width)
-  (declare (xargs :guard (natp data-width)))
-  (cons (arb-merge* data-width)
+(defund arb-merge$netlist (data-size)
+  (declare (xargs :guard (natp data-size)))
+  (cons (arb-merge* data-size)
         (union$ (link$netlist 2)
                 *joint-cntl*
                 (v-buf$netlist 2)
                 (v-if$netlist 2)
-                (tv-if$netlist (make-tree data-width))
+                (tv-if$netlist (make-tree data-size))
                 :test 'equal)))
 
 ;; Recognizer for ARB-MERGE
 
-(defund arb-merge& (netlist data-width)
+(defund arb-merge& (netlist data-size)
   (declare (xargs :guard (and (alistp netlist)
-                              (natp data-width))))
-  (b* ((subnetlist (delete-to-eq (si 'arb-merge data-width) netlist)))
-    (and (equal (assoc (si 'arb-merge data-width) netlist)
-                (arb-merge* data-width))
+                              (natp data-size))))
+  (b* ((subnetlist (delete-to-eq (si 'arb-merge data-size) netlist)))
+    (and (equal (assoc (si 'arb-merge data-size) netlist)
+                (arb-merge* data-size))
          (link& subnetlist 2)
          (joint-cntl& subnetlist)
          (v-buf& subnetlist 2)
          (v-if& subnetlist 2)
-         (tv-if& subnetlist (make-tree data-width)))))
+         (tv-if& subnetlist (make-tree data-size)))))
 
 ;; Sanity check
 
@@ -184,16 +183,16 @@
 ;; Constraints on the state of ARB-MERGE
 
 (defund arb-merge$st-format (st)
-  (b* ((arb (get-field *arb-merge$arb* st))
-       (arb-buf (get-field *arb-merge$arb-buf* st)))
+  (b* ((arb (nth *arb-merge$arb* st))
+       (arb-buf (nth *arb-merge$arb-buf* st)))
     (and (link$st-format arb 2)
          (link$st-format arb-buf 2))))
 
 ;; Constraints on the state of ARB-MERGE
 
 (defund arb-merge$valid-st (st)
-  (b* ((arb (get-field *arb-merge$arb* st))
-       (arb-buf (get-field *arb-merge$arb-buf* st)))
+  (b* ((arb (nth *arb-merge$arb* st))
+       (arb-buf (nth *arb-merge$arb-buf* st)))
     (and (link$valid-st arb 2)
          (link$valid-st arb-buf 2))))
 
@@ -209,56 +208,56 @@
 (progn
   ;; Extract the 1st input data item
 
-  (defun arb-merge$data0-in (inputs data-width)
+  (defun arb-merge$data0-in (inputs data-size)
     (declare (xargs :guard (and (true-listp inputs)
-                                (natp data-width))))
-    (take (mbe :logic (nfix data-width)
-               :exec  data-width)
+                                (natp data-size))))
+    (take (mbe :logic (nfix data-size)
+               :exec  data-size)
           (nthcdr 3 inputs)))
 
   (defthm len-arb-merge$data0-in
-    (equal (len (arb-merge$data0-in inputs data-width))
-           (nfix data-width)))
+    (equal (len (arb-merge$data0-in inputs data-size))
+           (nfix data-size)))
 
   (in-theory (disable arb-merge$data0-in))
 
   ;; Extract the 2nd input data item
 
-  (defun arb-merge$data1-in (inputs data-width)
+  (defun arb-merge$data1-in (inputs data-size)
     (declare (xargs :guard (and (true-listp inputs)
-                                (natp data-width))))
-    (b* ((width (mbe :logic (nfix data-width)
-                     :exec  data-width)))
-      (take width
-            (nthcdr (+ 3 width) inputs))))
+                                (natp data-size))))
+    (b* ((size (mbe :logic (nfix data-size)
+                     :exec  data-size)))
+      (take size
+            (nthcdr (+ 3 size) inputs))))
 
   (defthm len-arb-merge$data1-in
-    (equal (len (arb-merge$data1-in inputs data-width))
-           (nfix data-width)))
+    (equal (len (arb-merge$data1-in inputs data-size))
+           (nfix data-size)))
 
   (in-theory (disable arb-merge$data1-in))
 
   ;; Extract the "act0" signal
 
-  (defund arb-merge$act0 (inputs st data-width)
+  (defund arb-merge$act0 (inputs st data-size)
     (b* ((full-in0   (nth 0 inputs))
          (full-in1   (nth 1 inputs))
          (empty-out- (nth 2 inputs))
-         (select     (nth (arb-merge$data-ins-len data-width) inputs))
-         (go-signals (nthcdr (+ (arb-merge$data-ins-len data-width)
+         (select     (nth (arb-merge$data-ins-len data-size) inputs))
+         (go-signals (nthcdr (+ (arb-merge$data-ins-len data-size)
                                 *arb-merge$select-num*)
                              inputs))
 
          (b-select (f-bool select))
          (go-arb-merge (nth 0 go-signals))
 
-         (arb (get-field *arb-merge$arb* st))
-         (arb.s (get-field *link$s* arb))
-         (arb.d (get-field *link$d* arb))
+         (arb (nth *arb-merge$arb* st))
+         (arb.s (nth *link$s* arb))
+         (arb.d (nth *link$d* arb))
          (excl-out (car (v-threefix (strip-cars arb.d))))
          (arb-out (cadr (v-threefix (strip-cars arb.d))))
-         (arb-buf (get-field *arb-merge$arb-buf* st))
-         (arb-buf.s (get-field *link$s* arb-buf))
+         (arb-buf (nth *arb-merge$arb-buf* st))
+         (arb-buf.s (nth *link$s* arb-buf))
 
          (m-full-in0 (f-or3 (f-and4 full-in0
                                     (f-not full-in1)
@@ -280,30 +279,30 @@
   (defthm arb-merge$act0-inactive
     (implies (or (not (nth 0 inputs))
                  (equal (nth 2 inputs) t))
-             (not (arb-merge$act0 inputs st data-width)))
+             (not (arb-merge$act0 inputs st data-size)))
     :hints (("Goal" :in-theory (enable f-and4 f-and5 arb-merge$act0))))
 
   ;; Extract the "act1" signal
 
-  (defund arb-merge$act1 (inputs st data-width)
+  (defund arb-merge$act1 (inputs st data-size)
     (b* ((full-in0   (nth 0 inputs))
          (full-in1   (nth 1 inputs))
          (empty-out- (nth 2 inputs))
-         (select     (nth (arb-merge$data-ins-len data-width) inputs))
-         (go-signals (nthcdr (+ (arb-merge$data-ins-len data-width)
+         (select     (nth (arb-merge$data-ins-len data-size) inputs))
+         (go-signals (nthcdr (+ (arb-merge$data-ins-len data-size)
                                 *arb-merge$select-num*)
                              inputs))
 
          (b-select (f-bool select))
          (go-arb-merge (nth 0 go-signals))
 
-         (arb (get-field *arb-merge$arb* st))
-         (arb.s (get-field *link$s* arb))
-         (arb.d (get-field *link$d* arb))
+         (arb (nth *arb-merge$arb* st))
+         (arb.s (nth *link$s* arb))
+         (arb.d (nth *link$d* arb))
          (excl-out (car (v-threefix (strip-cars arb.d))))
          (arb-out (cadr (v-threefix (strip-cars arb.d))))
-         (arb-buf (get-field *arb-merge$arb-buf* st))
-         (arb-buf.s (get-field *link$s* arb-buf))
+         (arb-buf (nth *arb-merge$arb-buf* st))
+         (arb-buf.s (nth *link$s* arb-buf))
 
          (m-full-in1 (f-or3 (f-and4 (f-not full-in0)
                                     full-in1
@@ -325,7 +324,7 @@
   (defthm arb-merge$act1-inactive
     (implies (or (not (nth 1 inputs))
                  (equal (nth 2 inputs) t))
-             (not (arb-merge$act1 inputs st data-width)))
+             (not (arb-merge$act1 inputs st data-size)))
     :hints (("Goal" :in-theory (enable f-and4 f-and5 arb-merge$act1))))
 
   (local (in-theory (enable booleanp-car-of-bv)))
@@ -341,8 +340,8 @@
     (implies (and (booleanp (nth 0 inputs))
                   (booleanp (nth 1 inputs))
                   (arb-merge$valid-st st)
-                  (arb-merge$act0 inputs st data-width))
-             (not (arb-merge$act1 inputs st data-width)))
+                  (arb-merge$act0 inputs st data-size))
+             (not (arb-merge$act1 inputs st data-size)))
     :hints (("Goal" :in-theory (enable f-and4
                                        f-and5
                                        arb-merge$valid-st
@@ -351,28 +350,28 @@
 
   ;; Extract the "act" signal
 
-  (defund arb-merge$act (inputs st data-width)
-    (f-or (arb-merge$act0 inputs st data-width)
-          (arb-merge$act1 inputs st data-width)))
+  (defund arb-merge$act (inputs st data-size)
+    (f-or (arb-merge$act0 inputs st data-size)
+          (arb-merge$act1 inputs st data-size)))
 
   (defthm arb-merge$act-inactive
     (implies (or (and (not (nth 0 inputs))
                       (not (nth 1 inputs)))
                  (equal (nth 2 inputs) t))
-             (not (arb-merge$act inputs st data-width)))
+             (not (arb-merge$act inputs st data-size)))
     :hints (("Goal" :in-theory (enable arb-merge$act))))
 
   ;; Extract the output data
 
-  (defund arb-merge$data-out (inputs st data-width)
-    (b* ((data0-in (arb-merge$data0-in inputs data-width))
-         (data1-in (arb-merge$data1-in inputs data-width))
-         (act1 (arb-merge$act1 inputs st data-width)))
+  (defund arb-merge$data-out (inputs st data-size)
+    (b* ((data0-in (arb-merge$data0-in inputs data-size))
+         (data1-in (arb-merge$data1-in inputs data-size))
+         (act1 (arb-merge$act1 inputs st data-size)))
       (fv-if act1 data1-in data0-in)))
 
   (defthm len-arb-merge$data-out
-    (equal (len (arb-merge$data-out inputs st data-width))
-           (nfix data-width))
+    (equal (len (arb-merge$data-out inputs st data-size))
+           (nfix data-size))
     :hints (("Goal" :in-theory (enable arb-merge$data-out))))
   )
 
@@ -382,23 +381,23 @@
   (b* ((inputs (list* full-in0 full-in1 empty-out-
                       (append data0-in data1-in
                               (cons select go-signals)))))
-    (implies (and (posp data-width)
-                  (arb-merge& netlist data-width)
+    (implies (and (posp data-size)
+                  (arb-merge& netlist data-size)
                   (true-listp data0-in)
-                  (equal (len data0-in) data-width)
+                  (equal (len data0-in) data-size)
                   (true-listp data1-in)
-                  (equal (len data1-in) data-width)
+                  (equal (len data1-in) data-size)
                   (equal (len go-signals) *arb-merge$go-num*)
                   (arb-merge$st-format st))
-             (equal (se (si 'arb-merge data-width) inputs st netlist)
-                    (list* (arb-merge$act inputs st data-width)
-                           (arb-merge$act0 inputs st data-width)
-                           (arb-merge$act1 inputs st data-width)
-                           (arb-merge$data-out inputs st data-width)))))
+             (equal (se (si 'arb-merge data-size) inputs st netlist)
+                    (list* (arb-merge$act inputs st data-size)
+                           (arb-merge$act0 inputs st data-size)
+                           (arb-merge$act1 inputs st data-size)
+                           (arb-merge$data-out inputs st data-size)))))
   :hints (("Goal"
            :do-not-induct t
-           :expand (:free (inputs data-width)
-                          (se (si 'arb-merge data-width) inputs st netlist))
+           :expand (:free (inputs data-size)
+                          (se (si 'arb-merge data-size) inputs st netlist))
            :in-theory (e/d (de-rules
                             arb-merge&
                             arb-merge*$destructure
@@ -413,26 +412,26 @@
 
 ;; This function specifies the next state of ARB-MERGE.
 
-(defun arb-merge$step (inputs st data-width)
+(defun arb-merge$step (inputs st data-size)
   (b* ((full-in0   (nth 0 inputs))
        (full-in1   (nth 1 inputs))
-       (select     (nth (arb-merge$data-ins-len data-width) inputs))
-       (go-signals (nthcdr (+ (arb-merge$data-ins-len data-width)
+       (select     (nth (arb-merge$data-ins-len data-size) inputs))
+       (go-signals (nthcdr (+ (arb-merge$data-ins-len data-size)
                               *arb-merge$select-num*)
                            inputs))
 
        (b-select (f-bool select))
        (go-buf (nth 1 go-signals))
 
-       (arb (get-field *arb-merge$arb* st))
-       (arb.s (get-field *link$s* arb))
-       (arb.d (get-field *link$d* arb))
+       (arb (nth *arb-merge$arb* st))
+       (arb.s (nth *link$s* arb))
+       (arb.d (nth *link$d* arb))
        (excl-out (car (v-threefix (strip-cars arb.d))))
-       (arb-buf (get-field *arb-merge$arb-buf* st))
-       (arb-buf.s (get-field *link$s* arb-buf))
-       (arb-buf.d (get-field *link$d* arb-buf))
+       (arb-buf (nth *arb-merge$arb-buf* st))
+       (arb-buf.s (nth *link$s* arb-buf))
+       (arb-buf.d (nth *link$d* arb-buf))
 
-       (act (arb-merge$act inputs st data-width))
+       (act (arb-merge$act inputs st data-size))
        (buf-act (joint-act (car arb-buf.s) (car arb.s) go-buf))
 
        (reset (f-or3 (f-and full-in0 (f-not full-in1))
@@ -448,10 +447,6 @@
      ;; Arb-buf
      (link$step arb-buf-inputs arb-buf 2))))
 
-(defthm len-of-arb-merge$step
-  (equal (len (arb-merge$step inputs st data-width))
-         *arb-merge$st-len*))
-
 ;; The state lemma for ARB-MERGE
 
 (progn
@@ -466,17 +461,17 @@
     (b* ((inputs (list* full-in0 full-in1 empty-out-
                         (append data0-in data1-in
                                 (cons select go-signals)))))
-      (implies (and (arb-merge& netlist data-width)
-                    (equal (len data0-in) data-width)
-                    (equal (len data1-in) data-width)
+      (implies (and (arb-merge& netlist data-size)
+                    (equal (len data0-in) data-size)
+                    (equal (len data1-in) data-size)
                     (equal (len go-signals) *arb-merge$go-num*)
                     (arb-merge$st-format st))
-               (equal (de (si 'arb-merge data-width) inputs st netlist)
-                      (arb-merge$step inputs st data-width))))
+               (equal (de (si 'arb-merge data-size) inputs st netlist)
+                      (arb-merge$step inputs st data-size))))
     :hints (("Goal"
              :do-not-induct t
-             :expand (:free (inputs data-width)
-                            (de (si 'arb-merge data-width) inputs st netlist))
+             :expand (:free (inputs data-size)
+                            (de (si 'arb-merge data-size) inputs st netlist))
              :use (:instance
                    v-if$value
                    (n 2)
@@ -485,7 +480,7 @@
                              (3v-fix (car (strip-cars (cadr (car st)))))))
                    (a '(nil nil))
                    (b (list t (f-not (f-bool select))))
-                   (sts nil)
+                   (st nil)
                    (netlist (delete-to-eq (si 'arb-merge (len data0-in))
                                           netlist)))
              :in-theory (e/d (de-rules
@@ -508,16 +503,16 @@
 
 ;; Conditions on the inputs
 
-(defund arb-merge$input-format (inputs data-width)
+(defund arb-merge$input-format (inputs data-size)
   (declare (xargs :guard (and (true-listp inputs)
-                              (natp data-width))))
+                              (natp data-size))))
   (b* ((full-in0   (nth 0 inputs))
        (full-in1   (nth 1 inputs))
        (empty-out- (nth 2 inputs))
-       (data0-in   (arb-merge$data0-in inputs data-width))
-       (data1-in   (arb-merge$data1-in inputs data-width))
-       (select     (nth (arb-merge$data-ins-len data-width) inputs))
-       (go-signals (nthcdr (+ (arb-merge$data-ins-len data-width)
+       (data0-in   (arb-merge$data0-in inputs data-size))
+       (data1-in   (arb-merge$data1-in inputs data-size))
+       (select     (nth (arb-merge$data-ins-len data-size) inputs))
+       (go-signals (nthcdr (+ (arb-merge$data-ins-len data-size)
                               *arb-merge$select-num*)
                            inputs)))
     (and
@@ -536,20 +531,18 @@
 
 (defthm arb-merge$st-format-preserved
   (implies (arb-merge$st-format st)
-           (arb-merge$st-format (arb-merge$step inputs st data-width)))
-  :hints (("Goal" :in-theory (enable get-field
-                                     arb-merge$step
+           (arb-merge$st-format (arb-merge$step inputs st data-size)))
+  :hints (("Goal" :in-theory (enable arb-merge$step
                                      arb-merge$st-format))))
 
 ;; Prove that arb-merge$valid-st is an invariant.
 
 (defthm arb-merge$valid-st-preserved
-  (implies (and (arb-merge$input-format inputs data-width)
+  (implies (and (arb-merge$input-format inputs data-size)
                 (arb-merge$valid-st st))
-           (arb-merge$valid-st (arb-merge$step inputs st data-width)))
+           (arb-merge$valid-st (arb-merge$step inputs st data-size)))
   :hints (("Goal"
-           :in-theory (e/d (get-field
-                            f-sr
+           :in-theory (e/d (f-sr
                             f-and4
                             f-and5
                             f-or3
@@ -572,26 +565,26 @@
   (b* ((full-in0   (nth 0 inputs))
        (full-in1   (nth 1 inputs))
        (empty-out- (nth 2 inputs))
-       (select     (nth (arb-merge$data-ins-len data-width) inputs))
-       (go-signals (nthcdr (+ (arb-merge$data-ins-len data-width)
+       (select     (nth (arb-merge$data-ins-len data-size) inputs))
+       (go-signals (nthcdr (+ (arb-merge$data-ins-len data-size)
                               *arb-merge$select-num*)
                            inputs))
 
        (b-select (f-bool select))
        (go-arb-merge (nth 0 go-signals))
 
-       (arb (get-field *arb-merge$arb* st))
-       (arb.s (get-field *link$s* arb))
-       (arb.d (get-field *link$d* arb))
+       (arb (nth *arb-merge$arb* st))
+       (arb.s (nth *link$s* arb))
+       (arb.d (nth *link$d* arb))
        (excl-out (car (v-threefix (strip-cars arb.d))))
-       (arb-buf (get-field *arb-merge$arb-buf* st))
-       (arb-buf.s (get-field *link$s* arb-buf))
+       (arb-buf (nth *arb-merge$arb-buf* st))
+       (arb-buf.s (nth *link$s* arb-buf))
 
-       (next-st (arb-merge$step inputs st data-width))
+       (next-st (arb-merge$step inputs st data-size))
 
-       (next-arb-buf (get-field *arb-merge$arb-buf* next-st))
-       (next-arb-buf.s (get-field *link$s* next-arb-buf))
-       (next-arb-buf.d (get-field *link$d* next-arb-buf)))
+       (next-arb-buf (nth *arb-merge$arb-buf* next-st))
+       (next-arb-buf.s (nth *link$s* next-arb-buf))
+       (next-arb-buf.d (nth *link$d* next-arb-buf)))
     (implies (and (arb-merge$valid-st st)
                   (equal full-in0 t)
                   (equal full-in1 t)
@@ -600,15 +593,14 @@
                   (emptyp arb-buf.s)
                   go-arb-merge
                   (not excl-out))
-             (and (equal (arb-merge$act0 inputs st data-width)
+             (and (equal (arb-merge$act0 inputs st data-size)
                          (not b-select))
-                  (equal (arb-merge$act1 inputs st data-width)
+                  (equal (arb-merge$act1 inputs st data-size)
                          b-select)
                   (fullp next-arb-buf.s)
                   (equal next-arb-buf.d
                          (list '(t) (list (not b-select)))))))
-  :hints (("Goal" :in-theory (enable get-field
-                                     f-bool
+  :hints (("Goal" :in-theory (enable f-bool
                                      arb-merge$valid-st
                                      arb-merge$step
                                      arb-merge$act0
@@ -618,25 +610,25 @@
 (defthmd arb-merge$select-0
   (b* ((full-in0   (nth 0 inputs))
        (empty-out- (nth 2 inputs))
-       (go-signals (nthcdr (+ (arb-merge$data-ins-len data-width)
+       (go-signals (nthcdr (+ (arb-merge$data-ins-len data-size)
                               *arb-merge$select-num*)
                            inputs))
 
        (go-arb-merge (nth 0 go-signals))
 
-       (arb (get-field *arb-merge$arb* st))
-       (arb.s (get-field *link$s* arb))
-       (arb.d (get-field *link$d* arb))
+       (arb (nth *arb-merge$arb* st))
+       (arb.s (nth *link$s* arb))
+       (arb.d (nth *link$d* arb))
        (excl-out (car (v-threefix (strip-cars arb.d))))
        (arb-out (cadr (v-threefix (strip-cars arb.d))))
-       (arb-buf (get-field *arb-merge$arb-buf* st))
-       (arb-buf.s (get-field *link$s* arb-buf))
+       (arb-buf (nth *arb-merge$arb-buf* st))
+       (arb-buf.s (nth *link$s* arb-buf))
 
-       (next-st (arb-merge$step inputs st data-width))
+       (next-st (arb-merge$step inputs st data-size))
 
-       (next-arb-buf (get-field *arb-merge$arb-buf* next-st))
-       (next-arb-buf.s (get-field *link$s* next-arb-buf))
-       (next-arb-buf.d (get-field *link$d* next-arb-buf)))
+       (next-arb-buf (nth *arb-merge$arb-buf* next-st))
+       (next-arb-buf.s (nth *link$s* next-arb-buf))
+       (next-arb-buf.d (nth *link$d* next-arb-buf)))
     (implies (and (arb-merge$valid-st st)
                   (equal full-in0 t)
                   (not empty-out-)
@@ -645,13 +637,12 @@
                   go-arb-merge
                   excl-out
                   (not arb-out))
-             (and (equal (arb-merge$act0 inputs st data-width)
+             (and (equal (arb-merge$act0 inputs st data-size)
                          t)
                   (fullp next-arb-buf.s)
                   (equal next-arb-buf.d
                          '((nil) (nil))))))
-  :hints (("Goal" :in-theory (enable get-field
-                                     3vp
+  :hints (("Goal" :in-theory (enable 3vp
                                      f-or3
                                      f-bool
                                      arb-merge$valid-st
@@ -663,25 +654,25 @@
 (defthmd arb-merge$select-1
   (b* ((full-in1   (nth 1 inputs))
        (empty-out- (nth 2 inputs))
-       (go-signals (nthcdr (+ (arb-merge$data-ins-len data-width)
+       (go-signals (nthcdr (+ (arb-merge$data-ins-len data-size)
                               *arb-merge$select-num*)
                            inputs))
 
        (go-arb-merge (nth 0 go-signals))
 
-       (arb (get-field *arb-merge$arb* st))
-       (arb.s (get-field *link$s* arb))
-       (arb.d (get-field *link$d* arb))
+       (arb (nth *arb-merge$arb* st))
+       (arb.s (nth *link$s* arb))
+       (arb.d (nth *link$d* arb))
        (excl-out (car (v-threefix (strip-cars arb.d))))
        (arb-out (cadr (v-threefix (strip-cars arb.d))))
-       (arb-buf (get-field *arb-merge$arb-buf* st))
-       (arb-buf.s (get-field *link$s* arb-buf))
+       (arb-buf (nth *arb-merge$arb-buf* st))
+       (arb-buf.s (nth *link$s* arb-buf))
 
-       (next-st (arb-merge$step inputs st data-width))
+       (next-st (arb-merge$step inputs st data-size))
 
-       (next-arb-buf (get-field *arb-merge$arb-buf* next-st))
-       (next-arb-buf.s (get-field *link$s* next-arb-buf))
-       (next-arb-buf.d (get-field *link$d* next-arb-buf)))
+       (next-arb-buf (nth *arb-merge$arb-buf* next-st))
+       (next-arb-buf.s (nth *link$s* next-arb-buf))
+       (next-arb-buf.d (nth *link$d* next-arb-buf)))
     (implies (and (arb-merge$valid-st st)
                   (equal full-in1 t)
                   (not empty-out-)
@@ -690,13 +681,12 @@
                   go-arb-merge
                   excl-out
                   arb-out)
-             (and (equal (arb-merge$act1 inputs st data-width)
+             (and (equal (arb-merge$act1 inputs st data-size)
                          t)
                   (fullp next-arb-buf.s)
                   (equal next-arb-buf.d
                          '((nil) (nil))))))
-  :hints (("Goal" :in-theory (enable get-field
-                                     3vp
+  :hints (("Goal" :in-theory (enable 3vp
                                      f-or3
                                      f-bool
                                      arb-merge$valid-st

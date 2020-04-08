@@ -1,6 +1,6 @@
 ; System Utilities -- Numbered Names
 ;
-; Copyright (C) 2018 Kestrel Institute (http://www.kestrel.edu)
+; Copyright (C) 2020 Kestrel Institute (http://www.kestrel.edu)
 ;
 ; License: A 3-clause BSD license. See the LICENSE file distributed with ACL2.
 ;
@@ -10,11 +10,11 @@
 
 (in-package "ACL2")
 
+(include-book "kestrel/std/system/pseudo-event-formp" :dir :system)
+(include-book "kestrel/utilities/strings/char-kinds" :dir :system)
 (include-book "std/strings/decimal" :dir :system)
 (include-book "std/util/defval" :dir :system)
 (include-book "system/kestrel" :dir :system)
-(include-book "../characters")
-(include-book "event-forms")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -109,7 +109,7 @@
    Check whether @('x') consists of one or more non-numeric characters.
    </p>"
   (and (stringp x)
-       (nondigit-char-listp (explode x))
+       (nondigit-charlist-p (explode x))
        (not (equal x ""))))
 
 (table numbered-name-index-start nil nil
@@ -170,7 +170,7 @@
    Check whether @('x') consists of zero or more non-numeric characters.
    </p>"
   (and (stringp x)
-       (nondigit-char-listp (explode x))))
+       (nondigit-charlist-p (explode x))))
 
 (table numbered-name-index-end nil nil
   :guard (and (equal key 'end) ; one key => singleton table
@@ -230,7 +230,7 @@
    Check whether @('x') consists of one or more non-numeric characters.
    </p>"
   (and (stringp x)
-       (nondigit-char-listp (explode x))
+       (nondigit-charlist-p (explode x))
        (not (equal x ""))))
 
 (table numbered-name-index-wildcard nil nil
@@ -376,7 +376,9 @@
                            index-start-chars
                            index-or-wildcard-chars
                            index-end-chars)))
-    (intern-in-package-of-symbol (implode name-chars) base)))
+    (if (equal (symbol-package-name base) *main-lisp-package-name*)
+        (intern (implode name-chars) "ACL2")
+      (intern-in-package-of-symbol (implode name-chars) base))))
 
 (define set-numbered-name-index
   ((name symbolp) (index posp) (wrld plist-worldp))

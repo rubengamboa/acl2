@@ -333,11 +333,9 @@
 
 (define flextranssum-predicate-def (x)
   (b* (((flextranssum x))
-       (bool (intern-in-package-of-symbol "BOOL" x.name))
        (consp-when-foop (intern-in-package-of-symbol (cat "CONSP-WHEN-" (symbol-name x.pred)) x.name)))
     `(define ,x.pred (,x.xvar)
        :parents (,x.name)
-       :returns ,bool
        :progn t
        :short ,(str::cat "Recognizer for @(see " (xdoc::full-escape-symbol x.name) ").")
        :measure ,x.measure
@@ -390,7 +388,8 @@
        :inline t
        (mbe :logic (case (tag ,x.xvar)
                      ,@(flextranssum-fix-cases x.members x.xvar))
-            :exec ,x.xvar))))
+            :exec ,x.xvar)
+       ///)))
 
 (define flextranssum-fix-postevents (x)
   ;; (defthm tag-of-vl-genelement-fix-forward

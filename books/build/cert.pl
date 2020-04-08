@@ -113,8 +113,11 @@ my @include_afters = ();
 my $svn_mode = 0;
 my $quiet = 0;
 my @run_sources = ();
+my @run_otherdeps = ();
 my @run_out_of_date = ();
 my @run_up_to_date = ();
+my @run_all_out_of_date = ();
+my @run_all_up_to_date = ();
 my $make = $ENV{"MAKE"} || "make";
 my @make_args = ();
 my $acl2 = $ENV{"ACL2"};
@@ -131,8 +134,12 @@ my %certlib_opts = ( "debugging" => 0,
                      "pcert_all" => 0 );
 my $target_ext = "cert";
 my $cache_file = 0;
+my $cache_read_only = 0;
+my $cache_write_only = 0;
 my $bin_dir = $ENV{'CERT_PL_BIN_DIR'};
 my $params_file = 0;
+my $print_relocs = 0;
+
 # Remove trailing slash from and canonicalize bin_dir
 if ($bin_dir) {
     my $cbin_dir = canonical_path(remove_trailing_slash($bin_dir));
@@ -143,6 +150,7 @@ if ($bin_dir) {
 }
 
 my $write_sources=0;
+my $write_otherdeps=0;
 my $write_certs=0;
 
 $base_path = abs_canonical_path(".");
@@ -398,6 +406,11 @@ COMMAND LINE OPTIONS
            Any number of --source-cmd directives may be given; the
            commands will then be run in the order in which they are given.
 
+   --otherdeps-cmd <command-str>
+           Run the command on each non-source dependency file, in the same
+           manner as --source-cmd.  Non-source dependencies include files
+           referenced by depends-on comments as well as .image files.
+
    --out-of-date-cmd <command-str>
            Like --source-cmd, but runs the command on all of the bottommost
            out of date certificates in the dependency tree.  {} is replaced
@@ -405,6 +418,16 @@ COMMAND LINE OPTIONS
 
    --up-to-date-cmd <command-str>
            Like --source-cmd, but runs the command on all of the top-most
+           up to date certificates in the dependency tree.  {} is replaced
+           by the base name of the book, that is, without the ".cert".
+
+   --all-out-of-date-cmd <command-str>
+           Like --source-cmd, but runs the command on all of the
+           out of date certificates in the dependency tree.  {} is replaced
+           by the base name of the book, that is, without the ".cert".
+
+   --all-up-to-date-cmd <command-str>
+           Like --source-cmd, but runs the command on all of the
            up to date certificates in the dependency tree.  {} is replaced
            by the base name of the book, that is, without the ".cert".
 
@@ -464,11 +487,20 @@ COMMAND LINE OPTIONS
           events.  File modification times are used to determine when
           the cached information about a file must be updated.
 
+   --cache-read-only
+          Only read from the cache file, don\'t update it.
+
+   --cache-write-only
+          Only write out a cache file, don\'t read from it.
+
    --write-sources <filename>
           Dump the list of all source files, one per line, into filename.
 
    --write-certs <filename>
           Dump the list of all cert files, one per line, into filename.
+
+   --write-otherdeps <filename>
+          Dump the list of all non-source dependencies, one per line, into filename.
 
    --pcert-all
           Allow provisional certification for all books, not just the ones with
@@ -486,6 +518,14 @@ COMMAND LINE OPTIONS
    --include-excludes
           If this option is set then cert_pl_exclude files are ignored; see the
           section CERT_PL_EXCLUDE FILES above.
+
+   --print-relocs
+          Causes relocation stub warnings to be printed even if --quiet.  By
+          default cert.pl prints warnings about "relocation stubs", which are
+          books containing the \'reloc_stub\' cert_param, signifying that they
+          are placeholders for books that have been refactored away or moved to
+          new locations.  Normally --quiet suppresses these warnings, but this
+          option causes them to print anyway.
 
 USEFUL ENVIRONMENT VARIABLES
 
@@ -529,9 +569,47 @@ USEFUL ENVIRONMENT VARIABLES
 
 ';
 
-GetOptions ("help|h"               => sub { print $summary_str;
-                                            print $helpstr;
-                                            exit 0 ; },
+# Called by GetOptions to handle options like source-cmd,
+# otherdep-cmd, up-to-date-cmd.  First we pick, based on the option
+# name, the list that holds functions that we"ll run on the
+# appropriate set of files.  Then we add a function to that array
+# that, when run on a target file, will replace the {} from the
+# command with the filename and run that with backticks (printing its
+# stdout).
+
+sub add_command {
+    my ($opt_name, $opt_value) = @_;
+    my $runlist;
+    # opt_name is not a string to begin with, coerce it to one
+    $opt_name = "$opt_name";
+    if ($opt_name eq "source-cmd") {
+	$runlist = \@run_sources;
+    } elsif ($opt_name eq "otherdep-cmd") {
+	$runlist = \@run_otherdeps;
+    }  elsif ($opt_name eq "up-to-date-cmd") {
+	$runlist = \@run_up_to_date;
+    } elsif ($opt_name eq  "out-of-date-cmd") {
+        $runlist = \@run_out_of_date;
+    } elsif ($opt_name eq  "all-up-to-date-cmd") {
+	$runlist = \@run_all_up_to_date;
+    } elsif ($opt_name eq "all-out-of-date-cmd") {
+	$runlist = \@run_all_out_of_date;
+    } else {
+	die "Programming error in add_command: opt_name = $opt_name";
+    }
+    push (@$runlist,
+    	  sub { my $target = shift;
+    		my $line = $opt_value;
+    		$line =~ s/{}/$target/g;
+		# Print outputs from commands
+    		print `$line`;
+    	  });
+}
+
+GetOptions ("help|h"               => sub {
+    STDERR->print($summary_str);
+    STDERR->print($helpstr);
+    exit 0 ; },
             "jobs|j=i"             => \$jobs,
             "clean-certs|cc"       => \$certlib_opts{"clean_certs"},
             "no-build|n"           => \$no_makefile,
@@ -542,7 +620,7 @@ GetOptions ("help|h"               => sub { print $summary_str;
             "no-boilerplate"       => \$no_boilerplate,
             "var-prefix=s"         => \$var_prefix,
             "o=s"                  => \$mf_name,
-            "all-deps|d"           => sub { print("The --all-deps/-d option no longer does anything."); },
+            "all-deps|d"           => sub { print STDERR "The --all-deps/-d option no longer does anything."; },
             "static-makefile|s=s"  => sub {shift;
                                            $mf_name = shift;
                                            $certlib_opts{"all_deps"} = 1;
@@ -572,34 +650,21 @@ GetOptions ("help|h"               => sub { print $summary_str;
             },
             "svn-status"           => sub {push (@run_sources,
                                                  sub { my $target = shift;
+						       # print command outputs  to stdout
                                                        print `svn status --no-ignore $target`;
                                                    })},
             "tags-file=s"          => sub { shift;
                                             my $tagfile = shift;
                                             push (@run_sources,
                                                   sub { my $target = shift;
+							# print command outputs to stdout
                                                         print `etags -a -o $tagfile $target`;})},
-            "source-cmd=s"         => sub { shift;
-                                            my $cmd = shift;
-                                            push (@run_sources,
-                                                  sub { my $target = shift;
-                                                        my $line = $cmd;
-                                                        $line =~ s/{}/$target/g;
-                                                        print `$line`;})},
-            "up-to-date-cmd=s"     => sub { shift;
-                                            my $cmd = shift;
-                                            push (@run_up_to_date,
-                                                  sub { my $target = shift;
-                                                        my $line = $cmd;
-                                                        $line =~ s/{}/$target/g;
-                                                        print `$line`;})},
-            "out-of-date-cmd=s"    => sub { shift;
-                                            my $cmd = shift;
-                                            push (@run_out_of_date,
-                                                  sub { my $target = shift;
-                                                        my $line = $cmd;
-                                                        $line =~ s/{}/$target/g;
-                                                        print `$line`;})},
+            "source-cmd=s"          => \&add_command,
+            "otherdep-cmd=s"        => \&add_command,
+            "up-to-date-cmd=s"      => \&add_command,
+            "out-of-date-cmd=s"     => \&add_command,
+            "all-up-to-date-cmd=s"  => \&add_command,
+            "all-out-of-date-cmd=s" => \&add_command,
             "quiet|q"              => \$quiet,
             "make-args=s"          => \@make_args,
             "keep-going|k"         => \$keep_going,
@@ -608,14 +673,18 @@ GetOptions ("help|h"               => sub { print $summary_str;
                                         },
             "debug"                => \$certlib_opts{"debugging"},
             "cache=s"              => \$cache_file,
+            "cache-read-only"      => \$cache_read_only,
+            "cache-write-only"     => \$cache_write_only,
             "accept-cache"         => \$certlib_opts{"believe_cache"},
             "deps-of|p=s"          => sub { shift; push(@user_targets, "-p " . shift); },
             "params=s"             => \$params_file,
             "write-certs=s"        => \$write_certs,
-            "write-sources=s"        => \$write_sources,
+            "write-sources=s"      => \$write_sources,
+            "write-otherdeps=s"    => \$write_otherdeps,
             "pcert-all"            =>\$certlib_opts{"pcert_all"},
             "include-excludes"     =>\$certlib_opts{"include_excludes"},
             "target-ext|e=s"       => \$target_ext,
+            "print-relocs"         => \$print_relocs,
             "<>"                   => sub { push(@user_targets, shift); },
             );
 
@@ -627,7 +696,7 @@ sub remove_trailing_slash {
 
 certlib_set_opts(\%certlib_opts);
 
-my $cache = retrieve_cache($cache_file);
+my $cache = $cache_write_only ? {} : retrieve_cache($cache_file);
 
 # If $acl2 is still not set, then set it based on the location of acl2
 # in the path, if available
@@ -648,14 +717,14 @@ if ($acl2) {
     # canonicalize the path
     $acl2 = abs_canonical_path($acl2);
     unless($quiet || $no_build) {
-        print "ACL2 executable is ${acl2}\n";
+        print STDERR "ACL2 executable is ${acl2}\n";
     }
     $ENV{"ACL2"} = $acl2;
 } else {
     unless ($quiet || $no_build) {
-        print
+        print(STDERR
 "ACL2 executable not found.  Please specify with --acl2 command line
-flag or ACL2 environment variable.\n";
+flag or ACL2 environment variable.\n");
     }
 }
 
@@ -700,15 +769,15 @@ if (! $acl2_books ) {
 
 if (! $acl2_books ) {
     unless ($quiet || $no_build) {
-        print
+        print(STDERR
 "ACL2 system books not found.  Please specify with --acl2-books
-command line flag or ACL2_SYSTEM_BOOKS environment variable.";
+command line flag or ACL2_SYSTEM_BOOKS environment variable.");
     }
 }
 
 $acl2_books = abs_canonical_path($acl2_books);
 unless($quiet) {
-    print "System books directory is ${acl2_books}\n";
+    print(STDERR "System books directory is ${acl2_books}\n");
 }
 
 certlib_add_dir("SYSTEM", $acl2_books);
@@ -748,8 +817,8 @@ my %labels = %$labels_ref;
 # print "end targets\n";
 
 unless (@targets) {
-    print "\nError: No targets provided.\n";
-    print $helpstr;
+    print STDERR "\nError: No targets provided.\n";
+    print STDERR $helpstr;
     exit 1;
 }
 
@@ -776,10 +845,10 @@ if ($params_file && open (my $params, "<", $params_file)) {
 }
 
 
-store_cache($cache, $cache_file);
+store_cache($cache, $cache_file) if (! $cache_read_only);
 
 my @sources = sort(keys %{$depdb->sources});
-
+my @otherdeps = sort(keys %{$depdb->others});
 # Is this how we want to nest these?  Pick a command, run it on
 # every source file, versus pick a source file, run every command?
 # This way seems more flexible; commands can be grouped together.
@@ -789,10 +858,16 @@ foreach my $run (@run_sources) {
     }
 }
 
-if (@run_out_of_date || @run_up_to_date) {
-    my $up_to_date = check_up_to_date(\@targets, $depdb);
+foreach my $run (@run_otherdeps) {
+    foreach my $source (@otherdeps) {
+        &$run($source);
+    }
+}
+
+if (@run_out_of_date || @run_up_to_date || @run_all_up_to_date || @run_all_out_of_date) {
+    my $up_to_date_db = check_up_to_date(\@targets, $depdb);
     if (@run_out_of_date) {
-        my $out_of_date = collect_bottom_out_of_date(\@targets, $depdb, $up_to_date);
+        my $out_of_date = collect_bottom_out_of_date(\@targets, $depdb, $up_to_date_db);
         foreach my $run (@run_out_of_date) {
             foreach my $cert (@$out_of_date) {
                 (my $book = $cert) =~ s/\.cert$//;
@@ -801,13 +876,28 @@ if (@run_out_of_date || @run_up_to_date) {
         }
     }
     if (@run_up_to_date) {
-        my $up_to_date = collect_top_up_to_date(\@targets, $depdb, $up_to_date);
+        my $up_to_date = collect_top_up_to_date_modulo_local(\@targets, $depdb, $up_to_date_db);
         foreach my $run (@run_up_to_date) {
             foreach my $cert (@$up_to_date) {
                 (my $book = $cert) =~ s/\.cert$//;
                 &$run($book);
             }
         }
+    }
+    if (@run_all_up_to_date || @run_all_out_of_date) {
+	my ($all_up_to_date, $all_out_of_date) = collect_all_up_to_date(\@targets, $depdb, $up_to_date_db);
+	foreach my $run (@run_all_up_to_date) {
+	    foreach my $cert (@$all_up_to_date) {
+                (my $book = $cert) =~ s/\.cert$//;
+                &$run($book);
+	    }
+	}
+	foreach my $run (@run_all_out_of_date) {
+	    foreach my $cert (@$all_out_of_date) {
+                (my $book = $cert) =~ s/\.cert$//;
+                &$run($book);
+	    }
+	}
     }
 }
 
@@ -830,19 +920,20 @@ foreach my $cert (@certs) {
         }
     }
 }
-if (%stubs && ! $quiet) {
-    print "Relocation warnings:\n";
-    print "--------------------------\n";
+if (%stubs && (! $quiet || $print_relocs)) {
+    # Print relocation warnings to STDERR.  Skipped when $quiet.
+    print STDERR "Relocation warnings:\n";
+    print STDERR "--------------------------\n";
     my @stubbooks = sort(keys %stubs);
     foreach my $stub (@stubbooks) {
-        print "Stub file:       $stub\n";
+        print STDERR "Stub file:       $stub\n";
         # note: assumes each stub file includes only one book.
-        print "relocated to:    ${$depdb->cert_bookdeps($stub)}[0]\n";
-        print "is included by:\n";
+        print STDERR "relocated to:    ${$depdb->cert_bookdeps($stub)}[0]\n";
+        print STDERR "is included by:\n";
         foreach my $cert (sort(@{$stubs{$stub}})) {
-            print "                 $cert\n";
+            print STDERR "                 $cert\n";
         }
-        print "--------------------------\n";
+        print STDERR "--------------------------\n";
     }
 }
 
@@ -936,7 +1027,7 @@ unless ($no_makefile) {
         # }
     }
     print $mf "\n\n";
-    
+
 
     # print $mf "ifneq (\$(ACL2_PCERT),)\n\n";
     # print $mf "${var_prefix}_CERTS := \$(${var_prefix}_CERTS)";
@@ -1082,8 +1173,8 @@ unless ($no_makefile) {
                     # print $mf " \\\n     " . rel_path($bin_dir, $image);
                     print $mf " \\\n     " . make_encode(File::Spec->catfile($bin_dir, $image));
                 } elsif (! $warned_bindir) {
-                    print "Warning: no --bin set, so not adding image dependencies,\n";
-                    print " e.g.   $cert : $image\n";
+                    print STDERR "Warning: no --bin set, so not adding image dependencies,\n";
+                    print STDERR " e.g.   $cert : $image\n";
                     $warned_bindir = 1;
                 }
             }
@@ -1127,8 +1218,8 @@ unless ($no_makefile) {
                 # print $mf " \\\n     " . rel_path($bin_dir, $image);
                 print $mf " \\\n     " . make_encode(File::Spec->catfile($bin_dir, $image));
             } elsif (! $warned_bindir) {
-                print "Warning: no --bin set, so not adding image dependencies,\n";
-                print " e.g.   $cert : $image\n";
+                print STDERR "Warning: no --bin set, so not adding image dependencies,\n";
+                print STDERR " e.g.   $cert : $image\n";
                 $warned_bindir = 1;
             }
         }
@@ -1173,8 +1264,8 @@ unless ($no_makefile) {
                                   ($keep_going ? " -k" : ""),
                                   @make_args,
                                   "all-cert-pl-certs"));
-        print "$make_cmd\n";
         if ($certlib_opts{"debugging"}) {
+	    # Print debugging output on stdout
             print "$make_cmd\n";
         }
         exec $make_cmd;
@@ -1188,6 +1279,15 @@ if ($write_sources) {
         print $sourcesfile "${source}\n";
     }
     close($sourcesfile);
+}
+
+if ($write_otherdeps) {
+    open (my $otherdepsfile, ">", $write_otherdeps)
+        or die "Failed to open output file $write_otherdeps\n";
+    foreach my $source (@otherdeps) {
+        print $otherdepsfile "${source}\n";
+    }
+    close($otherdepsfile);
 }
 
 if ($write_certs) {

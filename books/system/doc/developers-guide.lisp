@@ -1793,16 +1793,37 @@
  support of other functions.</p>
  </color>
 
+ <p>The following two additional steps are occasionally advisable, especially
+ for patches that change definitions that are in @(':')@(tsee logic) mode.
+ Feel free to ask an ACL2 author if they are necessary; as of this writing,
+ that would be Matt Kaufmann, at @('kaufmann@cs.utexas.edu').</p>
+
+ <ul>
+
+ <li>Run ``@('make proofs')''.  That should conclude with the message,
+ ``Initialization SUCCEEDED.''</li>
+
+ <li>Do a ``devel'' build, regression, and check.  See @(see
+ verify-guards-for-system-functions), specifically the six steps at the end of
+ the topic.</li>
+
+ </ul>
+
  <h3>Regression testing</h3>
 
  <p>Now do a regression test.  The most complete regression is done using the
  @('regression-everything') target in the top-level ACL2 sources directory, or
- equivalently, the @('everything') target in the @('books/') directory.  But
- note that this level of testing may only work for CCL and SBCL; for other
- Lisps, or for ACL2(r), just use the @('regression') target in the top-level
- ACL2 sources directory or, equivalently, the @('all') target in the
- @('books/') directory.  This could take a few hours &mdash; perhaps more than
- 5 hours or even more than 8a hours, depending on the Lisp and the machine.</p>
+ equivalently, the @('everything') target in the @('books/') directory.  Please
+ install a SAT solver first; see @(see satlink::sat-solver-options).</p>
+
+ <p>Note that the ``@('everything')'' level of testing may only work for CCL
+ and SBCL; for other Lisps, or for ACL2(p) or ACL2(r), just use the
+ @('regression') target in the top-level ACL2 sources directory or,
+ equivalently, the @('all') target in the @('books/') directory.  This could
+ take a few hours &mdash; perhaps more than 5 hours or even more than 8 hours,
+ depending on the Lisp and the machine.  But feel free to do only an
+ @('everything') regression for ACL2 using CCL or SBCL, ignoring ACL2(p) and
+ ACL2(r).</p>
 
  @({
  make clean-books ; \\
@@ -1919,23 +1940,23 @@
  > If continued: Skip evaluation of (acl2::acl2-default-restart)
  > Type :? for other options.
  1 > :b
- *(7FF6DBFFE710) : 0 (F 3) 16
-  (7FF6DBFFE770) : 1 (RAW-EV-FNCALL F (3) ((STATE . ACL2_INVISIBLE::|The Live State Itself|)) ((COMMAND-LANDMARK GLOBAL-VALUE 7359 # \"/v/filer5b/v41q001/kaufmann/\") (EVENT-LANDMARK GLOBAL-VALUE 8627 DEFUN F ...) (F ABSOLUTE-EVENT-NUMBER . 8627) (CLTL-COMMAND GLOBAL-VALUE DEFUNS :PROGRAM NIL ...) (TOP-LEVEL-CLTL-COMMAND-STACK GLOBAL-VALUE #) ...) NIL NIL T) 1341
-  (7FF6DBFFE838) : 2 (EV (F '3) ((STATE . ACL2_INVISIBLE::|The Live State Itself|)) ACL2_INVISIBLE::|The Live State Itself| ((STATE . ACL2_INVISIBLE::|The Live State Itself|)) NIL T) 357
+ *(25819710) : 0 (F 3) 16
+  (25819770) : 1 (RAW-EV-FNCALL F (3) ('3) ((STATE . ACL2_INVISIBLE::|The Live State Itself|)) ((COMMAND-LANDMARK GLOBAL-VALUE 7662 # \"/Users/kaufmann/acl2/acl2-git-scratch/books/system/doc/\") (EVENT-LANDMARK GLOBAL-VALUE 9539 DEFUN F ...) (F ABSOLUTE-EVENT-NUMBER . 9539) (CLTL-COMMAND GLOBAL-VALUE DEFUNS :PROGRAM NIL ...) (TOP-LEVEL-CLTL-COMMAND-STACK GLOBAL-VALUE #) ...) NIL NIL T) 1253
+  (25819840) : 2 (EV (F '3) ((STATE . ACL2_INVISIBLE::|The Live State Itself|)) ACL2_INVISIBLE::|The Live State Itself| ((STATE . ACL2_INVISIBLE::|The Live State Itself|)) NIL T) 357
 
  <<... etc. ...>>
 
-  (7FF6DBFFEF98) : 21 (FUNCALL #'#<(:INTERNAL CCL::THREAD-MAKE-STARTUP-FUNCTION)>) 277
+  (25819F98) : 21 (FUNCALL #'#<(:INTERNAL CCL::THREAD-MAKE-STARTUP-FUNCTION)>) 277
  1 > (:form 1) ; show the form labeled with 1 in the backtrace
  (RAW-EV-FNCALL 'F '# '# '# ...)
- 1 > (walkabout (unquote (nth 4 *)) state) ; world
+ 1 > (walkabout (unquote (nth 5 *)) state) ; world
 
  Commands:
  0, 1, 2, ..., nx, bk, pp, (pp n), (pp lev len), =, (= symb), and q.
 
- ((COMMAND-LANDMARK GLOBAL-VALUE 7359 ...)
-  (EVENT-LANDMARK GLOBAL-VALUE 8627 ...)
-  (F ABSOLUTE-EVENT-NUMBER . 8627)
+ ((COMMAND-LANDMARK GLOBAL-VALUE 7662 ...)
+  (EVENT-LANDMARK GLOBAL-VALUE 9539 ...)
+  (F ABSOLUTE-EVENT-NUMBER . 9539)
   ...)
  :
  })
@@ -2078,11 +2099,12 @@
 
  <li>Send the commit hash and tarball (see ``Create a tarball'' above), as well
  as the name and URL of your new branch (as discussed above), to an ACL2
- author.  As of this writing, those are to be sent to Matt Kaufmann, at
- @('kaufmann@cs.utexas.edu').</li>
+ author.  Optionally also send the commit hash for the version of master that
+ was your starting point.  As of this writing, those are to be sent to Matt
+ Kaufmann, at @('kaufmann@cs.utexas.edu').</li>
 
  <li>The last steps will be done by Matt, who will start by getting your
- changes as follows.
+ changes as follows, in a fresh directory.
 
  @({
  git clone https://github.com/acl2/acl2 .
@@ -2097,7 +2119,9 @@
  run the following two commands, where @('tmp.msg') says something about the
  changes, with credit to you.  Note that the @('commit') command will cause
  @('my-branch') to contain all changes, both under @('books/') and from the
- sources tarball, possibly after edits from Matt.
+ sources tarball, possibly after edits from Matt.  NOTE: Matt might instead
+ decide not to make any edits or run a regression before doing this, in which
+ case he will do those things after the merge below, as noted below.
 
  @({
  git commit -a -F tmp.msg
@@ -2109,8 +2133,13 @@
 
  @({
  git checkout master
+ # Get master up-to-date (this is just ``git pull'' with a check):
+ bin/pull.sh
  git merge my-branch
- # Possibly run ``regression-everything'' before the final push just below.
+ # Possibly run ``regression-everything'' before the final push just
+ # below.  In fact this is critical if that wasn't done before.  There
+ # may be additional edits and additional commits to master before the
+ # push just below.
  git push https://github.com/acl2/acl2 master
  })</li>
  </ol>

@@ -52,8 +52,8 @@
   :parents (proof-automation debugging)
   :short "Macro for defining a theorem with a minimal set of hypotheses"
   :long "<p>For a call of @(tsee defthm), @(tsee defthmd), or @(tsee thm), the
- application of @('remove-hyps') results in a a minimal set of hypotheses.
- For example:</p>
+ application of @('remove-hyps') attempts to produce a minimal set of
+ hypotheses.  For example:</p>
 
  @({
  (remove-hyps
@@ -80,6 +80,15 @@
    :RULE-CLASSES NIL)
  })
 
+ <p>Note however that @('remove-hyps') works by removing one hypothesis at a
+ time, with each resulting proof attempt made using a limited number of
+ steps (see @(see with-prover-step-limit)) that depends on the number of steps
+ taken before removing the hypothesis.  So if the removal of a hypothesis
+ requires a proof that takes sufficiently many more steps than the original
+ proof, or if two or more hypotheses must be removed together for the proof to
+ succeed with fewer hypotheses, then the result will not have a minimal set of
+ hypotheses.</p>
+
  <p>Acceptable forms are as follows, where @('HYP') can be a conjunction of
  hypotheses, @('(and HYP1 ... HYPn)'), and ``@('defthm NAME')'' may be
  replaced by ``@('defthmd NAME')'' or ``@('THM')''.</p>
@@ -98,6 +107,22 @@
  @('remove-hyps') evaluates silently.  To see output from proof attempts, add a
  non-nil optional argument.  For example, for event @('E'), use @('(remove-hyps
  E t)').</p>
+
+ <p>Unless there is an error (for example, due to malformed input), then in the
+ case of a call of @('thm'), the value returned is the keyword,
+ @(':REMOVE-HYPS-COMPLETED'); otherwise, the value returned is the name of the
+ theorem.  (Technically, the value returned is an error triple with such a
+ value; see @(see error-triple).)</p>
+
+ <p>Consider the case that a call of @('remove-hyps') is made in a context
+ where proofs are normally skipped (see @(see ld-skip-proofsp)).  If this
+ happens while including a certified book with @(tsee include-book), then
+ proofs will indeed be skipped, because the earlier result of this
+ @('remove-hyps') call was saved in the book's @(see certificate).  But
+ otherwise, the tool temporarily turns off the skipping of proofs (that is,
+ restores the act of doing proofs) while it tries to remove hypotheses, to
+ avoid the undesirable situation that all hypotheses are removed merely because
+ all proofs succeed when skipping proofs.</p>
 
  <p>Finally, note that when @('remove-hyps') is applied to a call of
  @('defthm') or @('defthmd'), then @('remove-hyps') will conclude by submitting
@@ -126,7 +151,8 @@
 ;; remove-hyps tool will use.  The limit is rather arbitrary and there might
 ;; well be better limits to use.
 (defun remove-hyps-formula-steps (steps)
-  (+ 1000 (* 3 steps)))
+  (min *default-step-limit* ; else with-prover-step-limit causes error
+       (+ 1000 (* 3 steps))))
 
 
 ;; ======================= DEFTHM CONSTRUCTION =======================
@@ -259,32 +285,43 @@
 ;; may be removed from hyps to provide a form whose proof nevertheless succeeds.
 (defun remove-hyps-formula (form name hyps concl kwd-alist let/let* bindings
                                  verbose-p ctx state)
-  (let ((name2 (or name (gen-new-name 'remove-hyps-name (w state)))))
-    ;; Try the original event and obtain the number of steps.
-    (er-let* ((steps (event-steps (if name
-                                      form
-                                    (assert$ (eq (car form) 'thm)
-                                             `(defthm ,name2 ,@(cdr form))))
-                                  verbose-p nil state)))
-      (cond
-       ((null steps) ; The original event failed; so we simply fail.
-        (er soft ctx
-            "Original theorem failed!"))
-       (t ; Else, call a recursive procedure to remove hypotheses.
-        (er-let*
-            ((final-hyps
-              ;; Note that the second and third argument represent necessary and
-              ;; additional hypotheses.  We start with an empty list of necessary
-              ;; hypotheses and a full list of additional hypotheses.
-              (remove-hyps-formula-1 name2
-                                     nil hyps concl kwd-alist let/let*
-                                     bindings
-                                     (remove-hyps-formula-steps steps)
-                                     verbose-p state)))
-          (value (if (equal (length hyps) (length final-hyps))
-                     nil ; no change
-                   (make-defthm (car form) name final-hyps concl kwd-alist
-                                let/let* bindings)))))))))
+  (do-proofs?
+   t
+   (mv-let (thmp name2 kwd-alist+)
+     (assert$
+      (iff (eq (car form) 'thm)
+           (null name))
+      (if (null name) ; (eq (car form) 'thm)
+          (mv t
+              (gen-new-name 'remove-hyps-name (w state))
+              (append kwd-alist '(:rule-classes nil)))
+        (mv nil name kwd-alist)))
+     ;; Try the original event and obtain the number of steps.
+     (er-let* ((steps (event-steps (if thmp
+                                       `(defthm ,name2
+                                          ,@(cdr form)
+                                          :rule-classes nil)
+                                     form)
+                                   verbose-p nil state)))
+       (cond
+        ((null steps) ; The original event failed; so we simply fail.
+         (er soft ctx
+             "Original theorem failed!"))
+        (t ; Else, call a recursive procedure to remove hypotheses.
+         (er-let*
+             ((final-hyps
+               ;; Note that the second and third argument represent necessary and
+               ;; additional hypotheses.  We start with an empty list of necessary
+               ;; hypotheses and a full list of additional hypotheses.
+               (remove-hyps-formula-1 name2
+                                      nil hyps concl kwd-alist+ let/let*
+                                      bindings
+                                      (remove-hyps-formula-steps steps)
+                                      verbose-p state)))
+           (value (if (equal (length hyps) (length final-hyps))
+                      nil ; no change
+                    (make-defthm (car form) name final-hyps concl kwd-alist
+                                 let/let* bindings))))))))))
 
 ;; This function takes the original form and then calls remove-hyps-function to
 ;; create a new form with, potentially, fewer hypotheses.  A test is then
@@ -300,7 +337,7 @@
                (remove-hyps-formula ',form ',name ',hyps ',concl ',kwd-alist
                                     ',let/let* ',bindings ',verbose-p
                                     'remove-hyps state))
-              (thmp (value (eq (car new-form) 'thm))))
+              (thmp (value (eq (car ',form) 'thm))))
 ; Test the new form versus the old form.
       (pprogn (cond ((null new-form) ; no change
 ; If no hypotheses were removed, print this to the terminal.
@@ -322,7 +359,7 @@
                             (standard-co state) state nil)))
 ; Now submit the new form with all output disabled.
               (value (if thmp
-                         '(value-triple :invisible)
+                         '(value-triple :remove-hyps-completed)
                        (list 'with-output
                              :off :all
                              :gag-mode t

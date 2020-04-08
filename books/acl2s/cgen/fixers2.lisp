@@ -57,7 +57,7 @@ of the entries is same as of the alist"
 
 (defun term-name (term)
   (declare (xargs :mode :program))
-  (intern-in-package-of-symbol (to-string term) 'cgen::x))
+  (acl2s::fix-intern-in-pkg-of-sym (to-string term) 'cgen::x))
 
 (defun flatten-output-fterm (x term output-vars)
   (cond ((proper-symbolp term) nil)
@@ -294,8 +294,8 @@ existing: ~x0 new: ~x1~%" fxri-data frule1I))
        ;;                                       (w state)))
        ;; NOT POSSIBLE -- since it is circular usage
        ;; ((mv res ?cgen-state state) 
-       ;;  (with-prover-time-limit (cget cgen-timeout)
-       ;;                          (prove/cgen test-form nil cgen-state state)))
+       ;;  (with-time-limit (cget cgen-timeout)
+       ;;                    (prove/cgen test-form nil cgen-state state)))
        (hints '())
        ((mv erp res state) (cgen::bash-fn relieve-hyps-query hints (debug-flag vl) ctx state))
        ((unless (and (not erp) (eq res nil)))

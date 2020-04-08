@@ -75,6 +75,17 @@ defxdoc) and @(see defsection), the basic commands for adding documentation.
 It also installs a new @(':doc') command, via @(see ld-keyword-aliases), so
 that you can see new documentation from the terminal.</p>
 
+<p>For a possibly more convenient way to construct XDOC strings, do the
+following:</p>
+
+@({
+ (include-book \"xdoc/constructors\" :dir :system)
+})
+
+<p>This book includes @('[books]/xdoc/top.lisp'), and in addition provides
+utilities to construct well-formed XDOC strings in a modular way.  See <see
+topic='@(url xdoc::constructors)'>the documentation</see> for more details.</p>
+
 <p>Once you have documented your books, you may wish to create a manual that
 can be viewed from a web browser or from the acl2-doc Emacs-based browser (see
 acl2::acl2-doc).  You can do this quite easily with XDOC's @(see save) command.
@@ -1877,6 +1888,11 @@ all is well, you should see the logo below:</p>
 
  <p>If any other broken links are reported, you can modify the parent topic
  (e.g., @('ACL2-DOC') just above &mdash; but please leave that one in place!)
- to fix the indicated broken link.</p>")
+ to fix the indicated broken link.</p>
+
+ <p>The @(':short') and @(':long') strings, if supplied, must consist entirely
+ of standard characters (see @(see standard-char-p)), except that tabs are also
+ allowed.  Making this check requires you to build the manual (as described
+ just above).</p>")
 
 (defpointer build-the-manual xdoc)

@@ -1,5 +1,5 @@
-; ACL2 Version 8.1 -- A Computational Logic for Applicative Common Lisp
-; Copyright (C) 2018, Regents of the University of Texas
+; ACL2 Version 8.2 -- A Computational Logic for Applicative Common Lisp
+; Copyright (C) 2019, Regents of the University of Texas
 
 ; This version of ACL2 is a descendent of ACL2 Version 1.9, Copyright
 ; (C) 1997 Computational Logic, Inc.  See the documentation topic NOTE-2-0.
@@ -19,6 +19,502 @@
 ; Austin, TX 78712 U.S.A.
 
 (in-package "ACL2")
+
+; Essay on Cert-data
+
+; In February 2016, Jared Davis requested on behalf of Centaur Technology
+; Inc. that we avoid recomputing runic type-prescriptions when including
+; certified books.  There were two problems: type-prescription rules from an
+; earlier included book were sometimes causing horrendous slowdowns in those
+; computations while including a later book; and, we can lose nice
+; type-prescriptions that were inferred during the proof (first) pass of
+; certify-book using local rules, where a similar problem can occur with
+; encapsulate.
+
+; In March 2016 we solved these problems by introducing "cert-data" structures,
+; which can be stored in certificates or in the state global variable
+; 'cert-data.  In January 2020 we added cert-data structures for storing the
+; results of translation, specifically, of translating bodies of defun(s) and
+; defthm events.  The new record structure was introduced as
+; translate-cert-data-record; see its defrec form for comments.  Thus,
+; cert-data stores information on runic type-prescriptions as well as results
+; from translating defun and defthm bodies.  Some day we might save other
+; information that could be expensive to recompute.
+
+; The rest of this Essay is in three parts.  First, we introduce some general
+; notions.  Second, we focus on cert-data structures for computing runic type
+; prescriptions.  Finally, we discuss cert-data structures for avoiding
+; re-translation at include-book time, at least for definitions and theorems.
+
+; Part 1: General Notions
+
+; One of the fields in a .cert file is a :CERT-DATA field, which is an alist
+; mapping keys to fast-alists.  As of this writing there are two keys:
+; :TYPE-PRESCRIPTION and :TRANSLATE.  Each of the two fast-alists (for the two
+; keys) is called a "cert-data entry".  See for example fast-cert-data, which
+; takes a :cert-data field value from a certificate and creates an alist
+; mapping each of the two keys to a cert-data entry (which is a fast-alist).
+; (Fast-cert-data is normally the identity function, but if the .cert file is
+; written without the serialize writer then fast-cert-data serves to create a
+; fast-alist to associate with each of those keys.)
+
+; Each of the two entries is a fast-alist whose keys are symbols.  In the case
+; of a :type-prescription entry, each key is a function symbol whose associated
+; value is a type-prescription record.  In the case of a :translate entry, each
+; key is an event name (currently, a function symbol or the name of a defthm
+; event) that is associated with a list of translate-cert-data-record records.
+
+; Part 2: Type Prescriptions
+
+; The following processes support the effective re-use of runic type
+; prescriptions.
+
+; (1) When including a certified book, all functions defined at the top level
+;     (i.e., not inside sub-books) get their runic type-prescriptions (if any)
+;     from the .cert file -- more specifically, from the value of state global
+;     'cert-data, which is bound to the value from the .cert file.
+
+; (2) Runic type-prescriptions are saved after pass1 of certify-book and
+;     encapsulate.  For each :logic-mode defun processed in the second pass at
+;     the top level (not in an included sub-book), an "intersection" is taken
+;     of the runic type-prescription from the first pass and the computed runic
+;     type-prescription computed in the usual way.  Note that since a function
+;     can be defined locally in a locally included book during the first pass
+;     but in a later defun at the top level in the second pass (which was
+;     redundant in the first pass), we even save some runic type-prescriptions
+;     from functions introduced during the first pass that were not introduced
+;     at the top level.
+
+;     Clearly each such rune is a logical consequence of the first pass; hence,
+;     by conservativity, it is a logical consequence of the second pass.  Note
+;     that we may need to recompute the :corollary, which otherwise might not
+;     be a term of the theory produced by the second pass.
+
+; (3) The runic type-prescription written to a .cert file is the one that
+;     exists after the second pass.  We save such a rule for every function
+;     that could be introduced when including the book, which includes the
+;     top-level portcullis functions and every function introduced by the book
+;     (even those not processed during pass 2).  Function
+;     newly-defined-top-level-fns provides this information; happily, even
+;     before we added support for cert-data, that function was already called
+;     under certify-book-fn to compute a list of function symbols to pass to
+;     write-expansion-file.
+
+; Now we elaborate on these processes.
+
+; Note that including an already-certified book gives you the specific type
+; prescription from the .cert file.  If however a book B1 includes another book
+; B2 only locally, then the type-prescription computed for B1 might be stronger
+; than that from B2, because of our "intersection" of rules in (2) above.
+
+; Suppose we are to determine the runic type-prescription for a given defun.
+; If state global 'cert-data has value nil, then we just do the usual iterative
+; calculation.  Otherwise we are to use that cert-data; but how do we know that
+; we should do the "intersection" operation because we are in the pass 2 case,
+; described in (2) above?  We bind key :pass1-saved to t in the value of state
+; global 'cert-data during the second pass (meaning, cert-data is from pass 1).
+; If necessary we could have non-nil values that provide more information than
+; t, for example, 'acl2::certify-book or 'acl2::encapsulate.  We don't bother
+; to bind :pass1-saved to nil for other than pass 2; we simply don't bind
+; :pass1-saved.
+
+; In (2) above we describe the saving of runic type-prescriptions to use during
+; the second pass.  In the case of certify-book, however, we do this only for
+; the part of the world not in the retraction after pass 1, since there is no
+; need to save information for defuns already processed before starting pass 2.
+
+; Why do we need the "intersection" operation described in (2) above?  That is,
+; why not just pick either the runic type-prescription from the first pass or
+; compute one for the second pass?  The answer is that either may be weaker
+; than desired, as illustrated by the following two examples.  (These examples
+; are for encapsulate, but certify-book has the same issue.)
+
+; (2a) First, here is an example showing that the second pass can do a better
+; job computing the runic type-prescription than the first pass.  (To see the
+; empty 'type-prescriptions we would get for FOO on the first pass, change
+; (encapsulate () ...) to (progn ...).)
+
+; (encapsulate
+;   ()
+;   (local (include-book "rtl/rel9/support/support/lnot" :dir :system))
+
+; ; Because of the following in-theory event, the cert-data from the first pass
+; ; associates no runic type-prescription with FOO.
+
+;   (local (in-theory nil))
+;   (defun fl (x)
+;     (declare (xargs :guard (real/rationalp x)))
+;     (floor x 1))
+;   (defun bits (x i j)
+;     (declare (xargs :guard (and (natp x) (natp i) (natp j))
+;                     :verify-guards nil))
+;     (mbe :logic (if (or (not (integerp i))
+;                         (not (integerp j)))
+;                     0
+;                     (fl (/ (mod x (expt 2 (1+ i))) (expt 2 j))))
+;          :exec (if (< i j)
+;                    0
+;                    (logand (ash x (- j))
+;                            (1- (ash 1 (1+ (- i j))))))))
+;   (defun lnot (x n)
+;     (declare (xargs :guard (and (natp x) (integerp n) (< 0 n))
+;                     :verify-guards nil))
+;     (if (natp n)
+;         (+ -1 (expt 2 n) (- (bits x (1- n) 0)))
+;         0))
+;   (defun foo (x n)
+;     (lnot x n)))
+
+; ; Using cert-data from the first pass only:
+; ; (assert-event (null (getpropc 'foo 'type-prescriptions)))
+
+; ; Computing the runic type-prescription in the second pass:
+; (assert-event
+;  (equal (decode-type-set
+;          (access type-prescription
+;                  (car (last (getpropc 'foo 'type-prescriptions)))
+;                  :basic-ts))
+;         '*ts-rational*)
+
+; What we actually get, now, is *ts-integer*, because that's the :basic-ts for
+; the runic type-prescription of lnot (and also of binary-logand, bits, and fl)
+; from the locally included book, saved from the first pass.
+
+; (2b) To obtain an example showing that the first pass can do a better job
+; computing the runic type-prescription than the second pass, simply omit
+; (in-theory nil) from the example above.  The second pass still gives us
+; *ts-rational, as above; but if we change (encapsulate () ...) to (progn ...),
+; we see:
+
+; (assert-event
+;  (equal (decode-type-set
+;          (access type-prescription
+;                  (car (last (getpropc 'foo 'type-prescriptions)))
+;                  :basic-ts))
+;         '*ts-non-negative-integer*))
+
+; Let's turn now to our handling of a few thorny issues.
+
+; Suppose we are certifying a book with an encapsulate that locally defines a
+; function, f, such that later in the book is a different, non-local definition
+; of f.  At the end of pass 1 of certify-book we will store a runic type
+; prescription for the second definition.  Then during pass 2 of certify-book,
+; might we make a mistake by associating that type-prescription with the first
+; (local) definition of f?  No, because local definitions are skipped during
+; pass 2.  But for robustness, we pass a value for cert-data to
+; process-embedded-events, which binds state global cert-data to that value.
+; Thus, we override the global cert-data when we process an encapsulate.
+
+; The expansion phase of make-event introduces definitions that are in effect
+; local.  As in the preceding paragraph, we need to avoid applying the global
+; cert-data to such definitions.  This problem is solved primarily by arranging
+; that protected-eval, via protect-system-state-globals, binds state global
+; cert-data to nil.  An additional binding of cert-data to nil is made before
+; calling make-event-fn2-lst, which handles :OR forms and thus can throw away
+; earlier values.  In such a case, the runic type-prescription will be
+; recomputed during include-book, but we think that such an exception is
+; tolerable.
+
+; We are careful to not use cert-data for non-trivial encapsulates.  It might
+; well be possible to do so correctly, but we would need to be very careful to
+; track constraints properly; it seems easy to have a soundness bug due to
+; recording insufficient constraints in pass 2 to justify deductions made from
+; stronger constraints in pass 1.
+
+; A runic type-prescription rule may contain symbols not present in the
+; certification world, as shown below.  A similar issue applies to the
+; :expansion-alist field of the certificate, which is addressed by finding the
+; problematic package names with pkg-names introducing hidden defpkg forms.  We
+; use that same solution for cert-data.  The following example shows how this
+; works.  First, let's look at a couple of books; notice the package definition
+; that is to be made in the certification world of the first book.
+
+;   $ cat sub.lisp
+;   ; (defpkg "FOO" nil)
+;   ; (certify-book "sub" 1)
+;
+;   (in-package "ACL2")
+;
+;   (defun f2 (x) x)
+;   $ cat top.lisp
+;   (in-package "ACL2")
+;
+;   (include-book "sub")
+;
+;   (defmacro my-def ()
+;     `(defun f (,(intern$ "X" "FOO")) ,(intern$ "X" "FOO")))
+;
+;   (my-def)
+;   $
+
+; After certification of both books, the :CERT-DATA field of top.cert has the
+; following value.
+
+;   ((:TYPE-PRESCRIPTION (F 0 (3413 F FOO::X)
+;                           (NIL)
+;                           ((FOO::X) :TYPE-PRESCRIPTION F)
+;                           EQUAL (F FOO::X)
+;                           FOO::X)))
+
+; Thus, a hidden defpkg is generated (here we abbreviate the directory as
+; <dir>).
+
+;   :BEGIN-PORTCULLIS-CMDS
+;   (DEFPKG "FOO" NIL NIL
+;           ("<dir>/sub.lisp")
+;           T)
+;   :END-PORTCULLIS-CMDS
+
+; Part 3: Translate
+
+; During the first pass of certify-book, a fast-alist is built up as the value
+; of the world global, TRANSLATE-CERT-DATA.  (See update-translate-cert-data.)
+; This fast-alist will ultimately be the value stored in the :translate entry
+; of the :cert-data field of the book's certificate.  When including a book,
+; that field will be the value of the cert-data given to
+; process-embedded-events in include-book-fn1.
+
+; In order for that fast-alist to be valid when consulted during include-book
+; (via the calls of get-translate-cert-data-record), we use function
+; store-cert-data to decide when to store into the world global,
+; TRANSLATE-CERT-DATA.  We must skip results of translation computed on behalf
+; of local events, which will of course be irrelevant (or even misleading) when
+; later including the book.  We also need to skip translations computed during
+; make-event expansion, but that happens automatically because we are recording
+; the results in a world global and the world is reverted after make-event
+; expansion.  We also take other measures in store-cert-data.  In particular,
+; we sometimes avoid storing results computed during the first pass of an
+; encapsulate (which is skipped during include-book), though that is not
+; necessary since the world is rolled back after that pass -- and note that we
+; don't want to use pass1 encapsulate results to avoid translating in pass2,
+; because that would avoid local incompatibility checking.  (For the same
+; reason, we don't retrieve :translate cert-data during the include-book phase
+; of certify-book.)  Also, we avoid worrying about lambda objects.  See
+; store-cert-data for details.
+
+; Remarks (in no particular order).
+
+; (1) We considered explicitly avoiding storing translation results from inside
+; progn!, simply because of the unbounded flexibility of progn!.  But we view
+; it unlikely that progn! would cause a problem, since the only truly obvious
+; way to build a confusing cert-data entry (fast-alist) for the :translate key
+; seems to be to use redefinition, in which case we write an empty :translate
+; entry into the certificate (see cert-data-for-certificate); and besides,
+; progn! requires a trust tag, so we are sort of off the hook as far as weird
+; end cases are concerned.
+
+; (2) One can certify books in community books directory
+; books/system/tests/cert-data/ and look at their certificates with (read-file
+; "<bookname>.cert" state), to see the :cert-data field for each book.  For
+; example, the function f1 in top1.lisp and top1a.lisp is redundant with a
+; function in an earlier-included book, so its translated body is not stored in
+; the corresponding .cert file; but including top1a.lisp does use the
+; translated body when including the sub-book, sub1.lisp.
+
+; (3) We are careful not to retrieve translated terms during make-event
+; expansion or other uses of protect-system-state-globals, by binding state
+; global cert-data to nil in protect-system-state-globals.
+
+; (4) There could be a very few cases where the saved :translate cert-data
+; makes include-book a bit more permissive than it would be otherwise,
+; especially if trust tags are involved, though we have tried to minimize this.
+; An example is that for flet, translate disallows binding a symbol that is
+; also bound in the return-last-table.  But since translation was OK at
+; certify-book time, we don't mind using the same translation at include-book
+; time.  Another case is when functions called during macroexpansion (within
+; translation) are untouchable when including a book on top of a non-trivial
+; world; we don't check for that, though we do check for untouchables in the
+; translated terms before retrieval.  Another case: We don't re-run calls of
+; translate-and-test.
+
+; (5) We have considered saving more translation results.  But so far,
+; profiling has suggested, using (include-book "centaur/sv/top" :dir :system),
+; that the only non-trivial benefit might be in saving results of translating
+; event forms.  This would presumably involve honsing the (untranslated)
+; events, as keys; and we haven't thought through what additional work might be
+; necessary (for example, we ignored the case (eq stobjs-out :stobjs-out) in
+; translate11 because that shouldn't apply for defun or defthm).  Profiling
+; suggests that we already lose significant potential speed-up simply by having
+; to read larger .cert files, and that problem would be even greater if keys
+; are events instead of symbols.  (Or maybe we can use the cadr of some event
+; forms as symbols?... lots to think about.)  Another potential issue is added
+; complexity from how trans-eval handles IF lazily, rather than translating the
+; entire form at once.  So our initial work on :translate cert-data in January,
+; 2020, is only for translation of defun(s) and defthm bodies.
+
+; (6) Because of our calls of make-fast-alist in the definition of the function
+; fast-cert-data, it is unnecessary to store cert-data entries as fast-alists
+; in the .cert file.  But profiling suggests that it is harmless to do so.
+; Note that the relevant alists are already fast-alists anyhow; we'd have to
+; free them if we want to avoid storing them as fast-alists.
+
+; (7) As a sort of optimization, saving space in .cert files at the expense of
+; time: we could perhaps loosen the cons-count-bounded restriction in
+; store-cert-data by finding all constant symbols' values in the untranslated
+; input and doing a sublis to re-insert those symbols in the translated code,
+; and then use sublis in the other direction upon retrieval.
+
+; (8) Note that certain tests for ttags in translate11, such as (assoc-eq fn
+; *ttag-fns*), aren't a problem.  That's because if a trust tag is active at a
+; given non-local event during book certification, then it's still active at
+; include-book time, since that could only be defeated by inclusion of a
+; sub-book, but ttag settings in a sub-book are local to that sub-book.
+
+(defun cert-data-pair (fn cert-data-entry)
+
+; Cert-data-entry is (cdr (assoc-eq key cert-data)) for some key, e.g., for the
+; key, :type-prescription.
+
+  (and cert-data-entry ; optimization
+       (hons-get fn cert-data-entry)))
+
+(defun cert-data-val (fn cert-data-entry)
+
+; Cert-data-entry is (cdr (assoc-eq key cert-data)) for some key, e.g., for the
+; key, :type-prescription.
+
+  (let ((pair (and cert-data-entry ; optimization
+                   (hons-get fn cert-data-entry))))
+    (cdr pair)))
+
+(defun cert-data-entry-pair (key state)
+
+; Key is :type-prescription or any other keyword that can be associated in a
+; cert-data structure with an entry.
+
+  (let ((cert-data (f-get-global 'cert-data state)))
+    (and cert-data ; optimization
+         (assoc-eq key cert-data))))
+
+(defun cert-data-entry (key state)
+
+; Key is :type-prescription, :defthm, or any other keyword that can be
+; associated in a cert-data structure with an entry.  We return a valid
+; cert-data entry or nil.  Note that cert-data entries are not valid in a local
+; or make-event context.  See the Essay on Cert-data.
+
+  (let ((cert-data (f-get-global 'cert-data state)))
+    (and cert-data ; optimization
+         (not (f-get-global 'in-local-flg state))
+         (int= (f-get-global 'make-event-debug-depth state) 0)
+         (cdr (assoc-eq key cert-data)))))
+
+(defun in-encapsulatep (embedded-event-lst non-trivp)
+
+; This function determines if we are in the scope of an encapsulate.
+; If non-trivp is t, we restrict the interpretation to mean ``in the
+; scope of a non-trivial encapsulate'', i.e., in an encapsulate that
+; introduces a constrained function symbol.
+
+  (cond
+   ((endp embedded-event-lst) nil)
+   ((and (eq (car (car embedded-event-lst)) 'encapsulate)
+         (if non-trivp
+             (cadr (car embedded-event-lst))
+           t))
+    t)
+   (t (in-encapsulatep (cdr embedded-event-lst) non-trivp))))
+
+(mutual-recursion
+
+(defun contains-lambda-objectp (x)
+
+; This function returns true when the input contains a quoted lambda.
+
+  (declare (xargs :guard (pseudo-termp x)))
+  (cond ((atom x) nil)
+        ((eq (car x) 'quote)
+         (let ((u (unquote x)))
+           (and (consp u)
+                (eq (car u) 'lambda))))
+        (t (or (contains-lambda-object-listp (cdr x))
+               (and (flambda-applicationp x)
+                    (contains-lambda-objectp (lambda-body (car x))))))))
+
+(defun contains-lambda-object-listp (x)
+  (declare (xargs :guard (pseudo-term-listp x)))
+  (cond ((endp x) nil)
+        (t (or (contains-lambda-objectp (car x))
+               (contains-lambda-object-listp (cdr x))))))
+)
+
+(defun store-cert-data (val wrld state)
+  (and (let ((info (f-get-global 'certify-book-info state)))
+         (and info
+              (not (access certify-book-info info :include-book-phase))))
+       (not (f-get-global 'in-local-flg state))
+       (not ; not inside include-book
+        (global-val 'include-book-path wrld))
+
+; The next conjunct is optional, as explained in the Essay on Cert-data.  Note
+; that in function encapsulate-fn, we are careful during encapsulate pass 1 to
+; avoid stealing the fast-alist stored in world global translate-cert-data.
+
+       (not ; not "obviously" in encapsulate pass1
+        (and (in-encapsulatep (global-val 'embedded-event-lst wrld) nil)
+             (not (eq (ld-skip-proofsp state) 'include-book))))
+
+; The following check may be needlessly conservative.  It addresses the
+; following concern: translation of quoted lambdas is complicated by
+; considerations involving apply$ and loop$.  For example, untouchable function
+; symbols inside such a quoted object might be a concern -- though probably
+; not, since we don't seem to allow function symbols to be both badged and
+; untouchable.  Rather than think through such issues, we simply skip all
+; quoted lambdas.  If the need arises, one can look into removing this
+; restriction.
+
+       (not (contains-lambda-objectp val))
+
+; The following heuristic check could be reconsidered.  It is intended to keep
+; .cert files from being too big.
+
+       (< (cons-count-bounded val)
+          (fn-count-evg-max-val))))
+
+(defrec translate-cert-data-record
+
+; Warning: Keep the fields in sync with update-translate-cert-data and
+; cert-data-for-certificate.
+
+; The form of inputs and value depends on type.
+; - For translate-bodies: inputs is the names argument to translate-bodies
+;   and value is (cons tbodies bindings), where tbodies is the list of
+;   translated bodies and bindings is the corresponding bindings from
+;   translate.
+; - For defthm: inputs is the name
+;   and value is the translated body (without making an adjustment for
+;   ACL2(r)).
+
+  ((type . inputs) . (value . (fns . vars)))
+  t)
+
+(defun update-translate-cert-data-fn (name installed-wrld wrld
+                                           type inputs value fns vars)
+  (let ((old-translate-cert-data (global-val 'translate-cert-data
+                                             installed-wrld)))
+    (global-set 'translate-cert-data
+                (let ((new (make translate-cert-data-record
+                                 :type type
+                                 :inputs inputs
+                                 :value value
+                                 :fns fns
+                                 :vars vars))
+                      (old-lst (cdr (hons-get name old-translate-cert-data))))
+                  (if (member-equal new old-lst)
+                      old-translate-cert-data
+                    (hons-acons name
+                                (cons new old-lst)
+                                old-translate-cert-data)))
+                wrld)))
+
+(defmacro update-translate-cert-data (name installed-wrld wrld
+                                           &key type inputs value fns vars)
+
+; Warning: Keep the fields in sync with translate-cert-data-record and
+; cert-data-for-certificate.
+
+  `(update-translate-cert-data-fn ,name ,installed-wrld ,wrld
+                                  ,type ,inputs ,value ,fns ,vars))
 
 ; Rockwell Addition: A major change is the provision of non-executable
 ; functions.  These are typically functions that use stobjs but which
@@ -148,7 +644,77 @@
                               ""
                             ", as is laid down by defun-nx"))))))))
 
-(defun translate-bodies (non-executablep names arglists bodies known-stobjs-lst
+(defun collect-untouchable-fns (syms state)
+
+  (let ((temp-touchable-fns (f-get-global 'temp-touchable-fns state)))
+    (cond ((eq temp-touchable-fns t) nil)
+          (t (let* ((wrld (w state)) ; installed world
+                    (untouchable-fns (global-val 'untouchable-fns wrld))
+                    (int (intersection-eq syms untouchable-fns)))
+               (cond (temp-touchable-fns
+                      (set-difference-eq int temp-touchable-fns))
+                     (t int)))))))
+
+(defun collect-untouchable-vars (syms state)
+  (let ((temp-touchable-vars (f-get-global 'temp-touchable-vars state)))
+    (cond ((eq temp-touchable-vars t) nil)
+          (t (let* ((wrld (w state)) ; installed world
+                    (untouchable-vars (global-val 'untouchable-vars wrld))
+                    (int (and syms ; optimization
+                              (intersection-eq syms untouchable-vars))))
+               (cond (temp-touchable-vars
+                      (set-difference-eq int temp-touchable-vars))
+                     (t int)))))))
+
+(defun get-translate-cert-data-record (type lst state)
+
+; Lst is a list of translate-cert-data-record records associated with a single
+; name.  We return the unique one associated with type, if any, else nil.
+; Reasons for returning nil include:
+
+; (a) two or more relevant records (which would necessarily be distinct; see
+;     update-translate-cert-data);
+; (b) function symbols in the translated term that are now untouchable; or
+; (c) state global symbols in the translated term, assigned or made unbound,
+;     that are now untouchable.
+
+  (cond ((endp lst) nil)
+        ((eq type (access translate-cert-data-record (car lst) :type))
+         (cond ((or (get-translate-cert-data-record type (cdr lst) state) ; (a)
+                    (collect-untouchable-fns
+                     (access translate-cert-data-record (car lst) :fns)
+                     state) ; (b)
+                    (collect-untouchable-vars
+                     (access translate-cert-data-record (car lst) :vars)
+                     state)) ; (c)
+                nil)
+               (t (car lst))))
+        (t (get-translate-cert-data-record type (cdr lst) state))))
+
+(defun get-translate-bodies (names cert-data-entry state)
+
+; Cert-data-entry is a valid cert-data entry for the :translate key.  It is
+; thus a list of translate-cert-data-record records.  We return nil or else the
+; unique bodies associated with names, checking for untouchables.
+
+  (cond ((null names) ; probably always false, but we check, for robustness
+         nil)
+        (t (let ((lst (cert-data-val (car names) cert-data-entry)))
+             (cond
+              ((null lst) ; optimization
+               nil)
+              (t (let ((val (get-translate-cert-data-record :translate-bodies
+                                                            lst
+                                                            state)))
+                   (and val
+                        (assert$ (equal (access translate-cert-data-record val
+                                                :inputs)
+                                        names)
+                                 (access translate-cert-data-record val
+                                         :value))))))))))
+
+(defun translate-bodies (non-executablep names arglists bodies bindings0
+                                         known-stobjs-lst
                                          reclassifying-all-programp
                                          ctx wrld state)
 
@@ -159,11 +725,31 @@
 ; and we need to guarantee to callers that those stobjs-out do not change with
 ; such replacements.
 
+; Normally, this function is called with bindings0 = (pairlis$ names names),
+; which indicates that the output signature of each name must be inferred
+; during translation and stored in the ultimate value of bindings.  But when
+; :loop$-recursion is specified, the caller already knows the output signature
+; of the fn being defined and will specify it in the call.
+
   (declare (xargs :guard (true-listp bodies)))
-  (mv-let (erp lst bindings)
+  (let ((cert-data-entry (cert-data-entry :translate state)))
+    (let ((cert-data-tbodies-and-bindings
+           (if cert-data-entry
+
+; Note that we do not need to rule out make-event expansion explicitly, because
+; it is already being ruled out: protect-system-state-globals (called by
+; protected-eval, which does the evaluation for make-event expansion) binds
+; state global 'cert-data to nil.
+
+               (get-translate-bodies names cert-data-entry state)
+             nil)))
+      (cond
+       (cert-data-tbodies-and-bindings (value cert-data-tbodies-and-bindings))
+       (t
+        (mv-let (erp lst bindings)
           (translate-bodies1 (eq non-executablep t) ; not :program
                              names bodies
-                             (pairlis$ names names)
+                             bindings0
                              known-stobjs-lst
                              ctx wrld
                              (default-state-vars t
@@ -187,9 +773,10 @@
                                              non-executablep (cdr names)
                                              ctx state))
                  (t (value nil)))
-           (cond ((eq non-executablep t)
-                  (value (cons lst (pairlis-x2 names '(nil)))))
-                 (t (value (cons lst bindings)))))))
+           (value (cons lst
+                        (cond ((eq non-executablep t)
+                               (pairlis-x2 names '(nil)))
+                              (t bindings)))))))))))
 
 ; The next section develops our check that mutual recursion is
 ; sensibly used.
@@ -295,7 +882,9 @@
 ; Rockwell Addition:  The recursivep property has changed.  Singly
 ; recursive fns now have the property (fn) instead of fn.
 
-(defun putprop-recursivep-lst (names bodies wrld)
+(defun putprop-recursivep-lst (loop$-recursion-checkedp
+                               loop$-recursion
+                               names bodies wrld)
 
 ; On the property list of each function symbol is stored the 'recursivep
 ; property.  For nonrecursive functions, the value is implicitly nil but no
@@ -305,6 +894,10 @@
 ; functions the value is the list of every name in the clique.  This function
 ; stores the property for each name and body in names and bodies.
 
+; When loop$-recursion is t, we know names is a singleton and that the function
+; is indeed recursive.  Otherwise, we use ffnnamep-mod-mbe to determine whether
+; a singly defined function is recursive.
+
 ; WARNING: We rely on the fact that this function puts the same names into the
 ; 'recursivep property of each member of the clique, in our handling of
 ; being-openedp.  Moreover, we rely in function termination-theorem-fn-subst
@@ -313,10 +906,17 @@
 ; ... ...)) pushes a property for name1 onto a world with property for name2,
 ; etc.
 
-  (cond ((int= (length names) 1)
-         (cond ((ffnnamep-mod-mbe (car names) (car bodies))
-                (putprop (car names) 'recursivep names wrld))
-               (t
+  (prog2$
+   (choke-on-loop$-recursion loop$-recursion-checkedp
+                             names
+                             bodies
+                             'putprop-recursivep-lst)
+   (cond (loop$-recursion
+          (putprop (car names) 'recursivep names wrld))
+         ((int= (length names) 1)
+          (cond ((ffnnamep-mod-mbe (car names) (car bodies))
+                 (putprop (car names) 'recursivep names wrld))
+                (t
 
 ; Until we started using the 'def-bodies property to answer most questions
 ; about recursivep (see macro recursivep), it was a good idea to put a
@@ -324,8 +924,8 @@
 ; entire association list looking for 'recursivep.  Now, this less-used
 ; property is just in the way.
 
-                wrld)))
-        (t (putprop-x-lst1 names 'recursivep names wrld))))
+                 wrld)))
+         (t (putprop-x-lst1 names 'recursivep names wrld)))))
 
 ; Formerly, we defined termination-machines and some of its supporting
 ; functions here.  But we moved them to history-management.lisp in order to
@@ -691,7 +1291,17 @@
                                (if (equal
                                     t-machines
                                     (termination-machines
-                                     names bodies
+                                     t ; loop$-recursion-checkedp
+                                     (if (cdr names) ; loop$-recursion
+                                         nil
+                                         (getpropc (car names)
+                                                   'loop$-recursion
+                                                   nil wrld))
+                                     names
+                                     (if (cdr names)
+                                         nil
+                                         (list (formals (car names) wrld)))
+                                     bodies
                                      (make-list (length names)
                                                 :initial-element
                                                 :all)))
@@ -896,6 +1506,34 @@
      (cdr full-tacs-lst-lst)
      (car full-tacs-lst-lst))))
 
+; To generate the body of the inductor function for a loop$ recursive function
+; we will generate ``nuggets'' for certain loop$s in the original body and then
+; glue those nuggets onto the front of the original body using (return-last
+; 'progn <nugget> <orig-body>).  But in induction-machine-for-fn1 we need to
+; recognize when a (return-last 'progn ...)  contains a nugget and treat that
+; nugget a little differently than we would another term embedded in such a
+; (return-last 'progn ...) form.  So here is how we mark a nugget -- which
+; involves ANOTHER (return-last 'progn ...) -- and how we extract the nugget
+; from its marking.  The generation of nuggets and inductor functions will
+; eventually be implemented in a distributed book.  The only reason we're
+; defining these functions now is so that induction-machine-for-fn1 can
+; recognize when it's been presented with a nugget.
+
+(defun mark-loop$-recursion-nugget (nugget)
+  `(return-last 'progn
+                'loop$-recursion-nugget
+                ,nugget))
+
+(defun marked-loop$-recursion-nuggetp (term)
+; If term satisfies this predicate, then (fargn term 3) is the nugget.
+  (and (nvariablep term)
+       (not (fquotep term))
+       (eq (ffn-symb term) 'return-last)
+       (quotep (fargn term 1))
+       (eq (unquote (fargn term 1)) 'progn)
+       (quotep (fargn term 2))
+       (eq (unquote (fargn term 2)) 'loop$-recursion-nugget)))
+
 (mutual-recursion
 
 (defun induction-machine-for-fn1 (names body alist test-alist calls
@@ -1058,7 +1696,7 @@
                                                      alist
                                                      ruler-extenders
                                                      nil ; acc
-                                                     t ; merge-p
+                                                     t   ; merge-p
                                                      nil) ; flg
                       (mv (or flg1 flg2)
                           (cross-tests-and-calls
@@ -1113,10 +1751,15 @@
    ((eq (ffn-symb body) 'if)
     (let ((test
 
-; Since (remove-guard-holders x) is provably equal to x, the machine we
+; Since (remove-guard-holders-weak x) is provably equal to x, the machine we
 ; generate using it below is equivalent to the machine generated without it.
+; It might be sound also to call possibly-clean-up-dirty-lambda-objects (i.e.,
+; to call remove-guard-holders instead of remove-guard-holders-weak) so that
+; guard holders are removed from quoted lambdas in argument positions with ilk
+; :fn (or :fn?), but we don't expect to pay much of a price by playing it safe
+; here and in termination-machine.
 
-           (remove-guard-holders (fargn body 1))))
+           (remove-guard-holders-weak (fargn body 1))))
       (cond
        ((member-eq-all 'if ruler-extenders) ; other case is easier to follow
         (mv-let
@@ -1233,8 +1876,13 @@
                   ((and (eq (ffn-symb body) 'return-last)
                         (quotep (fargn body 1))
                         (eq (unquote (fargn body 1)) 'progn)
+                        (marked-loop$-recursion-nuggetp (fargn body 2)))
+                   (mv merge-p (list (fargn (fargn body 2) 3) (fargn body 3))))
+                  ((and (eq (ffn-symb body) 'return-last)
+                        (quotep (fargn body 1))
+                        (eq (unquote (fargn body 1)) 'progn)
                         (not (ffnnamesp names (fargn body 2))))
-                   (mv merge-p (list (fargn body 3))))
+                     (mv merge-p (list (fargn body 3))))
                   ((null (cdr (fargs body)))
                    (mv merge-p (list (fargn body 1))))
                   (t (mv t (fargs body))))
@@ -1284,7 +1932,11 @@
 ; books/workshops/2011/verbeek-schmaltz/sources/correctness.lisp has failed
 ; when we did not do so.
 
-  (let* ((tests0 (remove-guard-holders-lst
+; While we generally follow the convention of calling
+; possibly-clean-up-dirty-lambda-objects anytime we're removing guard holders
+; we do not do so here and just play it safe until we get burned!
+
+  (let* ((tests0 (remove-guard-holders-weak-lst
                   (access tests-and-calls tc :tests))))
     (mv-let
      (var const)
@@ -1314,7 +1966,7 @@
 
        (make tests-and-calls
              :tests tests
-             :calls (remove-guard-holders-lst
+             :calls (remove-guard-holders-weak-lst
                      (access tests-and-calls tc :calls)))))))
 
 (defun simplify-tests-and-calls-lst (tc-list)
@@ -1339,6 +1991,39 @@
         (t (cons (simplify-tests-and-calls (car tc-list))
                  (simplify-tests-and-calls-lst (cdr tc-list))))))
 
+(mutual-recursion
+
+(defun loop$-recursion-ffnnamep (fn term)
+
+; Like ffnamep, we determine whether the function fn (possibly a
+; lambda-expression) is used as a function in term.  However, unlike ffnnamep,
+; we check every quoted lambda-like object in term looking for calls of fn.  We
+; know that every quoted lambda-like object in term is in fact a
+; well-formed-lambda-objectp.
+
+  (declare (xargs :guard (pseudo-termp term)))
+  (cond ((variablep term) nil)
+        ((fquotep term)
+         (cond ((and (consp (unquote term))
+                     (eq (car (unquote term)) 'LAMBDA))
+                (loop$-recursion-ffnnamep fn (lambda-object-body (unquote term))))
+               (t nil)))
+        ((flambda-applicationp term)
+         (or (equal fn (ffn-symb term))
+             (loop$-recursion-ffnnamep fn (lambda-body (ffn-symb term)))
+             (loop$-recursion-ffnnamep-lst fn (fargs term))))
+        ((eq (ffn-symb term) fn) t)
+        (t (loop$-recursion-ffnnamep-lst fn (fargs term)))))
+
+(defun loop$-recursion-ffnnamep-lst (fn l)
+  (declare (xargs :guard (pseudo-term-listp l)))
+  (if (endp l)
+      nil
+      (or (loop$-recursion-ffnnamep fn (car l))
+          (loop$-recursion-ffnnamep-lst fn (cdr l)))))
+
+ )
+
 (defun induction-machine-for-fn (names body ruler-extenders)
 
 ; We build an induction machine for the function in names with the given body.
@@ -1361,7 +2046,68 @@
           (declare (ignore flg))
           (simplify-tests-and-calls-lst ans)))
 
-(defun induction-machines (names bodies ruler-extenders-lst)
+(defun clean-up-nots (p)
+  (case-match p
+    (('IF ('IF q ''NIL ''T) ''NIL ''T) q)
+    (('NOT ('IF q ''NIL ''T)) q)
+    (('IF ('NOT q) ''NIL ''T) q)    
+    (('NOT ('NOT q)) q)
+    (('IF q ''NIL ''T) `(NOT ,q))
+    (& p)))
+
+(defun clean-up-nots-lst (lst ans)
+; Simplify double negations and reverse the order of the terms in lst.
+  (cond ((endp lst) ans)
+        (t (clean-up-nots-lst (cdr lst) (cons (clean-up-nots (car lst)) ans)))))
+
+(defun clean-up-conjunction1 (lst ans)
+  (cond
+   ((endp lst) ans)
+   ((member-complement-term (car lst) (cdr lst))
+    :contradiction)
+   ((member-equal (car lst) (cdr lst))
+    (clean-up-conjunction1 (cdr lst) ans))
+   (t (clean-up-conjunction1 (cdr lst) (cons (car lst) ans)))))
+
+(defun clean-up-conjunction (lst)
+
+; Lst is a list of hypotheses, implicitly conjoined.  We return either
+; :contradiction or an equivalent list of conjuncts after eliminating
+; duplicates and double negations.
+
+  (clean-up-conjunction1 (clean-up-nots-lst lst nil) nil))
+
+(defun clean-up-loop$-recursion-induction-machine (tc-list)
+
+; Tc-list is a list of tests-and-calls, i.e., an induction machine.  However,
+; as of this writing this function is only applied to those induction machines
+; generated from loop$ recursion induction function bodies, i.e., inductible
+; loop$ recursive functions.  This function is spiritually similar to
+; simplify-tests-and-calls but just drops cases having contradictory tests and
+; eliminates duplicates and double negations among the remaining tests.  We
+; implement this process as a separate function rather than strengthen
+; simplify-tests-and-calls because we wish not to change any existing induction
+; machines as we add the ability to induct for loop$ recursive functions.
+
+  (cond
+   ((endp tc-list) nil)
+   (t (let ((tests
+             (clean-up-conjunction
+              (access tests-and-calls (car tc-list) :tests))))
+        (cond
+         ((eq tests :contradiction)
+          (clean-up-loop$-recursion-induction-machine (cdr tc-list)))
+         (t (cons
+             (make tests-and-calls
+                   :tests tests
+                   :calls (access tests-and-calls (car tc-list) :calls))
+             (clean-up-loop$-recursion-induction-machine (cdr tc-list)))))))))
+
+(defun induction-machines
+  (loop$-recursion names arglists measure-alist bodies
+                   ruler-extenders-lst wrld)
+
+  (declare (ignore arglists measure-alist wrld)) ; See Note 2 below.
 
 ; This function builds the induction machine for each function defined
 ; in names with the corresponding body in bodies.  A list of machines
@@ -1376,13 +2122,42 @@
 ; up since we can't use them.  So all that machinery is
 ; short-circuited here.
 
+; Note 1: If loop$-recursion has been used (which is only possible if names is
+; a singleton) we refuse to generate an induction machine.  As of March, 2020,
+; we haven't fully understood how to induct appropriately for such functions.
+; We currently aim to produce a book containing a utility, perhaps named
+; definductor, that takes the name of an admitted loop$ recursive function and
+; produces an induction scheme for it.  But our current understanding of this
+; problem produces plausible schemes only for plain, possibly nested loop$s
+; targetting formal variables or car/cdr nests of formal variables.
+; Furthermore, these schemes impose additional restrictions on the acceptable
+; measures justifying the loop$ recursive functions -- restrictions that are
+; not necessary just for admission.  Finally, our current understanding has not
+; been sufficiently tested to deserve being in our sources!  Rather than add a
+; questionable ``automatic'' scheme that restricts admissible loop$ recursive
+; functions or confusing the user by sometimes generating an induction scheme
+; and sometimes not, we have opted to NEVER produce a scheme and leave it to
+; the user (possibly with help from definductor) to introduce effective
+; schemes.
+
+; Note 2: The three ignored arguments are artifacts of an earlier experiment in
+; which we tried to automatically generate induction schemes for ``inductible''
+; loop$ recursive functions.  When we conducted that experiment we needed those
+; arguments and had to refactor the code to get them.  But when we abandoned
+; automatically generating induction schemes for loop$ recursive functions we
+; decided not to revert to the earlier factoring, just in case we someday
+; decide to handle such functions here.
+
   (cond ((null (cdr names))
-         (list (induction-machine-for-fn names (car bodies)
-                                         (car ruler-extenders-lst))))
+         (if loop$-recursion
+             nil
+             (list (induction-machine-for-fn names (car bodies)
+                                             (car ruler-extenders-lst)))))
         (t nil)))
 
-(defun putprop-induction-machine-lst (names bodies ruler-extenders-lst
-                                            subversive-p wrld)
+(defun putprop-induction-machine-lst
+  (loop$-recursion names arglists measure-alist bodies
+                   ruler-extenders-lst subversive-p wrld)
 
 ; Note:  If names has more than one element we do nothing.  We only
 ; know how to interpret induction machines for singly recursive fns.
@@ -1391,8 +2166,9 @@
         (subversive-p wrld)
         (t (putprop (car names)
                     'induction-machine
-                    (car (induction-machines names bodies
-                                             ruler-extenders-lst))
+                    (car (induction-machines
+                          loop$-recursion names arglists measure-alist bodies
+                          ruler-extenders-lst wrld))
                     wrld))))
 
 (defun quick-block-initial-settings (formals)
@@ -1631,14 +2407,26 @@
                                                 measures
                                                 t-machines
                                                 ctx wrld state))
-            (hints (if hints ; hints and default-hints already translated
-                       (value hints)
-                     (let ((default-hints (default-hints wrld)))
-                       (if default-hints ; not yet translated
-                           (translate-hints
-                            (cons "Measure Lemma for" (car names))
-                            default-hints ctx wrld state)
-                         (value hints)))))
+            (hints (cond
+                    ((member-eq (ld-skip-proofsp state)
+                                '(include-book
+                                  include-book-with-locals
+                                  initialize-acl2))
+
+; Hints are ignored below (by prove-termination) when proofs are skipped.  But
+; as with defthm-fn1 (for example), we translate default hints when
+; ld-skip-proofsp is t because in that case our intention is to do all checks
+; except for the actual proof attempts.
+
+                     (value nil))
+                    (hints ; hints and default-hints already translated
+                     (value hints))
+                    (t (let ((default-hints (default-hints wrld)))
+                         (if default-hints ; not yet translated
+                             (translate-hints
+                              (cons "Measure Lemma for" (car names))
+                              default-hints ctx wrld state)
+                           (value hints))))))
             (pair (prove-termination names
                                      t-machines
                                      measure-alist
@@ -1660,9 +2448,9 @@
 
     (value (list* (car pair) measure-alist (cdr pair)))))
 
-(defun put-induction-info-recursive (names arglists col ttree measure-alist
-                                           t-machines ruler-extenders-lst
-                                           bodies mp rel wrld state)
+(defun put-induction-info-recursive
+  (loop$-recursion names arglists col ttree measure-alist t-machines
+         ruler-extenders-lst bodies mp rel wrld state)
 
 ; This function separates out code from put-induction-info.
 
@@ -1687,7 +2475,8 @@
                              wrld)))
          (wrld2
           (putprop-induction-machine-lst
-           names bodies ruler-extenders-lst subversive-p wrld))
+           loop$-recursion names arglists measure-alist bodies
+           ruler-extenders-lst subversive-p wrld))
          (wrld3
           (putprop-justification-lst measure-alist
                                      subset-lst
@@ -1735,13 +2524,23 @@
            set-bogus-measure-ok."
           name)))))
 
-(defun put-induction-info (names arglists measures ruler-extenders-lst bodies
-                                 mp rel hints otf-flg big-mutrec measure-debug
-                                 ctx ens wrld state)
+(defun put-induction-info ( ; we assume loop$-recursion-checkedp = t
+                           loop$-recursion
+                           names arglists measures ruler-extenders-lst bodies
+                           mp rel hints otf-flg big-mutrec measure-debug
+                           ctx ens wrld state)
 
 ; WARNING: This function installs a world.  That is safe at the time of this
 ; writing because this function is only called by defuns-fn0, which is only
 ; called by defuns-fn, where that call is protected by a revert-world-on-error.
+
+; Reminder: If user books start to call this function (or any of our functions
+; that rely on loop$ recursion having been checked), we need to add
+; loop$-recursion-checkedp as a new formal and start by calling
+; choke-on-loop$-recursion.  The call of put-induction-info-recursive, below,
+; has the first argument t in our code because we know loop$ recursion has been
+; checked down there.  So that t stays t even if we add
+; loop$-recursion-checkedp as a new formal above.
 
 ; We are processing a clique of mutually recursive functions with the names,
 ; arglists, measures, ruler-extenders-lst, and bodies given.  All of the above
@@ -1767,7 +2566,7 @@
 ; use the standard state and error primitives and so it returns 3 and lists
 ; together the three "real" answers.
 
-  (let ((wrld1 (putprop-recursivep-lst names bodies wrld)))
+  (let ((wrld1 (putprop-recursivep-lst t loop$-recursion names bodies wrld)))
 
 ; The put above stores a note on each function symbol as to whether it is
 ; recursive or not.  An important question arises: have we inadvertently
@@ -1796,13 +2595,16 @@
 ; functions in the clique.
 
            (let ((t-machines
-                  (termination-machines names bodies ruler-extenders-lst)))
+                  (termination-machines t ; loop$-recursion-checkedp
+                                        loop$-recursion
+                                        names arglists bodies
+                                        ruler-extenders-lst)))
 
 ; Next we get the measures for each function.  That may cause an error
 ; if we couldn't guess one for some function.
 
              (er-let*
-              ((wrld1 (update-w
+                 ((wrld1 (update-w
 
 ; Sol Swords sent an example in which a clause-processor failed during a
 ; termination proof.  That problem goes away if we install the world, which we
@@ -1810,17 +2612,18 @@
 ; that raw-ev-fncall calls chk-raw-ev-fncall to ensure that the world is
 ; (essentially) installed.
 
-                       t ; formerly big-mutrec
-                       wrld1))
-               (triple (prove-termination-recursive
-                        names arglists measures t-machines mp rel hints
-                        otf-flg bodies measure-debug ctx ens wrld1 state)))
-              (let* ((col (car triple))
-                     (measure-alist (cadr triple))
-                     (ttree (cddr triple)))
-                (put-induction-info-recursive
-                 names arglists col ttree measure-alist t-machines
-                 ruler-extenders-lst bodies mp rel wrld1 state))))))))
+                          t ; formerly big-mutrec
+                          wrld1))
+                  (triple (prove-termination-recursive
+                           names arglists measures t-machines mp rel hints
+                           otf-flg bodies measure-debug ctx ens wrld1 state)))
+               (let* ((col (car triple))
+                      (measure-alist (cadr triple))
+                      (ttree (cddr triple)))
+                 (put-induction-info-recursive
+                  loop$-recursion
+                  names arglists col ttree measure-alist t-machines
+                  ruler-extenders-lst bodies mp rel wrld1 state))))))))
 
 ; We next worry about storing the normalized bodies.
 
@@ -1866,7 +2669,7 @@
             (equivalence-relationp equiv wrld))
        (mv-let (body ttree)
                (cond ((eq install-body :NORMALIZE)
-                      (normalize (remove-guard-holders body)
+                      (normalize (remove-guard-holders body wrld)
                                  nil ; iff-flg
                                  nil ; type-alist
                                  ens
@@ -1903,7 +2706,7 @@
 
 ; We massage the hyps with this function to speed rewrite up.
 
-(defun preprocess-hyp (hyp)
+(defun preprocess-hyp (hyp wrld)
 
 ; In nqthm, this function also replaced (not (zerop x)) by
 ; ((numberp x) (not (equal x '0))).
@@ -1918,14 +2721,15 @@
 
   (case-match hyp
     (('atom x)
-     (list (mcons-term* 'not (mcons-term* 'consp
-                                          (remove-guard-holders x)))))
-    (& (list (remove-guard-holders hyp)))))
+     (list (mcons-term* 'not
+                        (mcons-term* 'consp
+                                     (remove-guard-holders x wrld)))))
+    (& (list (remove-guard-holders hyp wrld)))))
 
-(defun preprocess-hyps (hyps)
+(defun preprocess-hyps (hyps wrld)
   (cond ((null hyps) nil)
-        (t (append (preprocess-hyp (car hyps))
-                   (preprocess-hyps (cdr hyps))))))
+        (t (append (preprocess-hyp (car hyps) wrld)
+                   (preprocess-hyps (cdr hyps) wrld)))))
 
 (defun add-definition-rule-with-ttree (rune nume clique controller-alist
                                             install-body term ens wrld ttree)
@@ -1969,7 +2773,7 @@
             (make rewrite-rule
                   :rune rune
                   :nume nume
-                  :hyps (preprocess-hyps hyps)
+                  :hyps (preprocess-hyps hyps wrld)
                   :equiv equiv
                   :lhs (mcons-term fn args)
                   :var-info (cond (abbreviationp (not (null vars-bag)))
@@ -2979,10 +3783,7 @@
                ttree)))))))
    (t
     (let* ((fn (ffn-symb term))
-           (recog-tuple
-            (most-recent-enabled-recog-tuple fn
-                                             (global-val 'recognizer-alist wrld)
-                                             ens)))
+           (recog-tuple (most-recent-enabled-recog-tuple fn wrld ens)))
       (cond
        (recog-tuple
         (mv-let (ts ttree1)
@@ -3269,232 +4070,9 @@
                             :corollary corollary)
                     ttree)))))))))))))
 
-; Essay on Cert-data
-
-; In February 2016, Jared Davis requested on behalf of Centaur Technology
-; Inc. that we avoid recomputing runic type-prescriptions when including
-; certified books.  There were two problems: type-prescription rules from an
-; earlier included book were sometimes causing horrendous slowdowns in those
-; computations while including a later book; and, we can lose nice
-; type-prescriptions that were inferred during the proof (first) pass of
-; certify-book using local rules, where a similar problem can occur with
-; encapsulate.
-
-; In March 2016 we solved these problems by introducing "cert-data" structures,
-; which can be stored in certificates or in the state global variable
-; 'cert-data.  Cert-data stores information on runic type-prescriptions, but
-; some day we might put results from translate or other information that could
-; be expensive to recompute.
-
-; The following processes support the effective re-use of runic type
-; prescriptions.
-
-; (1) When including a certified book, all functions defined at the top level
-;     (i.e., not inside sub-books) get their runic type-prescriptions (if any)
-;     from the .cert file -- more specifically, from the value of state global
-;     'cert-data, which is bound to the value from the .cert file.
-
-; (2) Runic type-prescriptions are saved after pass1 of certify-book and
-;     encapsulate.  For each :logic-mode defun processed in the second pass at
-;     the top level (not in an included sub-book), an "intersection" is taken
-;     of the runic type-prescription from the first pass and the computed runic
-;     type-prescription computed in the usual way.  Note that since a function
-;     can be defined locally in a locally included book during the first pass
-;     but in a later defun at the top level in the second pass (which was
-;     redundant in the first pass), we even save some runic type-prescriptions
-;     from functions introduced during the first pass that were not introduced
-;     at the top level.
-
-;     Clearly each such rune is a logical consequence of the first pass; hence,
-;     by conservativity, it is a logical consequence of the second pass.  Note
-;     that we may need to recompute the :corollary, which otherwise might not
-;     be a term of the theory produced by the second pass.
-
-; (3) The runic type-prescription written to a .cert file is the one that
-;     exists after the second pass.  We save such a rule for every function
-;     that could be introduced when including the book, which includes the
-;     top-level portcullis functions and every function introduced by the book
-;     (even those not processed during pass 2).  Function
-;     newly-defined-top-level-fns provides this information; happily, even
-;     before we added support for cert-data, that function was already called
-;     under certify-book-fn to compute a list of function symbols to pass to
-;     write-expansion-file.
-
-; Now we elaborate on these processes.
-
-; Note that including an already-certified book gives you the specific type
-; prescription from the .cert file.  If however a book B1 includes another book
-; B2 only locally, then the type-prescription computed for B1 might be stronger
-; than that from B2, because of our "intersection" of rules in (2) above.
-
-; Suppose we are to determine the runic type-prescription for a given defun.
-; If state global 'cert-data has value nil, then we just do the usual iterative
-; calculation.  Otherwise we are to use that cert-data; but how do we know that
-; we should do the "intersection" operation because we are in the pass 2 case,
-; described in (2) above?  We bind key :pass1 to t in the value of state global
-; 'cert-data during the second pass (meaning, cert-data is from pass 1).  If
-; necessary we could have non-nil values that provide more information than t,
-; for example, 'acl2::certify-book or 'acl2::encapsulate.  We don't bother to
-; bind :pass1 to nil for other than pass 2; we simply don't bind :pass1.
-
-; In (2) above we describe the saving of runic type-prescriptions to use during
-; the second pass.  In the case of certify-book, however, we do this only for
-; the part of the world not in the retraction after pass 1, since there is no
-; need to save information for defuns already processed before starting pass 2.
-
-; Why do we need the "intersection" operation described in (2) above?  That is,
-; why not just pick either the runic type-prescription from the first pass or
-; compute one for the second pass?  The answer is that either may be weaker
-; than desired, as illustrated by the following two examples.  (These examples
-; are for encapsulate, but certify-book has the same issue.)
-
-; (2a) First, here is an example showing that the second pass can do a better
-; job computing the runic type-prescription than the first pass.  (To see the
-; empty 'type-prescriptions we would get for FOO on the first pass, change
-; (encapsulate () ...) to (progn ...).)
-
-; (encapsulate
-;   ()
-;   (local (include-book "rtl/rel9/support/support/lnot" :dir :system))
-
-; ; Because of the following in-theory event, the cert-data from the first pass
-; ; associates no runic type-prescription with FOO.
-
-;   (local (in-theory nil))
-;   (defun fl (x)
-;     (declare (xargs :guard (real/rationalp x)))
-;     (floor x 1))
-;   (defun bits (x i j)
-;     (declare (xargs :guard (and (natp x) (natp i) (natp j))
-;                     :verify-guards nil))
-;     (mbe :logic (if (or (not (integerp i))
-;                         (not (integerp j)))
-;                     0
-;                     (fl (/ (mod x (expt 2 (1+ i))) (expt 2 j))))
-;          :exec (if (< i j)
-;                    0
-;                    (logand (ash x (- j))
-;                            (1- (ash 1 (1+ (- i j))))))))
-;   (defun lnot (x n)
-;     (declare (xargs :guard (and (natp x) (integerp n) (< 0 n))
-;                     :verify-guards nil))
-;     (if (natp n)
-;         (+ -1 (expt 2 n) (- (bits x (1- n) 0)))
-;         0))
-;   (defun foo (x n)
-;     (lnot x n)))
-
-; ; Using cert-data from the first pass only:
-; ; (assert-event (null (getpropc 'foo 'type-prescriptions)))
-
-; ; Computing the runic type-prescription in the second pass:
-; (assert-event
-;  (equal (decode-type-set
-;          (access type-prescription
-;                  (car (last (getpropc 'foo 'type-prescriptions)))
-;                  :basic-ts))
-;         '*ts-rational*)
-
-; What we actually get, now, is *ts-integer*, because that's the :basic-ts for
-; the runic type-prescription of lnot (and also of binary-logand, bits, and fl)
-; from the locally included book, saved from the first pass.
-
-; (2b) To obtain an example showing that the first pass can do a better job
-; computing the runic type-prescription than the second pass, simply omit
-; (in-theory nil) from the example above.  The second pass still gives us
-; *ts-rational, as above; but if we change (encapsulate () ...) to (progn ...),
-; we see:
-
-; (assert-event
-;  (equal (decode-type-set
-;          (access type-prescription
-;                  (car (last (getpropc 'foo 'type-prescriptions)))
-;                  :basic-ts))
-;         '*ts-non-negative-integer*))
-
-; Let's turn now to our handling of a few thorny issues.
-
-; Suppose we are certifying a book with an encapsulate that locally defines a
-; function, f, such that later in the book is a different, non-local definition
-; of f.  At the end of pass 1 of certify-book we will store a runic type
-; prescription for the second definition.  Then during pass 2 of certify-book,
-; might we make a mistake by associating that type-prescription with the first
-; (local) definition of f?  No, because local definitions are skipped during
-; pass 2.  But for robustness, we pass a value for cert-data to
-; process-embedded-events, which binds state global cert-data to that value.
-; Thus, we override the global cert-data when we process an encapsulate.
-
-; The expansion phase of make-event introduces definitions that are in effect
-; local.  As in the preceding paragraph, we need to avoid applying the global
-; cert-data to such definitions.  This problem is solved primarily by arranging
-; that protected-eval, via protect-system-state-globals, binds state global
-; cert-data to nil.  An additional binding of cert-data to nil is made before
-; calling make-event-fn2-lst, which handles :OR forms and thus can throw away
-; earlier values.  In such a case, the runic type-prescription will be
-; recomputed during include-book, but we think that such an exception is
-; tolerable.
-
-; We are careful to not use cert-data for non-trivial encapsulates.  It might
-; well be possible to do so correctly, but we would need to be very careful to
-; track constraints properly; it seems easy to have a soundness bug due to
-; recording insufficient constraints in pass 2 to justify deductions made from
-; stronger constraints in pass 1.
-
-; A runic type-prescription rule may contain symbols not present in the
-; certification world, as shown below.  A similar issue applies to the
-; :expansion-alist field of the certificate, which is addressed by finding the
-; problematic package names with pkg-names introducing hidden defpkg forms.  We
-; use that same solution for cert-data.  The following example shows how this
-; works.  First, let's look at a couple of books; notice the package definition
-; that is to be made in the certification world of the first book.
-
-;   $ cat sub.lisp
-;   ; (defpkg "FOO" nil)
-;   ; (certify-book "sub" 1)
-;
-;   (in-package "ACL2")
-;
-;   (defun f2 (x) x)
-;   $ cat top.lisp
-;   (in-package "ACL2")
-;
-;   (include-book "sub")
-;
-;   (defmacro my-def ()
-;     `(defun f (,(intern$ "X" "FOO")) ,(intern$ "X" "FOO")))
-;
-;   (my-def)
-;   $
-
-; After certification of both books, the :CERT-DATA field of top.cert has the
-; following value.
-
-;   ((:TYPE-PRESCRIPTION (F 0 (3413 F FOO::X)
-;                           (NIL)
-;                           ((FOO::X) :TYPE-PRESCRIPTION F)
-;                           EQUAL (F FOO::X)
-;                           FOO::X)))
-
-; Thus, a hidden defpkg is generated (here we abbreviate the directory as
-; <dir>).
-
-;   :BEGIN-PORTCULLIS-CMDS
-;   (DEFPKG "FOO" NIL NIL
-;           ("<dir>/sub.lisp")
-;           T)
-;   :END-PORTCULLIS-CMDS
-
-(defun cert-data-val (fn cert-data-entry)
-
-; Cert-data-entry is (cdr (assoc-eq key cert-data)) for some key.
-
-  (let ((pair (and cert-data-entry ; optimization
-                   (hons-get fn cert-data-entry))))
-    (cdr pair)))
-
 (defun cleanse-type-prescriptions (names type-prescriptions-lst def-nume
                                          rmp-cnt ens wrld installed-wrld
-                                         cert-data-tp ttree)
+                                         cert-data-tp-entry ttree)
 
 ; Names is a clique of function symbols.  Type-prescriptions-lst is in
 ; 1:1 correspondence with names and gives the value in wrld of the
@@ -3515,6 +4093,8 @@
 ; same number of mapping pairs).  We increment our def-nume by rmp-cnt on each
 ; iteration.
 
+; cert-data-tp-entry is a cert-data-entry for the key, :type-prescription.
+
 ; This function knows that the defun runes for each name are laid out
 ; as follows, where i is def-nume:
 
@@ -3532,7 +4112,7 @@
    (t
     (let* ((fn (car names))
            (lst (car type-prescriptions-lst))
-           (tp1 (cert-data-val fn cert-data-tp))
+           (tp1 (cert-data-val fn cert-data-tp-entry))
            (tp2 ; still can have unset :corollary field
             (cond
              ((ts= *ts-unknown* (access type-prescription (car lst)
@@ -3562,10 +4142,10 @@
                                         (cdr type-prescriptions-lst)
                                         (+ rmp-cnt def-nume)
                                         rmp-cnt ens wrld installed-wrld
-                                        cert-data-tp ttree3))))))))
+                                        cert-data-tp-entry ttree3))))))))
 
 (defun guess-and-putprop-type-prescription-lst-for-clique
-  (names bodies def-nume ens wrld ttree big-mutrec cert-data-tp state)
+  (names bodies def-nume ens wrld ttree big-mutrec cert-data-tp-entry state)
 
 ; We assume that in wrld we find 'type-prescriptions for every fn in
 ; names.  We compute new guesses at the type-prescriptions for each fn
@@ -3597,7 +4177,7 @@
                       ens
                       wrld
                       wrld1
-                      cert-data-tp
+                      cert-data-tp-entry
                       ttree)
                      (er-progn
 
@@ -3614,7 +4194,7 @@
                     (guess-and-putprop-type-prescription-lst-for-clique
                      names
                      bodies
-                     def-nume ens wrld1 ttree big-mutrec cert-data-tp
+                     def-nume ens wrld1 ttree big-mutrec cert-data-tp-entry
                      state)))))))
 
 (defun get-normalized-bodies (names wrld)
@@ -3633,25 +4213,9 @@
                          :concl)
                  (get-normalized-bodies (cdr names) wrld)))))
 
-(defun cert-data-pair (fn cert-data-entry)
-
-; Cert-data-entry is (cdr (assoc-eq key cert-data)) for some key.
-
-  (and cert-data-entry ; optimization
-       (hons-get fn cert-data-entry)))
-
-(defun cert-data-entry-pair (key state)
-
-; Key is :type-prescription or any other keyword that can be associated in a
-; cert-data structure with a fast-alist.
-
-  (let ((cert-data (f-get-global 'cert-data state)))
-    (and cert-data ; optimization
-         (assoc-eq key cert-data))))
-
 (defun cert-data-putprop-type-prescription-lst-for-clique
-    (cert-data-entry names def-nume rmp-cnt ttree ens wrld installed-wrld
-                     changedp)
+    (cert-data-tp-entry names def-nume rmp-cnt ttree ens wrld installed-wrld
+                        changedp)
 
 ; Rmp-cnt (which stands for "runic-mapping-pairs count") is the length of the
 ; 'runic-mapping-pairs entry for the functions in names (all of which have the
@@ -3667,11 +4231,11 @@
             (push-lemma *fake-rune-for-cert-data* ttree)
           ttree)))
    (t (let* ((fn (car names))
-             (cert-data-pair (cert-data-pair fn cert-data-entry)))
+             (cert-data-pair (cert-data-pair fn cert-data-tp-entry)))
         (cond
          ((null cert-data-pair)
           (cert-data-putprop-type-prescription-lst-for-clique
-           cert-data-entry
+           cert-data-tp-entry
            (cdr names)
            (+ rmp-cnt def-nume)
            rmp-cnt
@@ -3695,7 +4259,7 @@
 
                                                    installed-wrld))
               (cert-data-putprop-type-prescription-lst-for-clique
-               cert-data-entry
+               cert-data-tp-entry
                (cdr names)
                (+ rmp-cnt def-nume)
                rmp-cnt
@@ -3840,24 +4404,33 @@
 
     (mv wrld ttree state))
    (t
-    (let ((cert-data-entry-pair
-           (cert-data-entry-pair :type-prescription state))
-          (cert-data-pass1
-           (cert-data-entry-pair :pass1 state)))
+    (let* ((cert-data-tp-entry-pair
+            (cert-data-entry-pair :type-prescription state))
+           (cert-data-tp-entry
+            (cdr cert-data-tp-entry-pair))
+           (cert-data-pass1-saved
+            (cert-data-entry-pair :pass1-saved state)))
 
-; A non-nil value for cert-data-entry-pair is a fast-alist.  If cert-data-pass1
-; is true then we are in pass 2 of encapsulate or certify-book; otherwise we
-; are including a certified book.  Since redefinition is possible, we avoid the
-; temptation to check that no name in names has a non-nil 'type-prescriptions
-; property.
+; If cert-data-tp-entry-pair is non-nil then its cdr is a cert-data-entry for
+; :type-prescription, i.e., a fast-alist that associates each (function symbol)
+; key with a type-prescription record.  If moreover cert-data-pass1-saved is
+; true, then we are in pass 2 of either encapsulate or certify-book; otherwise
+; (still assuming that cert-data-tp-entry-pair is non-nil) we are including a
+; certified book.  Since redefinition is possible, we avoid the temptation to
+; check that no name in names has a non-nil 'type-prescriptions property.
 
       (cond
-       ((and cert-data-entry-pair
-             (not cert-data-pass1)) ; including a certified book
+       ((and cert-data-tp-entry-pair
+
+; As noted above, the next conjunct says that the cert-data-tp-entry-pair did
+; not come from the first pass of either a non-trivial encapsulate or
+; certify-book.  Thus, we must be including an already-certified book.
+
+             (not cert-data-pass1-saved))
         (mv-let
           (wrld ttree)
           (cert-data-putprop-type-prescription-lst-for-clique
-           (cdr cert-data-entry-pair)
+           cert-data-tp-entry
            names
            def-nume
            (length (getpropc (car names) 'runic-mapping-pairs nil wrld))
@@ -3876,7 +4449,7 @@
                wrld1
                ttree
                big-mutrec
-               (cdr cert-data-entry-pair)
+               cert-data-tp-entry
                state)))))))))
 
 ; So that finishes the type-prescription business.  Now to level-no...
@@ -4369,10 +4942,10 @@
          (erp2 ; translation for formulas fails, so rely on previous error
           (mv erp term))
          (t (er-cmp ctx
-                    "The guards for the given formula cannot be verified it ~
-                     has the wrong syntactic form for evaluation, perhaps due ~
-                     to multiple-value or stobj restrictions.  See :DOC ~
-                     verify-guards.")))))
+                    "The guards for the given formula cannot be verified ~
+                     because it has the wrong syntactic form for evaluation, ~
+                     perhaps due to multiple-value or stobj restrictions.  ~
+                     See :DOC verify-guards.")))))
      (erp
       (er-cmp ctx
               "The guards for ~x0 cannot be verified because its formula has ~
@@ -4391,11 +4964,6 @@
                                                   wrld)))
      (t
       (value-cmp (cons :term term))))))
-
-(defun chk-acceptable-verify-guards-formula (name x ctx wrld state)
-  (cmp-to-error-triple
-   (chk-acceptable-verify-guards-formula-cmp name x ctx wrld
-                                             (default-state-vars t))))
 
 (defun chk-acceptable-verify-guards-cmp (name rrp ctx wrld state-vars)
 
@@ -4474,7 +5042,12 @@
         ((eq (car name) 'lambda)
          (cond
           ((well-formed-lambda-objectp name wrld)
-           (value-cmp name))
+           (value-cmp
+
+; We call hons-copy here for the same reason that is given in
+; translate11-lambda-object.
+
+            (hons-copy name)))
           (t (er-cmp ctx
                      "~x0 is not a well-formed LAMBDA expression.  See :DOC ~
                       verify-guards."
@@ -4490,7 +5063,8 @@
             name
             'verify-guards
             wrld
-            state-vars)
+            state-vars
+            nil)
            (declare (ignore bindings))
            (mv erp (if erp val (unquote val)))))))
       (t (er-cmp ctx
@@ -4643,6 +5217,10 @@
 ; or (iii) the guards of term y.  The second result is an assumption-free
 ; tag-tree justifying that set of clauses.
 
+; Ens may be an actual ens or :do-not-simplify, in which case no simplification
+; that depends on the current set of enabled rules will take place in producing
+; the guard clauses.
+
   (mv-let (cl-set cl-set-ttree)
     (cond ((and (consp x)
                 (eq (car x) :term))
@@ -4654,6 +5232,7 @@
               nil ens wrld
               (f-get-global 'safe-mode state)
               (gc-off state)
+              nil
               nil)
              (mv cl-set cl-set-ttree)))
           ((and (consp x)
@@ -4668,6 +5247,7 @@
               nil ens wrld
               (f-get-global 'safe-mode state)
               (gc-off state)
+              nil
               nil)
              (mv cl-set cl-set-ttree)))
           (t (guard-clauses-for-clique
@@ -4703,13 +5283,15 @@
 ; Cl-set-ttree is 'assumption-free.
 
     (mv-let (cl-set cl-set-ttree)
-      (clean-up-clause-set cl-set ens wrld cl-set-ttree state)
+      (clean-up-clause-set cl-set
+                           (if (eq ens :do-not-simplify) nil ens)
+                           wrld cl-set-ttree state)
 
 ; Cl-set-ttree is still 'assumption-free.
 
       (mv cl-set cl-set-ttree))))
 
-(defun guard-obligation (x rrp guard-debug ctx state)
+(defun guard-obligation (x rrp guard-debug guard-simplify ctx state)
   (let* ((wrld (w state))
          (namep (and (symbolp x)
                      (not (keywordp x))
@@ -4724,12 +5306,17 @@
       ((and namep (eq y 'redundant))
        (value-cmp :redundant))
       (t (mv-let (cl-set cl-set-ttree)
-                 (guard-obligation-clauses y guard-debug (ens state) wrld
+                 (guard-obligation-clauses y guard-debug
+                                           (if guard-simplify
+                                               (ens state)
+                                             :do-not-simplify)
+                                           wrld
                                            state)
                  (value-cmp (list* y cl-set cl-set-ttree))))))))
 
 (defun prove-guard-clauses-msg (names cl-set cl-set-ttree displayed-goal
-                                      verify-guards-formula-p state)
+                                      verify-guards-formula-p
+                                      guard-simplify state)
   (let ((simp-phrase (tilde-*-simp-phrase cl-set-ttree)))
     (cond
      ((null cl-set)
@@ -4748,18 +5335,22 @@
            nil))
      (t
       (pprogn
-       (fms "The non-trivial part of the guard conjecture for ~#0~[this ~
-             lambda expression~/~&1~/the given term~]~#2~[~/, given ~*3,~] ~
-             is~%~%Goal~%~Q45."
-            (list (cons #\0 (if names
+       (fms "The ~s0 guard conjecture for ~#1~[this ~
+             lambda expression~/~&2~/the given term~]~#3~[~/, given ~*4,~] ~
+             is~%~%Goal~%~Q56."
+            (list (cons #\0
+                        (if guard-simplify
+                            "non-trivial part of the"
+                          "unsimplified"))
+                  (cons #\1 (if names
                                 (if (consp (car names))
                                     0 1)
-                                2))
-                  (cons #\1 names)
-                  (cons #\2 (if (nth 4 simp-phrase) 1 0))
-                  (cons #\3 simp-phrase)
-                  (cons #\4 displayed-goal)
-                  (cons #\5 (or (term-evisc-tuple nil state)
+                              2))
+                  (cons #\2 names)
+                  (cons #\3 (if (nth 4 simp-phrase) 1 0))
+                  (cons #\4 simp-phrase)
+                  (cons #\5 displayed-goal)
+                  (cons #\6 (or (term-evisc-tuple nil state)
                                 (and (gag-mode)
                                      (let ((tuple
                                             (gag-mode-evisc-tuple state)))
@@ -4772,9 +5363,10 @@
        (mv 0 ; don't care
            state))))))
 
-(defun verify-guards-formula-fn (x rrp guard-debug state)
+(defun verify-guards-formula-fn (x rrp guard-debug guard-simplify state)
   (er-let* ((tuple (cmp-to-error-triple
-                    (guard-obligation x rrp guard-debug 'verify-guards-formula
+                    (guard-obligation x rrp guard-debug guard-simplify
+                                      'verify-guards-formula
                                       state))))
     (cond ((eq tuple :redundant)
            (value :redundant))
@@ -4791,14 +5383,16 @@
                                             nil
                                           names)
                                         (cadr tuple) cl-set-ttree
-                                        displayed-goal t state)
+                                        displayed-goal t guard-simplify state)
                (declare (ignore col))
                (value :invisible)))))))
 
-(defmacro verify-guards-formula (x &key rrp guard-debug &allow-other-keys)
-  `(verify-guards-formula-fn ',x ',rrp ',guard-debug state))
+(defmacro verify-guards-formula (x &key rrp guard-debug (guard-simplify 't)
+                                   &allow-other-keys)
+  `(verify-guards-formula-fn ',x ',rrp ',guard-debug ',guard-simplify state))
 
-(defun prove-guard-clauses (names hints otf-flg guard-debug ctx ens wrld state)
+(defun prove-guard-clauses (names hints otf-flg guard-debug guard-simplify
+                                  ctx ens wrld state)
 
 ; Names is either a clique of mutually recursive functions or else a singleton
 ; list containing either a theorem name or a well-formed lambda object.  We
@@ -4826,7 +5420,11 @@
                         state
                         nil))
               (mv-let (cl-set cl-set-ttree)
-                (guard-obligation-clauses names guard-debug ens wrld state)
+                (guard-obligation-clauses names guard-debug
+                                          (if guard-simplify
+                                              ens
+                                            :do-not-simplify)
+                                          wrld state)
                 (mv cl-set cl-set-ttree state)))
 
 ; Cl-set-ttree is 'assumption-free.
@@ -4839,9 +5437,9 @@
          (mv-let
            (col state)
            (io? event nil (mv col state)
-                (names cl-set cl-set-ttree displayed-goal)
+                (names cl-set cl-set-ttree displayed-goal guard-simplify)
                 (prove-guard-clauses-msg names cl-set cl-set-ttree
-                                         displayed-goal nil state)
+                                         displayed-goal nil guard-simplify state)
                 :default-bindings ((col 0)))
            (pprogn
             (increment-timer 'print-time state)
@@ -4919,7 +5517,8 @@
                     new-wrld)))
              (maybe-remove-invariant-risk (cdr names) wrld new-wrld)))))
 
-(defun verify-guards-fn1 (names hints otf-flg guard-debug ctx state)
+(defun verify-guards-fn1 (names hints otf-flg guard-debug
+                                guard-simplify ctx state)
 
 ; This function is called on a either a singleton list containing a theorem
 ; name or a well-formed lambda expression or a list of one or more recursively
@@ -5149,8 +5748,8 @@
   (let ((wrld (w state))
         (ens (ens state)))
     (er-let*
-     ((pair (prove-guard-clauses names hints otf-flg guard-debug ctx ens wrld
-                                 state)))
+     ((pair (prove-guard-clauses names hints otf-flg guard-debug guard-simplify
+                                 ctx ens wrld state)))
 
 ; Pair is of the form (col . ttree)
 
@@ -5198,7 +5797,8 @@
         (print-verify-guards-msg names col state)
         (value (cons wrld3 ttree1)))))))
 
-(defun verify-guards-fn (name state hints otf-flg guard-debug event-form)
+(defun verify-guards-fn (name state hints otf-flg guard-debug
+                              guard-simplify event-form)
 
 ; Important Note:  Don't change the formals of this function without
 ; reading the *initial-event-defmacros* discussion in axioms.lisp.
@@ -5241,8 +5841,8 @@
                         hints
                         (default-hints wrld)
                         ctx wrld state)))
-              (pair (verify-guards-fn1 names hints otf-flg guard-debug ctx
-                                       state)))
+              (pair (verify-guards-fn1 names hints otf-flg guard-debug
+                                       guard-simplify ctx state)))
 
 ; pair is of the form (wrld1 . ttree)
 
@@ -5672,7 +6272,7 @@
          state)
         ((cdr names)
          (pprogn
-          (fms "The Non-simple Signatures" nil (proofs-co state) state nil)
+          (fms "The Non-simple Signatures:" nil (proofs-co state) state nil)
           (print-defun-msg/signatures1 names wrld state)
           (newline (proofs-co state) state)))
         (t (pprogn
@@ -5914,12 +6514,12 @@
 
 ; Keep this in sync with :doc xargs.
 
-  '(:guard :guard-hints :guard-debug
+  '(:guard :guard-hints :guard-debug :guard-simplify
            :hints :measure :measure-debug
            :ruler-extenders :mode :non-executable :normalize
            :otf-flg #+:non-standard-analysis :std-hints
            :stobjs :verify-guards :well-founded-relation
-           :split-types))
+           :split-types :loop$-recursion))
 
 (defun plausible-dclsp1 (lst)
 
@@ -6234,9 +6834,9 @@
                          (null x))
                      t)
                     (t (er hard 'non-identical-defp
-                           "Internal error: Unexpected value when ~
-                                processing :normalize xargs keyword, ~x0.  ~
-                                Please contact the ACL2 implementors."
+                           "Internal error: Unexpected value when processing ~
+                            :normalize xargs keyword, ~x0.  Please contact ~
+                            the ACL2 implementors."
                            x)))))
             (not (equal (normalize-value
                          (fetch-dcl-field :normalize all-but-body1))
@@ -8014,7 +8614,8 @@
                                      key
                                      ctx
                                      wrld
-                                     *default-state-vars*)
+                                     *default-state-vars*
+                                     nil)
           (declare (ignore bindings))
           (cond
            (erp (er soft ctx
@@ -8041,11 +8642,12 @@
                    it perfectly.  The lambda object you created would be ~
                    interpreted by *1*apply even in a guard-verified raw Lisp ~
                    function while our lambda$ translation would produce ~
-                   compiled code.  Nevertheless, here's what's wrong with ~
-                   your counterfeit version:  the lambda$ expression ~x0 ~
-                   actually translates to ~x1 but your counterfeit claimed it ~
-                   translates to ~x2."
+                   compiled code.~%~%Nevertheless, here's what's wrong with ~
+                   your counterfeit version:  the lambda$ expression~%~Y01 ~
+                   actually translates to~%~Y21 but your counterfeit claimed it ~
+                   translates to~%~Y31."
                   key
+                  nil
                   (unquote tkey)
                   val))))))))
 
@@ -8105,6 +8707,16 @@
 ; marked, untranslated lambda$ expression it will use lambda$-alist to map it
 ; to its logical counterpart so we can do guard verification etc.
 
+; Lambda$-alist is also used by authenticate-tagged-lambda$ to confirm that a
+; quoted LAMBDA object tagged as having come from a lambda$ is actually
+; produced by translating the lambda$.  That check can be made without
+; re-translating if the quoted LAMBDA object appears as a cdr of a pair on
+; lambda$-alist.
+
+; Warning: Don't change the format or content of these pairs without inspecting
+; authenticate-tagged-lambda$ since failure to find the LAMBDA object just
+; causes a silent (slower) re-translation.
+
 ; The first formal above is the symbol-class of the defuns being processed.
 ; The next two are the guards and bodies, all of which ultimately get
 ; transferred into raw Lisp.  We must find every translated lambda$ in these
@@ -8143,6 +8755,775 @@
                                              ctx state)
        (value new-pairs))))
    (t (value nil))))
+
+(defrec loop$-alist-entry
+
+; The :flg field is normally nil, but it is t when adding an entry during
+; certification and we are not in the process of including a sub-book.
+
+  (term . flg)
+; Some day we might change the cheap-flg from nil to t.
+  nil)
+
+(defun loop$-alist-term (loop$-form loop$-alist)
+  (let ((pair (assoc-equal loop$-form loop$-alist)))
+    (and pair
+         (access loop$-alist-entry (cdr pair) :term))))
+
+; The following is akin to untrans-table but limited to CLTL primitives that
+; are translated into ACL2 versions.  This table is used to transform logically
+; translated terms into raw Lisp runnable terms.  Those transformed terms are
+; compiled and run, possibly during the reduction of ground subexpressions to
+; constants.  So it is important that this table be a trusted constant and not
+; something the user might augment as with untrans-table.
+
+(defconst *primitive-untranslate-alist*
+
+; Warning: It is important that none of these functions return multiple values!
+
+  '((binary-+ . +)
+    (binary-* . *)
+    (binary-append . append)
+    (binary-logand . logand)
+    (binary-logior . logior)
+    (binary-logxor . logxor)
+    (binary-logeqv . logeqv)
+    (unary-- . -)
+    (unary-/ . /)))
+
+(mutual-recursion
+
+(defun logic-code-to-runnable-code (already-in-mv-listp term wrld)
+
+; Note: This function used to be called ``twoify''.
+
+; This function converts a translated term into something that can be executed
+; in raw Lisp.  The logic translation of an mv is a list, with the comcommitant
+; translation of mv-let into bindings expressed in terms of car/cdr nests.  A
+; minor problem is that + and other primitive arithmetic expressions are turned
+; into binary-+, etc., which if allowed to persist would prevent the compiler
+; from making routine optimizations if TYPE declarations allow.  The fix here
+; is to find every call of a multi-valued function and wrap it in a
+; multiple-value-list which converts it to a list of values as the logic treats
+; it.  While we're at it we turn calls of binary-+ into + so Lisp can recognize
+; the chance to optimize arithmetic.  In a simple test of CCL we saw no
+; significant difference between the assembly produced for a well-declared (+ x
+; y z) versus (+ x (+ y z)), so we do not flatten +-nests -- both result in two
+; calls of the machine's +.
+
+  (declare (xargs :guard (and (pseudo-termp term)
+                              (plist-worldp wrld))))
+  (cond ((variablep term) term)
+        ((fquotep term)
+
+; Should we transform quoted LAMBDA objects?  No.  First, they may not be in
+; :FN slots and changing them would simply be wrong.  Second, even if they are in
+; :FN slots they are applied with apply$, which can't execute raw Lisp.  It's just
+; wrongheaded to think about transforming quoted LAMBDA objects!
+
+         term)
+        ((flambdap (ffn-symb term))
+         (cons (list 'lambda (lambda-formals (ffn-symb term))
+                     (logic-code-to-runnable-code nil
+                                                  (lambda-body (ffn-symb term))
+                                                  wrld))
+               (logic-code-to-runnable-code-lst (fargs term) wrld)))
+        ((eq (ffn-symb term) 'if)
+         `(if ,(logic-code-to-runnable-code nil (fargn term 1) wrld)
+              ,(logic-code-to-runnable-code nil (fargn term 2) wrld)
+              ,(logic-code-to-runnable-code nil (fargn term 3) wrld)))
+        ((eq (ffn-symb term) 'return-last)
+         (logic-code-to-runnable-code nil (fargn term 3) wrld))
+        ((eq (ffn-symb term) 'mv-list)
+
+; Since term is a fully translated term, we know it is of the form (mv-list 'k
+; expr) where k is an explicit integer greater than 1 and the out-arity of expr
+; is k.  Thus, there is no need to wrap another mv-list around expr!  But we do
+; have to transform its subterms.
+         `(mv-list ,(fargn term 1)
+                   ,(logic-code-to-runnable-code t (fargn term 2) wrld)))
+
+        (t (let ((out-arity (length (stobjs-out (ffn-symb term) wrld))))
+             (cond
+              ((and (not already-in-mv-listp)
+                    (not (int= out-arity 1)))
+               `(mv-list
+                 ',out-arity
+                 (,(ffn-symb term)
+                  ,@(logic-code-to-runnable-code-lst (fargs term) wrld))))
+              (t (let ((temp (assoc-eq (ffn-symb term)
+                                       *primitive-untranslate-alist*)))
+                   (cons-with-hint (if temp
+                                       (cdr temp)
+                                       (ffn-symb term))
+                                   (logic-code-to-runnable-code-lst
+                                    (fargs term) wrld)
+                                   term))))))))
+
+(defun logic-code-to-runnable-code-lst (terms wrld)
+  (declare (xargs :guard (and (pseudo-term-listp terms)
+                              (plist-worldp wrld))))
+  (cond ((endp terms) nil)
+        (t (cons-with-hint (logic-code-to-runnable-code nil (car terms) wrld)
+                           (logic-code-to-runnable-code-lst (cdr terms) wrld)
+                           terms)))))
+
+(defun authenticate-tagged-lambda$ (x state)
+
+; X is a well-formed LAMBDA object.  If it is tagged as having come from a
+; lambda$, we check that it is authentic, i.e., that the lambda$ expression it
+; allegedly comes from actually translates to the LAMBDA object x.  In general
+; we do this by re-translating the lambda$.  But there is a short-cut.  The
+; world global lambda$-alist contains every lambda$ expression ever seen by
+; defun and only lambda$ expressions seen by defun.  Lambda$ expressions,
+; paired with their tagged translations, are stored there by defun, basically
+; immediately after translation.  So we know that the cdr of every pair on
+; lambda$-alist is an authentic translation of a lambda$.  Of course, this
+; short-cut does not handle lambda$s in top-level type-in, or in theorems or
+; other events, just defuns.  So we still have do re-translation on some tagged
+; LAMBDA objects we encounter.
+
+  (cond
+   ((lambda$-bodyp (lambda-object-body x))
+; X is tagged as having been a lambda$.  If we find it among the cdrs of
+; lambda$-alist, we know it is authentic.  Otherwise, we translate the lambda$
+; and check.
+    (cond
+     ((assoc-equal-cdr x (global-val 'lambda$-alist (w state)))
+      t)
+     (t (mv-let (erp obj bindings)
+          (translate11-lambda-object
+           (unquote (fargn (lambda-object-body x) 2))
+           '(nil) ; stobjs-out
+           nil    ; bindings
+           nil    ; known-stobjs
+           nil    ; flet-alist
+           nil    ; cform
+           'authenticate-tagged-lambda$-expression
+           (w state)
+           (default-state-vars state)
+           t) ; allow-counterfeitsp
+          (declare (ignore bindings))
+          (cond (erp nil)
+                ((equal (unquote obj) x) t)
+                (t nil))))))
+   (t nil)))
+
+(defun make-compileable-guard-and-body-lambdas (x state)
+
+; X is a well-formed LAMBDA object.  We want to create two new LAMBDA objects,
+; one that, when applied in raw Lisp, will test the guard of x and the other to
+; run the body of x.  These created lambdas will be compiled and executed in
+; raw Lisp when the guards of x have been verified and checked.  So, in so far
+; as possible, we want them to be fast raw Lisp lambda expressions.  The
+; challenge is that x is in translated form.  Thus, for example, LOOP$s will
+; have been converted to scion calls and multiple-value functions will be
+; handled like they return lists.  If x was generated by translating a lambda$
+; we can recover the original type-in from the tagging -- after authenticating
+; it.  But if x was a quoted LAMBDA we have no choice but to do our best to
+; convert the translated logic code into runnable lisp with
+; logic-code-to-runnable-code.
+
+  (let ((formals (lambda-object-formals x))
+        (dcl (lambda-object-dcl x))
+        (body (lambda-object-body x))
+        (wrld (w state)))
+; Note: dcl and body are in fully translated form.
+    (cond
+     ((authenticate-tagged-lambda$ x state)
+
+; X came from a lambda$, i.e., the quoted lambda$ expression found (in the
+; second arg of the return-last) in the lambda-object-body really does
+; translate to the quotation of x.  So we can trust the original lambda$ to
+; give us the user's code for this object.
+
+      (let* ((lambda$-expr
+              (unquote (fargn (lambda-object-body x) 2)))
+             (edcls
+              (edcls-from-lambda-object-dcls-short-cut (cddr lambda$-expr)))
+             (guard-lst
+              (get-guards2 edcls '(types guards) nil wrld nil nil)))
+
+; Guard-lst is the list of untranslated conjuncts in the guard (plus any TYPE
+; declarations) typed in the original lambda$.  It can be run directly in raw
+; Lisp (when x is guard verified).  Note that the guard of the guard is T, but
+; we don't bother to declare it below because the compiler can't make use of
+; that.
+
+; We'll create the lambda expression for the body by just re-using the whole
+; lambda$-expr, after replacing the 'lambda$ by 'lambda.  The right
+; declarations are already in it.
+
+        (mv `(LAMBDA ,formals
+                     (DECLARE (IGNORABLE ,@formals))
+                     ,(cond ((null guard-lst) 'T)
+                            ((null (cdr guard-lst)) (car guard-lst))
+                            (t `(AND ,@guard-lst))))
+            `(LAMBDA ,@(cdr lambda$-expr)))))
+     (t
+
+; If x is not an authentic lambda$ all we can do is use
+; logic-code-to-runnable-code to transform the already-translated guard and
+; body of the x.  There are two main drawbacks.  One is that the results of
+; multiple valued functions are coerced to lists and then torn apart with
+; car/cdr -- less efficiently than our raw Lisp can handle multiple values.
+; The other is that LOOP$ statements run as calls of loop$ scions on LAMBDA
+; objects rather than as raw Lisp loops.  But if x is not from a lambda$ it was
+; typed by the user and he or she couldn't have used mv-let or loop$ in it
+; anyway because quoted LAMBDA objects are not translated.
+
+      (mv `(LAMBDA ,formals
+                   (DECLARE (IGNORABLE ,@formals))
+                   ,(logic-code-to-runnable-code
+                     nil
+                     (remove-guard-holders
+                      (or (cadr (assoc-keyword :guard
+                                               (cdr (assoc-eq 'xargs
+                                                              (cdr dcl)))))
+                          *t*)
+                      wrld)
+                     wrld))
+          `(LAMBDA ,formals
+                   ,dcl
+                   ,(logic-code-to-runnable-code
+                     nil
+                     (remove-guard-holders body wrld)
+                     wrld)))))))
+
+(defun convert-tagged-loop$s-to-pairs (lst flg wrld)
+
+; Lst is a list of marked loop$ expressions and we return the list of pairs
+; mapping the loop$s to loop$-alist-entry records that record their
+; translations.
+
+  (cond ((endp lst) nil)
+        (t (cons (cons (unquote (fargn (car lst) 2))
+                       (make loop$-alist-entry
+                             :term (logic-code-to-runnable-code
+                                    nil
+                                    (fargn (car lst) 3)
+                                    wrld)
+                             :flg flg))
+                 (convert-tagged-loop$s-to-pairs (cdr lst) flg wrld)))))
+
+(defun chk-acceptable-loop$-translations1 (new-pairs ctx wrld state)
+  (cond
+   ((null new-pairs) (value nil))
+   (t (let* ((key (car (car new-pairs)))
+             (val (cdr (car new-pairs)))
+             (val-term (access loop$-alist-entry val :term)))
+        (mv-let (erp tkey bindings)
+          (translate11-loop$ key
+                             '(nil) ; stobjs-out
+                             nil    ; bindings
+                             nil    ; known-stobjs
+                             nil    ; flet-alist
+                             key
+                             ctx
+                             wrld
+                             *default-state-vars*)
+          (declare (ignore bindings))
+          (cond
+           (erp (er soft ctx
+                    "The attempt to translate a loop$ to be stored as a key ~
+                     on loop$-alist has caused an error, despite the fact ~
+                     that this very same loop$ was successfully translated ~
+                     a moment ago!  The error caused is:~%~@0~%~%The ~
+                     offending loop$ is ~x1.  This is an implementation ~
+                     error and you should contact the ACL2 developers."
+                    tkey ; (really, a msg)
+                    key))
+           ((and (tagged-loop$p tkey)
+                 (equal (logic-code-to-runnable-code
+                         nil
+                         (fargn tkey 3)
+                         wrld)
+                        val-term))
+
+; The error message below makes it seem like the loop$ is expected to translate
+; to val-term.  But that's not true.  The translation of (loop$ ...) is,
+; actually, (RETURN-LAST 'PROGN '(LOOP$ ...) meaning).  And val-term here is
+; supposed to be meaning.
+
+            (chk-acceptable-loop$-translations1 (cdr new-pairs) ctx wrld state))
+           (t (er soft ctx
+                  "Imperfect counterfeit translated loop$, ~x0.  Unless you ~
+                   knowingly tried to construct a translated loop$ (instead ~
+                   of using loop$ and letting ACL2 generate the translation) ~
+                   this is an implementation error.  Please report such ~
+                   errors to the ACL2 developers.~%~%But if you tried to ~
+                   counterfeit a loop$ we should point out that we don't ~
+                   understand why you would do such a thing!  Your ~
+                   counterfeit translated loop$ won't enjoy the same runtime ~
+                   support as our translated loop$ even if you did it ~
+                   perfectly.  Had you written a loop$ it would enter raw ~
+                   Lisp as a CLTL loop statement and run fast when guard ~
+                   verified.  But the counterfeit term will just use the ~
+                   logically translated term you claimed was the semantics ~
+                   of the loop$.~%~%Nevertheless, here's what's wrong with ~
+                   your counterfeit version:  the loop$ expression~%~Y01 ~
+                   actually translates to~%~Y21, which when converted to ~
+                   runnable raw Lisp is~%~Y31, but your counterfeit claimed the ~
+                   runnable raw Lisp of its tranlation is~%~Y41."
+                  key
+                  nil
+                  tkey
+                  (logic-code-to-runnable-code
+                   nil
+                   (fargn tkey 3)
+                   wrld)
+                  val-term))))))))
+
+(defun chk-acceptable-loop$-translations2 (new-pairs loop$-alist ctx state)
+
+; We check that no key in new-pairs occurs with a different value in either
+; loop$-alist the rest of new-pairs.
+
+  (cond
+   ((null new-pairs) (value nil))
+   (t (let* ((key (car (car new-pairs)))
+             (val (cdr (car new-pairs)))
+             (val-term (access loop$-alist-entry val :term))
+             (loop$-term (loop$-alist-term key loop$-alist)))
+        (cond
+         ((and loop$-term (not (equal val-term loop$-term)))
+          (er soft ctx
+              "A pair about to be added to loop$-alist has the same key ~
+               associated with a different value on loop$-alist already.  ~
+               This is an implementation error.  Please report it to the ACL2 ~
+               developers.  The duplicate key is ~x0.  On loop$-alist that ~
+               key is mapped to the value ~x1.  But we were about to map it ~
+               to the value ~x2.  This shouldn't happen because both values ~
+               are allegedly the translation of the key!"
+              key
+              loop$-term
+              val-term))
+         (t
+          (let ((temp2 (assoc-equal key (cdr new-pairs))))
+            (cond
+             ((and temp2 (not (equal val-term (cdr temp2))))
+              (er soft ctx
+                  "Two pairs about to be added to loop$-alist have the same ~
+                   key but different values.  This is an implementation ~
+                   error.  Please report it to the ACL2 developers.  The key ~
+                   is ~x0 and the two values are ~x1 and ~x2.  This shouldn't ~
+                   happen because both values are allegedly the translation ~
+                   of the key!"
+                  key
+                  (cdr temp2)
+                  val-term))
+             (t (chk-acceptable-loop$-translations2 (cdr new-pairs)
+                                                    loop$-alist
+                                                    ctx state))))))))))
+
+(defun chk-acceptable-loop$-translations
+  (symbol-class guards bodies ctx wrld state)
+
+; This function computes, checks, and returns the new pairs we should add to
+; loop$-alist.  It does not add them.
+
+; To explain what this function does we first have to recap the world global
+; 'loop$-alist.  Loop$-alist maps the loop$ expressions to their logic
+; translations.  For example, if a defun mentioned (loop$ for x in lst collect
+; (cadr x)), the translation -- modulo our use of lambda$ for brevity -- is
+; (collect$ (lambda$ (x) (car (cdr x))) lst).  The raw Lisp of the defun will
+; contain
+
+; (if *aokp*
+;     (loop for x in lst collect (cadr x))
+;     (collect$ (lambda$ (x) (car (cdr x))) lst))
+
+; But where did the Lisp compiler get the collect$ term, given that all that
+; was in the source code was the loop$ and that the compiler doesn't have
+; access to the ACL2 world?  The answer is, it got it (indirectly) from the
+; loop$-alist created by the defun and transferred into the .cert file when the
+; book was certified.
+
+; The first formal above is the symbol-class of the defuns being processed.
+; The next two are the guards and bodies, all of which ultimately get
+; transferred into raw Lisp.  We must find every :top level translated loop$ in
+; these terms and map them to their logic translations.  (We do not need to add
+; sub-loop$s of loop$s since they will never be encountered by the compiler.)
+; These pairs will be added to loop$-alist.  But to guard against the
+; possibility that the user has incorrectly counterfeited a translated loop$,
+; we must check that the alleged translations are actually correct!
+
+  (cond
+   ((and (not (eq symbol-class :program))
+         (not (global-val 'boot-strap-flg wrld)))
+    (let* ((certify-book-info (f-get-global 'certify-book-info state))
+           (new-pairs
+            (convert-tagged-loop$s-to-pairs
+             (collect-certain-tagged-loop$s-lst
+              :top
+              (append guards bodies)
+              nil)
+             (and certify-book-info
+                  (let ((path (global-val 'include-book-path wrld)))
+                    (if (consp path)
+                        (and (null (cdr path))
+                             (equal (car path)
+                                    (access certify-book-info
+                                            certify-book-info
+                                            :full-book-name)))
+                      (null path))))
+             wrld)))
+      (er-progn
+
+; Note that we check the terms in new-pairs, not the :flg fields of the
+; associated loop$-alist-entry.  To understand how :flg is used, see Part 3 of
+; the Essay on Hash Table Support for Compilation.
+
+       (chk-acceptable-loop$-translations1 new-pairs ctx wrld state)
+       (chk-acceptable-loop$-translations2 new-pairs
+                                           (global-val 'loop$-alist wrld)
+                                           ctx state)
+       (value new-pairs))))
+   (t (value nil))))
+
+(mutual-recursion
+
+(defun state-globals-set-by (term acc)
+  (cond ((or (variablep term)
+             (fquotep term))
+         acc)
+        ((flambda-applicationp term)
+         (state-globals-set-by
+          (lambda-body (ffn-symb term))
+          (state-globals-set-by-lst (fargs term) acc)))
+        ((member-eq (ffn-symb term) '(put-global makunbound-global))
+         (let ((qvar (fargn term 1)))
+           (cond ((and (quotep qvar)
+                       (symbolp (unquote qvar)))
+                  (cons (unquote qvar) acc)))))
+        (t (state-globals-set-by-lst (fargs term) acc))))
+
+(defun state-globals-set-by-lst (termlist acc)
+  (cond ((endp termlist) acc)
+        (t (state-globals-set-by-lst
+            (cdr termlist)
+            (state-globals-set-by (car termlist) acc)))))
+)
+
+(mutual-recursion
+
+(defun chk-lambdas-for-loop$-recursion1 (fn lambda-flg term fn-seenp
+                                            wrld ctx state)
+
+; Fn is being defined with :loop$-recursion t.  Initially, term is the body and
+; we explore it recursively.  Lambda-flg is non-nil if this occurrence of term
+; is in the loop$ scion slot requiring a lambda expression -- in fact,
+; lambda-flg is set to the name of that loop$ scion.  We know that every loop$
+; scion expects its :FN arg to be the first argument.  Fn-seenp is a boolean
+; indicating whether fn is called in the body of some well-formed lambda
+; already seen in a loop$ scion.  We either cause an error or return (value
+; fn-seenp).
+
+; We confirm that: (1) every quoted lambda-like object in the body is a
+; well-formed lambda object, (2) every lambda in the body is in the :FN slot of
+; a loop$ scion or else doesn't call fn, and (3) there is at least one lambda
+; in a loop$ scion that calls fn.
+
+  (cond
+   (lambda-flg
+; Term must be a lambda expression of the right arity for the loop$ scion
+; named by lambda-flg.
+    (cond
+     ((and (quotep term)
+           (consp (unquote term))
+           (eq (car (unquote term)) 'lambda))
+      (cond
+       ((well-formed-lambda-objectp (unquote term) wrld)
+        (let ((style (loop$-scion-style lambda-flg *loop$-keyword-info*))
+              (formals (lambda-object-formals (unquote term)))
+              (body (lambda-object-body (unquote term))))
+          (cond
+           ((eql (length formals) (if (eq style :plain) 1 2))
+            (chk-lambdas-for-loop$-recursion1
+             fn
+             nil
+             body
+             (or fn-seenp
+                 (ffnnamep fn body))
+             wrld ctx state))
+           (t (er soft ctx
+                  "It is illegal to use :loop$-recursion t in the defun of ~
+                   ~x0 because the loop$ scion ~x1 is called with a lambda ~
+                   object of arity ~x2 where a lambda of arity ~x3 is ~
+                   required.  The offending lambda object is ~x4."
+                  fn
+                  lambda-flg
+                  (length formals)
+                  (if (eql style :plain) 1 2))))))
+       (t
+
+; This error cannot arise!  If lambda-flg is set, it means we're in the :FN
+; argument of a loop$ scion.  If the actual is a quoted LAMBDA, as it is here,
+; translate rejects it if it is not well-formed.  Translate notes the
+; gratuitous restriction which allows you to cons up an ill-formed lambda, but
+; then the form wouldn't be quoted.
+
+        (er soft ctx
+              "It is illegal to use :loop$-recursion t in the defun of ~x0 ~
+               because the loop$ scion ~x2 is called with an ill-formed ~
+               lambda object ~x1.  We cannot generate measure conjectures for ~
+               ill-formed terms!"
+              fn term lambda-flg))))
+     ((and (quotep term)
+           (symbolp (unquote term)))
+
+; The only way this would have gotten past translation is if the quoted symbol
+; is either fn itself or a previously admitted and badged function symbol.  The
+; error message explains why we reject it.  However, if we ever change the
+; expansion of (loop$ for e in x collect (fn e)) to expand simply to (collect$
+; 'fn x), we'll have to permit this case.
+
+      (er soft ctx
+          "It is illegal to use :loop$-recursion t in the defun of ~x0 because ~
+           it calls the loop$ scion ~x2 with ~x1 as the :FN argument.  This ~
+           is equivalent to an admissible LOOP$ statement but it doesn't ~
+           execute as efficiently and admitting it would complicate the ~
+           generation of measure conjectures.  Please rewrite this defun to ~
+           use the equivalent LOOP$!"
+          fn term lambda-flg))
+     (t
+        (er soft ctx
+            "It is illegal to use :loop$-recursion t in the defun of ~x0 ~
+             because it calls the loop$ scion ~x2 with something other than a ~
+             lambda object, namely ~x1, as its :FN argument.  We cannot ~
+             generate measure conjectures for computed terms."
+            fn term lambda-flg))))
+   ((variablep term)
+    (value fn-seenp))
+   ((fquotep term)
+    (cond ((and (consp (unquote term))
+                (eq (car (unquote term)) 'lambda))
+           (cond
+            ((not (well-formed-lambda-objectp (unquote term) wrld))
+
+; This is exactly the same error as the first one mentioned in this function.
+; The simple fact is that every quoted lambda in a :loop$-recursion t defun
+; must be well-formed, whether it occurs in a loop$ scion or not!
+
+             (er soft ctx
+                 "It is illegal to use :loop$-recursion t in the defun of ~x0 ~
+                  because the body contains the ill-formed lambda object ~x1. ~
+                  We cannot generate measure conjectures for ill-formed terms."
+                 fn (unquote term)))
+            ((loop$-recursion-ffnnamep fn (lambda-object-body (unquote term)))
+             (er soft ctx
+                 "It is illegal to use :loop$-recursion t in the defun of ~x0 ~
+                  because the lambda object ~x1, which calls ~x0, occurs in ~
+                  the body of ~x0 but not as the lambda object of a ~
+                  translated loop$ statement.  We cannot generate measure ~
+                  conjectures since we cannot tell where or to what this ~
+                  lambda object might be applied!"
+                 fn (unquote term)))
+            (t (chk-lambdas-for-loop$-recursion1
+                fn
+                nil
+                (lambda-object-body (unquote term))
+                fn-seenp
+                wrld ctx state))))
+          (t (value fn-seenp))))
+   ((lambda-applicationp term)
+    (er-let*
+        ((fn-seenp (chk-lambdas-for-loop$-recursion1
+                    fn
+                    nil
+                    (lambda-body (ffn-symb term))
+                    fn-seenp wrld ctx state)))
+      (chk-lambdas-for-loop$-recursion1-lst
+       fn
+       nil
+       (fargs term)
+       fn-seenp wrld ctx state)))
+   (t (let ((style (loop$-scion-style (ffn-symb term) *loop$-keyword-info*)))
+
+; If style is nil, the function being called is not a loop$ scion and so as we
+; sweep through the arguments we provide lambda-flg = nil to each argument.  We
+; do this by providing the list nil, which is effectively a list of nils as
+; long as we need.  If the function being called is a loop$ scion, then style
+; is :plain or :fancy, but in either case the functional argument is the first.
+; So we provide ``(t)'' as the list of lambda-flgs, which is effectively a t
+; followed by as many nils as needed.  However, actually, instead of t we
+; provide the particular loop$ scion involved so we can report it in the
+; subsequent error message, if any.
+
+        (chk-lambdas-for-loop$-recursion1-lst
+           fn
+           (cond
+            ((null style) nil)
+            (t (list (ffn-symb term))))
+           (fargs term)
+           fn-seenp wrld ctx state)))))
+
+(defun chk-lambdas-for-loop$-recursion1-lst (fn lambda-flg-lst term-lst fn-seenp
+                                                wrld ctx state)
+  (cond
+   ((endp term-lst) (value fn-seenp))
+   (t (er-let*
+          ((fn-seenp
+            (chk-lambdas-for-loop$-recursion1
+             fn
+             (car lambda-flg-lst)
+             (car term-lst)
+             fn-seenp wrld ctx state)))
+        (chk-lambdas-for-loop$-recursion1-lst
+         fn
+         (cdr lambda-flg-lst)
+         (cdr term-lst)
+         fn-seenp wrld ctx state)))))
+)
+
+(defun chk-lambdas-for-loop$-recursion (fn body wrld ctx state)
+
+; This function is only called by defun processing if xargs :loop$-recursion t
+; was declared by the user in the defun of fn with the given body.  We confirm
+; that every quoted lambda object in the body is well-formed, every quoted
+; lambda in the body is in the :FN slot of a loop$ scion or else doesn't call
+; fn, and that every loop$ scion's :FN argument is in fact a quoted lambda.  We
+; also check that there is at least one quoted lambda in a loop$ scion that
+; calls fn -- a check that is only there to de-confuse the user who
+; unnecessarily declared :loop$-recursion t.
+
+; Motivation: When generating measure conjectures for fn it is unnecessary to
+; look at quoted lambdas, unless :loop$-recursion t is declared.  If it is
+; declared, one must only inspect the first (the :FN) arg of calls of loop$
+; scions.  No other quoted object is relevant to termination.  Furthermore, you
+; know the first argument of every loop$ scion is a well-formed quoted lambda,
+; so you can just dive into the body of the lambda under the assumption that
+; the first formal of the lambda is a member of the target of the loop$ scion.
+; formed.  The body may or may not call fn.
+
+  (er-let*
+      ((fn-seenp
+        (chk-lambdas-for-loop$-recursion1 fn nil body nil wrld ctx state)))
+    (cond
+     (fn-seenp (value nil))
+     (t (er soft ctx
+            "It is illegal to use :loop$-recursion t in the defun of ~x0 ~
+             because ~x0 is never called in a loop$!  We cause an error ~
+             simply because we expect you've made a mistake."
+            fn)))))
+
+; ; It can be hard to understand why we check each of the cases above.  The
+; ; events below (most of which cause errors) provide an illustration of
+; ; each of the six possible error messages generated by
+; ; chk-lambdas-for-loop$-recursion.
+
+; (include-book "projects/apply/top" :dir :system)
+; (defun my-scion (fn x)(apply$ fn (list x))) ; no defwarrant yet
+; (defun bar (x) (cons 'hi-from-bar x))
+; (defwarrant bar)
+
+; ; Now we provoke the successive errors.
+
+; ; (1) ill-formed lambda in loop$ scion call -- can't happen
+
+; (defun foo (x)
+;   (declare (xargs :loop$-recursion t))
+;   (cond ((atom x) 23)
+;         (t (collect$ '(lambda (e) e . 47) x))))
+
+; ; The error you see is caused by translate, not
+; ; chk-lambdas-for-loop$-recursion.
+
+; ; (2) loop$ scion is called with quoted symbol
+
+; (defun foo (x)
+;   (declare (xargs :loop$-recursion t))
+;   (cond ((atom x) t)
+;         (t (collect$ 'foo x))))
+
+; (defun foo (x)
+;   (declare (xargs :loop$-recursion t))
+;   (cond ((atom x) t)
+;         (t (collect$ 'bar x))))
+
+; ; (3) loop$ scion is called with something other than a lambda object
+
+; (defun foo (x)
+;   (declare (xargs :loop$-recursion t))
+;   (cond ((atom x) t)
+;         (t (collect$ `(lambda (e) (,x e)) x))))
+
+; ; (4) ill-formed lambda in non-:FN slot
+
+; (defun foo (x)
+;   (declare (xargs :loop$-recursion t))
+;   (cond ((atom x) (my-scion '(lambda (x) (foo x) . 47) x))
+;         (t (loop$ for e in x collect (foo e)))))
+
+; ; (5) lambda object in non-loop$ scion calls fn
+
+; (defun$ my-scion (fn x)
+;   (if (consp x)
+;       (cons (apply$ fn (list (car x)))
+;             (my-scion fn (cdr x)))
+;       nil))
+
+; (defun foo (x)
+;   (declare (xargs :loop$-recursion t))
+;   (cond ((atom x) (my-scion '(lambda (x) (foo x)) x))
+;         (t (loop$ for e in x collect (foo e)))))
+
+; (defun foo (x)
+;   (declare (xargs :loop$-recursion t))
+;   (cond ((atom x) (my-scion (lambda$ (x) (loop$ for e in x collect (foo e))) x))
+;         (t (loop$ for e in x collect (foo e)))))
+
+; But well-formed lambda objects in non-loop$ scions are permitted if they
+; don't call fn.  We have to warrant my-scion first.  The reason has nothing
+; to do with chk-lambdas-for-loop$-recursion.  If we don't warrant my-scion
+; then translation and checking still approve this but the final check that
+; foo is warrantable fails for lack of a badge for my-scion.  You can see
+; this by trying this without warranting my-scion:
+
+; (defun$ bar (x) x)
+
+; (defun foo (x)
+;   (declare (xargs :loop$-recursion t
+;                   :measure (acl2-count x)))
+;   (cond ((atom x) (my-scion '(lambda (x) (bar x)) x))
+;         (t (loop$ for e in x collect (foo e)))))
+
+; ; (6) unnecessary :loop$-recursion declaration:
+
+; (defun foo (x)
+;   (declare (xargs :loop$-recursion t))
+;   (cond ((atom x) (my-scion '(lambda (x) (bar x)) x))
+;         (t (loop$ for e in x collect (bar e)))))
+
+; The following record collects information related to the use of lambda,
+; lambda$ and loop$ forms in defuns.  We document what the items are below.
+; But here we explain why we pack them together.  These items are extracted and
+; returned (ultimately) by chk-acceptable-defuns as part of its 2nd result, a
+; list of over 20 items.  When lambda objects were added, it would have been
+; natural for us to add these items to the list.  However, the number of
+; lambda-related items keeps growing and some user books call
+; chk-acceptable-defuns expecting the list to be of a certain length (whatever
+; it was when the book was created).  So we added one new item to
+; chk-acceptable-defuns list, this record, and changed the user books to expect
+; that new length.  And now we're free to collect additional information during
+; checking without having to mess with user books (unless they begin to use the
+; lambda information here).
+
+(defrec lambda-info
+  (loop$-recursion            ; T or NIL indicating that recursive calls of the
+                              ; (single) function being defined are allowed
+                              ; inside LOOP$ statements.  The function must
+                              ; be tame and return only one result!
+
+   new-lambda$-alist-pairs    ; Maps the obvious untranslated terms to their
+                              ; respective translations
+
+   new-loop$-alist-pairs      ; Maps untranslated loop$ statements to
+                              ; loop$-alist-entry records containing those
+                              ; translations after converting them from logic
+                              ; to runnable code.
+   )
+  nil)
 
 (defun chk-acceptable-defuns1 (names fives stobjs-in-lst defun-mode
                                      symbol-class rc non-executablep ctx wrld
@@ -8250,67 +9631,197 @@
                                               ctx state))
       (measure-debug (get-unambiguous-xargs-flg :MEASURE-DEBUG
                                                 fives
-                                                nil ; guard-debug default
+                                                nil ; measure-debug default
                                                 ctx state))
+      (guard-simplify (get-unambiguous-xargs-flg :GUARD-SIMPLIFY
+                                                 fives
+                                                 t ; guard-simplify default
+                                                 ctx state))
       (split-types-lst (get-boolean-unambiguous-xargs-flg-lst
                         :SPLIT-TYPES fives nil ctx state))
       (normalizeps (get-boolean-unambiguous-xargs-flg-lst
-                    :NORMALIZE fives t ctx state)))
+                    :NORMALIZE fives t ctx state))
+      (loop$-recursion-lst
+
+; It will be illegal to specify a non-nil :loop$-recursion setting in any of
+; the defuns of a mutually recursive clique.  But to tell whether that has
+; happened we first need to collect all the :loop$-recursion settings...
+
+       (get-unambiguous-xargs-flg-lst
+        :LOOP$-RECURSION
+        fives
+        nil ; :loop$-recursion default value
+        ctx state)))
      (er-progn
       (cond
-       ((not (and (symbolp rel)
-                  (assoc-eq
-                   rel
-                   (global-val 'well-founded-relation-alist
-                               wrld2))))
+       ((and (consp (cdr loop$-recursion-lst))
+             (not (all-nils loop$-recursion-lst)))
         (er soft ctx
-            "The :WELL-FOUNDED-RELATION specified by XARGS must be a symbol ~
-             which has previously been shown to be a well-founded relation.  ~
-             ~x0 has not been. See :DOC well-founded-relation."
-            rel))
+            "We do not support the declaration of non-nil :LOOP$-RECURSION ~
+             settings in MUTUAL-RECURSION."))
+       ((and (null (cdr loop$-recursion-lst))
+             (car loop$-recursion-lst)
+             (not (eq (car loop$-recursion-lst) t)))
+        (er soft ctx
+            "The only legal values for the XARGS key :LOOP$-RECURSION are T ~
+             and NIL.  ~x0 is not allowed."
+            (car loop$-recursion-lst)))
+       ((and (car loop$-recursion-lst)
+             (global-val 'boot-strap-flg wrld))
+        (er soft ctx
+            "Implementors are not allowed to use :LOOP$-RECURSION in system ~
+             code!"))
        (t (value nil)))
-      (let ((mp (cadr (assoc-eq
-                       rel
-                       (global-val 'well-founded-relation-alist
-                                   wrld2)))))
-        (er-let*
-         ((bodies-and-bindings
-           (translate-bodies non-executablep ; t or :program
-                             names
-                             arglists
-                             (get-bodies fives)
-                             stobjs-in-lst ; see "slight abuse" comment below
-                             reclassifying-all-programp
-                             ctx wrld2 state)))
-         (let* ((bodies (car bodies-and-bindings))
-                (bindings
-                 (super-defun-wart-bindings
-                  (cdr bodies-and-bindings)))
-                #+:non-standard-analysis
-                (non-classical-fns
-                 (get-non-classical-fns bodies wrld2)))
-           (er-progn
-            (if assumep
-                (value nil)
-              (er-progn
-               (chk-stobjs-out-bound names bindings ctx state)
-               #+:non-standard-analysis
-               (chk-no-recursive-non-classical
-                non-classical-fns
-                names mp rel measures bodies ctx wrld2 state)))
-            (let* ((wrld30 (store-super-defun-warts-stobjs-in
-                            names wrld2))
-                   (wrld31 (store-stobjs-out names bindings wrld30))
-                   (wrld3 #+:non-standard-analysis
-                          (if (or std-p
-                                  (null non-classical-fns))
-                              wrld31
-                            (putprop-x-lst1 names 'classicalp
-                                            nil wrld31))
-                          #-:non-standard-analysis
-                          wrld31))
-              (er-let* ((guards (translate-term-lst
-                                 (get-guards fives split-types-lst nil wrld2)
+      (er-let*
+          ((wrld2a
+            (if (car loop$-recursion-lst)
+
+; When (car loop$-recursion-lst) is non-nil we know it is actually T and that
+; this is a singly-recursive defun of a fn in which the user has declared xargs
+; :loop$-recursion t.  The user means to use fn recursively inside one or more
+; loop$ statements in the defun.  This means we have to badge fn before
+; translating!  The user is supposed to understand that fn must be tame and
+; must return 1 result -- we will check that.  Just as we have already
+; installed a (temporary) world, wrld2, in which the formals of fn, etc., have
+; been stored in preparation for translation, we now also store a badge that
+; asserts that fn is tame and returns 1 result.  We will confirm this assertion
+; before the defun is admitted.  Note also that we know that fn is new and thus
+; has no pre-existing badge so we can just cons a new one on.  The resulting
+; world is wrld2a and will be used henceforth.
+
+                (let* ((badge-table
+                        (table-alist 'badge-table wrld2))
+                       (userfn-structure
+                        (cdr (assoc-eq :badge-userfn-structure badge-table)))
+                       (fn (car names))
+                       (badge (make apply$-badge
+                                    :arity (length (car arglists))
+                                    :out-arity 1 ; see note below
+                                    :ilks t)))
+
+; Note: We have thought about allowing multi-valued functions here.  The
+; trouble is that we can't know the :out-arity until we've translated and we
+; can't translate without a badge.  One way to solve this would be to allow
+; non-boolean values for :loop$-recursion, e.g., (xargs :loop$-recursion 3).
+; But upon minimal reflection we don't see much use for multi-valued functions
+; inside our loop$s because our loop$ scions all expect single-valued functions
+; and return single values themselves.  So if a multi-valued function were
+; called inside the body, the multiple values would have to be combined inside
+; the body to produce a single result and then some other expression would have
+; to be used to supply the rest of the function's values.  So we just await
+; user complaints!
+
+                  (update-w
+                   t
+                   (putprop
+                    fn
+                    'stobjs-out
+                    '(NIL)
+                    (putprop
+                     'badge-table
+                     'table-alist
+                     (put-assoc-eq :badge-userfn-structure
+                                   (cons (cons fn badge)
+                                         userfn-structure)
+                                   badge-table)
+                     wrld2))))
+                (value wrld2))))
+        (er-progn
+         (cond
+          ((not (and (symbolp rel)
+                     (assoc-eq
+                      rel
+                      (global-val 'well-founded-relation-alist
+                                  wrld2a))))
+           (er soft ctx
+               "The :WELL-FOUNDED-RELATION specified by XARGS must be a ~
+                symbol which has previously been shown to be a well-founded ~
+                relation.  ~x0 has not been. See :DOC well-founded-relation."
+               rel))
+          (t (value nil)))
+         (let ((mp (cadr (assoc-eq
+                          rel
+                          (global-val 'well-founded-relation-alist
+                                      wrld2a)))))
+           (er-let*
+               ((bodies-and-bindings
+                 (translate-bodies non-executablep ; t or :program
+                                   names
+                                   arglists
+                                   (get-bodies fives)
+; bindings0 = 
+                                   (if (car loop$-recursion-lst)
+                                       (list (cons (car names) '(NIL)))
+                                       (pairlis$ names names))
+                                   stobjs-in-lst ; see "slight abuse" comment below
+                                   reclassifying-all-programp
+                                   ctx wrld2a state)))
+             (let* ((bodies (car bodies-and-bindings))
+                    (bindings
+                     (super-defun-wart-bindings
+                      (cdr bodies-and-bindings)))
+                    #+:non-standard-analysis
+                    (non-classical-fns
+                     (get-non-classical-fns bodies wrld2a)))
+               (er-progn
+                (if assumep
+                    (value nil)
+                    (er-progn
+                     (chk-stobjs-out-bound names bindings ctx state)
+                     #+:non-standard-analysis
+                     (chk-no-recursive-non-classical
+                      non-classical-fns
+                      names mp rel measures bodies ctx wrld2a state)))
+                (if (car loop$-recursion-lst)
+
+; If loop$-recursion was allowed, we have to check every lambda object in the
+; body is well-formed and that the only ones that call fn are in loop$ scions,
+; and that all of those lambdas have the right arity (1 or 2) for the loop$
+; scion using them.  We also make sure at least on loop$ scion has a lambda
+; that calls fn, just to confirm that :loop$-recursion t is necessary.
+
+                    (chk-lambdas-for-loop$-recursion
+                     (car names)
+                     (car bodies)
+                     wrld2a ctx state)
+                    (value nil))
+                (let* ((wrld30 (store-super-defun-warts-stobjs-in
+                                names wrld2a))
+                       (wrld31 (store-stobjs-out names bindings wrld30))
+                       (wrld3 #+:non-standard-analysis
+                              (if (or std-p
+                                      (null non-classical-fns))
+                                  wrld31
+                                (putprop-x-lst1 names 'classicalp
+                                                nil wrld31))
+                              #-:non-standard-analysis
+                              wrld31)
+                       (wrld4 (if (store-cert-data (car bodies-and-bindings)
+                                                   wrld
+                                                   state)
+                                  (update-translate-cert-data
+                                   (car names) wrld wrld3
+                                   :type :translate-bodies
+                                   :inputs names
+                                   :value bodies-and-bindings
+                                   :fns (all-fnnames-lst bodies)
+                                   :vars (state-globals-set-by-lst bodies nil))
+                                wrld3)))
+
+; Note: If :loop$-recursion t was specified for fn then wrld3 now contains the
+; output arity of fn (in the stobjs-out property of fn).  Thus, translation
+; will not try to infer the output signature.  Wrld3 is used everywhere a world
+; is needed below, except in the optimizations using wrld2a as noted in the
+; next Note.
+
+                  (er-let* ((guards (translate-term-lst
+                                     (get-guards fives split-types-lst nil wrld2a)
+
+; Note: The use of wrld2a in get-guards above is just an optimization.  We
+; should more properly use wrld3 or even wrld4, but we know the presence of the
+; stobjs-out properties won't affect get-guards because the only use it makes
+; of the given world is to map from stobj names to the corresponding
+; recognizers terms, e.g., from STATE to (STATE-P STATE).
 
 ; Warning: Keep this call of translate-term-lst in sync with translation of a
 ; guard in chk-defabsstobj-guard.
@@ -8324,14 +9835,14 @@
 ; By prohibiting them from modifying state we don't have to answer the
 ; questions about when they run.
 
-                                 '(nil)
+                                     '(nil)
 
 ; Logic-modep:
 ; Since guards have nothing to do with the logic, and since they may
 ; legitimately have mode :program, we set logic-modep to nil here.  This arg is
 ; used for each guard.
 
-                                 nil
+                                     nil
 
 ; Known-stobjs-lst:
 ; Here is a slight abuse.  Translate-term-lst is expecting, in this
@@ -8344,12 +9855,12 @@
 ; stobjsp.  Technically we ought to map over the stobjs-in-lst and
 ; change each element to its collect-non-x nil.
 
-                                 stobjs-in-lst ctx
+                                     stobjs-in-lst ctx
 
-; Note the use of wrld3 instead of wrld2.  It is important that the proper
-; stobjs-out be put on the new functions before we translate the guards!  When
-; we first allowed the functions being defined to be used in their guards (in
-; v3-6), we introduced a soundness bug found by Sol Swords just after the
+; Note the use below of wrld3 instead of wrld2a.  It is important that the
+; proper stobjs-out be put on the new functions before we translate the guards!
+; When we first allowed the functions being defined to be used in their guards
+; (in v3-6), we introduced a soundness bug found by Sol Swords just after the
 ; release of v4-0, as follows.
 
 ; (defun foo (x)
@@ -8364,105 +9875,124 @@
 ;    :hints (("goal" :use ((:instance foo (x nil)))))
 ;    :rule-classes nil)
 
-                                 wrld3
-                                 state))
-                        (split-types-terms
-                         (translate-term-lst
-                          (get-guards fives split-types-lst t wrld2)
+                                     wrld3
+                                     state))
+                            (split-types-terms
+                             (translate-term-lst
+                              (get-guards fives split-types-lst t wrld2a)
+
+; Note: Wrld2a above is just the same optimization noted after the previous use
+; of get-guards above.
 
 ; The arguments below are the same as those for the preceding call of
 ; translate-term-lst.
 
-                          '(nil) nil stobjs-in-lst ctx wrld3 state)))
-                (er-progn
-                 (if (eq defun-mode :logic)
+                              '(nil) nil stobjs-in-lst ctx wrld3 state)))
+                    (er-progn
+                     (if (eq defun-mode :logic)
 
 ; Although translate checks for inappropriate calls of :program functions,
 ; translate11 and translate1 do not.
 
-                     (er-progn
-                      (chk-logic-subfunctions names names
-                                              guards wrld3 "guard"
-                                              ctx state)
-                      (chk-logic-subfunctions names names
-                                              split-types-terms wrld3
-                                              "split-types expression"
-                                              ctx state)
-                      (chk-logic-subfunctions names names bodies
-                                              wrld3 "body"
-                                              ctx state))
-                   (value nil))
-                 (if (eq symbol-class :common-lisp-compliant)
-                     (er-progn
-                      (chk-common-lisp-compliant-subfunctions
-                       names names guards wrld3 "guard" ctx state)
-                      (chk-common-lisp-compliant-subfunctions
-                       names names split-types-terms wrld3
-                       "split-types expression" ctx state)
-                      (chk-common-lisp-compliant-subfunctions
-                       names names bodies wrld3 "body" ctx state))
-                   (value nil))
-                 (mv-let
-                  (erp val state)
+                         (er-progn
+                          (chk-logic-subfunctions names names
+                                                  guards wrld3 "guard"
+                                                  ctx state)
+                          (chk-logic-subfunctions names names
+                                                  split-types-terms wrld3
+                                                  "split-types expression"
+                                                  ctx state)
+                          (chk-logic-subfunctions names names bodies
+                                                  wrld3 "body"
+                                                  ctx state))
+                         (value nil))
+                     (if (eq symbol-class :common-lisp-compliant)
+                         (er-progn
+                          (chk-common-lisp-compliant-subfunctions
+                           names names guards wrld3 "guard" ctx state)
+                          (chk-common-lisp-compliant-subfunctions
+                           names names split-types-terms wrld3
+                           "split-types expression" ctx state)
+                          (chk-common-lisp-compliant-subfunctions
+                           names names bodies wrld3 "body" ctx state))
+                         (value nil))
+                     (mv-let
+                       (erp val state)
 ; This mv-let is just an aside that lets us conditionally check a bunch of
 ; conditions we needn't do in assumep mode.
-                  (cond
-                   (assumep (mv nil nil state))
-                   (t
-                    (let ((ignores (get-ignores fives))
-                          (ignorables (get-ignorables fives))
-                          (irrelevants-alist (get-irrelevants-alist fives)))
-                      (er-progn
-                       (chk-free-and-ignored-vars-lsts names
-                                                       arglists
-                                                       guards
-                                                       split-types-terms
-                                                       measures
-                                                       ignores
-                                                       ignorables
-                                                       bodies
-                                                       ctx state)
-                       (chk-irrelevant-formals names arglists
-                                               guards
-                                               split-types-terms
-                                               measures
-                                               ignores
-                                               ignorables
-                                               irrelevants-alist
-                                               bodies ctx state)
-                       (chk-mutual-recursion names bodies ctx
-                                             state)))))
-                  (cond
-                   (erp (mv erp val state))
-                   (t (er-let* ((new-lambda$-alist-pairs
-                                 (chk-acceptable-lambda$-translations
-                                  symbol-class
-                                  guards bodies
-                                  ctx wrld state)))
-                        (value (list 'chk-acceptable-defuns
-                                     names
-                                     arglists
-                                     docs
-                                     nil ; doc-pairs
-                                     guards
-                                     measures
-                                     ruler-extenders-lst
-                                     mp
-                                     rel
-                                     hints
-                                     guard-hints
-                                     std-hints ;nil for non-std
-                                     otf-flg
-                                     bodies
-                                     symbol-class
-                                     normalizeps
-                                     reclassifying-all-programp
-                                     wrld3
-                                     non-executablep
-                                     guard-debug
-                                     measure-debug
-                                     split-types-terms
-                                     new-lambda$-alist-pairs)))))))))))))))))
+                       (cond
+                        (assumep (mv nil nil state))
+                        (t
+                         (let ((ignores (get-ignores fives))
+                               (ignorables (get-ignorables fives))
+                               (irrelevants-alist (get-irrelevants-alist fives)))
+                           (er-progn
+                            (chk-free-and-ignored-vars-lsts names
+                                                            arglists
+                                                            guards
+                                                            split-types-terms
+                                                            measures
+                                                            ignores
+                                                            ignorables
+                                                            bodies
+                                                            ctx state)
+                            (chk-irrelevant-formals names arglists
+                                                    guards
+                                                    split-types-terms
+                                                    measures
+                                                    ignores
+                                                    ignorables
+                                                    irrelevants-alist
+                                                    bodies ctx state)
+                            (chk-mutual-recursion names bodies ctx
+                                                  state)))))
+                       (cond
+                        (erp (mv erp val state))
+                        (t (er-let* ((new-lambda$-alist-pairs
+                                      (if non-executablep
+                                          (value nil)
+                                          (chk-acceptable-lambda$-translations
+                                           symbol-class
+                                           guards bodies
+                                           ctx wrld3 state)))
+                                     (new-loop$-alist-pairs
+                                      (if non-executablep
+                                          (value nil)
+                                          (chk-acceptable-loop$-translations
+                                           symbol-class
+                                           guards bodies
+                                           ctx wrld3 state))))
+                             (value (list 'chk-acceptable-defuns
+                                          names
+                                          arglists
+                                          docs
+                                          nil ; doc-pairs
+                                          guards
+                                          measures
+                                          ruler-extenders-lst
+                                          mp
+                                          rel
+                                          hints
+                                          guard-hints
+                                          std-hints ;nil for non-std
+                                          otf-flg
+                                          bodies
+                                          symbol-class
+                                          normalizeps
+                                          reclassifying-all-programp
+                                          wrld4
+                                          non-executablep
+                                          guard-debug
+                                          measure-debug
+                                          split-types-terms
+                                          (make lambda-info
+                                                :loop$-recursion
+                                                (car loop$-recursion-lst)
+                                                :new-lambda$-alist-pairs
+                                                new-lambda$-alist-pairs
+                                                :new-loop$-alist-pairs
+                                                new-loop$-alist-pairs)
+                                          guard-simplify)))))))))))))))))))
 
 (defun conditionally-memoized-fns (fns memoize-table)
   (declare (xargs :guard (and (symbol-listp fns)
@@ -8539,8 +10069,16 @@
 ;              - list of translated terms, each corresponding to type
 ;                declarations made for a definition with XARGS keyword
 ;                :SPLIT-TYPES T
-;    new-lambda$-alist-pairs
-;              - list of pairs to add to the world global lambda$-alist
+;    lambda-info
+;              - a lambda-info record (q.v.) containing information about
+;                lambda objects gleaned during the acceptability check.  The
+;                information includes whether recursive calls of the
+;                (singly-defined) new function is allowed in lambdas and about
+;                translations of lambda$ and loop$ forms encountered.
+
+;    guard-simplify
+;               - t or nil, determining whether to simplify while generating
+;                 the guard conjectures
 
   (er-let*
    ((fives (chk-defuns-tuples lst nil ctx wrld state))
@@ -8766,9 +10304,9 @@
      (t wrld))))
 
 (defun defuns-fn1 (tuple ens big-mutrec names arglists docs pairs guards
-                         guard-hints std-hints otf-flg guard-debug bodies
-                         symbol-class normalizeps split-types-terms
-                         new-lambda$-alist-pairs
+                         guard-hints std-hints otf-flg guard-debug guard-simplify
+                         bodies symbol-class normalizeps split-types-terms
+                         lambda-info
                          non-executablep
                          #+:non-standard-analysis std-p
                          ctx state)
@@ -8830,16 +10368,41 @@
                                        ens wrld5 ttree2 state)
         (er-progn
          (update-w big-mutrec wrld6)
-         (let ((wrld6a (global-set 'lambda$-alist
-                                  (union-equal new-lambda$-alist-pairs
-                                               (global-val 'lambda$-alist
-                                                           wrld6))
-                                  wrld6)))
+         (let* ((wrld6a
+                 (if (access lambda-info
+                             lambda-info
+                             :loop$-recursion)
+
+; If loop$-recursion is non-nil, then names is a singleton list and the defun
+; has an xargs :loop$-recursion t declaration.  We store that fact under the
+; loop$-recursion property of the function.  We don't bother to store anything
+; if loop$-recursion is nil.
+
+                     (putprop (car names) 'loop$-recursion T wrld6)
+                     wrld6))
+                (wrld6b
+                 (global-set 'lambda$-alist
+                             (union-equal
+                              (access lambda-info
+                                      lambda-info
+                                      :new-lambda$-alist-pairs)
+                              (global-val 'lambda$-alist
+                                          wrld6a))
+                             wrld6a))
+                (wrld6c
+                 (global-set 'loop$-alist
+                             (union-equal
+                              (access lambda-info
+                                      lambda-info
+                                      :new-loop$-alist-pairs)
+                              (global-val 'loop$-alist
+                                          wrld6b))
+                             wrld6b)))
            (er-progn
-            (update-w big-mutrec wrld6a)
+            (update-w big-mutrec wrld6c)
             (er-let*
                 ((wrld7 (update-w big-mutrec
-                                  (putprop-level-no-lst names wrld6a)))
+                                  (putprop-level-no-lst names wrld6c)))
                  (wrld8 (update-w big-mutrec
                                   (putprop-primitive-recursive-defunp-lst
                                    names wrld7)))
@@ -8891,7 +10454,8 @@
                                           ctx wrld12 state)
                                          (value nil)))
                         (pair (verify-guards-fn1 names guard-hints otf-flg
-                                                 guard-debug ctx state)))
+                                                 guard-debug guard-simplify ctx
+                                                 state)))
 
 ; Pair is of the form (wrld . ttree3) and we return a pair of the same
 ; form, but we must combine this ttree with the ones produced by the
@@ -8910,8 +10474,9 @@
 
 (defun defuns-fn0 (names arglists docs pairs guards measures
                          ruler-extenders-lst mp rel hints guard-hints std-hints
-                         otf-flg guard-debug measure-debug bodies symbol-class
-                         normalizeps split-types-terms new-lambda$-alist-pairs
+                         otf-flg guard-debug guard-simplify measure-debug bodies
+                         symbol-class normalizeps split-types-terms
+                         lambda-info
                          non-executablep
                          #+:non-standard-analysis std-p
                          ctx wrld state)
@@ -8928,7 +10493,10 @@
     (let ((ens (ens state))
           (big-mutrec (big-mutrec names)))
       (er-let*
-       ((tuple (put-induction-info names arglists
+       ((tuple (put-induction-info (access lambda-info
+                                           lambda-info
+                                           :loop$-recursion)
+                                   names arglists
                                    measures
                                    ruler-extenders-lst
                                    bodies
@@ -8951,11 +10519,12 @@
          std-hints
          otf-flg
          guard-debug
+         guard-simplify
          bodies
          symbol-class
          normalizeps
          split-types-terms
-         new-lambda$-alist-pairs
+         lambda-info
          non-executablep
          #+:non-standard-analysis std-p
          ctx
@@ -9395,7 +10964,8 @@
                 (guard-debug (nth 20 tuple))
                 (measure-debug (nth 21 tuple))
                 (split-types-terms (nth 22 tuple))
-                (new-lambda$-alist-pairs (nth 23 tuple)))
+                (lambda-info (nth 23 tuple))
+                (guard-simplify (nth 24 tuple)))
             (er-let*
              ((pair (defuns-fn0
                       names
@@ -9412,12 +10982,13 @@
                       std-hints
                       otf-flg
                       guard-debug
+                      guard-simplify
                       measure-debug
                       bodies
                       symbol-class
                       normalizeps
                       split-types-terms
-                      new-lambda$-alist-pairs
+                      lambda-info
                       non-executablep
                       #+:non-standard-analysis std-p
                       ctx
@@ -9428,6 +10999,62 @@
 
              (er-progn
               (chk-assumption-free-ttree (cdr pair) ctx state)
+              (if (access lambda-info lambda-info :loop$-recursion)
+; If loop$-recursion is set we know this is a singly-recursive (not mutually
+; recursive) defun that the user alleged was tame.  We check that now.
+                  (mv-let (erp msg-and-badge)
+                    (ev-fncall-w 'badger
+                                 (list (car names) (ens state) (w state))
+                                 (w state) nil nil nil t t)
+
+; If erp is t, then msg-and-badge is actually an error msg.  Otherwise,
+; msg-and-badge is (msg badge), where msg is either an error message or nil.
+; When msg is nil, badge is the computed badge.
+
+                    (let ((msg1 msg-and-badge)
+                          (msg2 (if erp
+                                    nil
+                                    (car msg-and-badge)))
+                          (badge (if erp
+                                     nil
+                                     (cadr msg-and-badge))))
+                      (cond
+                       ((or erp msg2)
+                        (er soft 'defun
+                            "When :LOOP$-RECURSION T is declared for a ~
+                             function, as it was for ~x0, we must assign it a ~
+                             badge before we translate its body.  That ~
+                             assigned badge asserts that ~x0 returns a single ~
+                             value and is tame.  We then check that ~
+                             assumption after translation by generating the ~
+                             badge using the technique that DEFWARRANT would ~
+                             use.  But the attempt to generate the badge has ~
+                             failed, indicating that it is illegal to declare ~
+                             :LOOP$-RECURSION T for this function.  ~#1~[Our ~
+                             attempt to generate a badge produced the ~
+                             following error:~/The error message that would ~
+                             be reported by DEFWARRANT is:~]~%~%~@2"
+                            (car names) (if erp 0 1) (if erp msg1 msg2)))
+                        ((not (equal (access apply$-badge badge :out-arity) 1))
+
+; This error can't happen!  The world -- wrld3 of chk-acceptable-defuns1 -- has
+; the stobjs-out property of fn set to a list of length 1.  And the badger just
+; looks there to find the :out-arity.
+
+                         (er soft 'defun
+                             "Impossible error!  The final badger check in ~
+                              DEFUNS-FN has failed on the :OUT-ARITY.  This ~
+                              is impossible given chk-acceptable-defuns1. ~
+                              Please show the implementors this bug!"))
+                        ((not (eq (access apply$-badge badge :ilks) t))
+                         (er soft 'defun
+                             "When :LOOP$-RECURSION T is declared for a ~
+                              function the function must be tame.  But ~x0 is ~
+                              not!  Its ilks are actually ~x1."
+                             (car names)
+                             (access apply$-badge badge :ilks)))
+                        (t (value nil)))))
+                  (value nil))
               (install-event-defuns names event-form def-lst0 symbol-class
                                     reclassifyingp non-executablep pair ctx wrld
                                     state))))))))))
@@ -9472,15 +11099,40 @@
                                     (access type-prescription tp :corollary)
                                     t wrld))
                                (t nil)))
-                  (constraint (mv-let
-                               (some-name constraint-lst)
-                               (constraint-info name wrld)
-                               (cond ((unknown-constraints-p constraint-lst)
-                                      '[UNKNOWN-CONSTRAINTS])
-                                     (some-name
-                                      (untranslate (conjoin constraint-lst)
-                                                   t wrld))
-                                     (t t)))))
+                  (badge (executable-badge name wrld))
+
+; If we're in boot-strap, executable-badge just caused a hard error.  So if
+; we're here we know that (getpropc '*badge-prim-falist* 'const nil wrld) is
+; non-nil and is, in fact, a quoted constant.  But we can't just use
+; *badge-prim-falist* because it will not be known to the compiler during the
+; boot-strapping.
+
+                  (warrant (cond ((assoc-eq name
+                                            (unquote
+                                             (getpropc '*badge-prim-falist*
+                                                       'const nil wrld)))
+                                  t)
+                                 (badge
+                                  (list (intern-in-package-of-symbol
+                                         (concatenate 'string
+                                                      "APPLY$-WARRANT-"
+                                                      (symbol-name name))
+                                         name)))
+                                 (t nil)))
+                  (constraint-msg
+                   (mv-let
+                     (some-name constraint-lst)
+                     (constraint-info name wrld)
+                     (cond ((unknown-constraints-p constraint-lst)
+                            "[UNKNOWN-CONSTRAINTS]")
+                           (t (let ((constraint
+                                     (if some-name
+                                         (untranslate (conjoin constraint-lst)
+                                                      t wrld)
+                                       t)))
+                                (if (eq constraint t)
+                                    ""
+                                  (msg "~y0" constraint))))))))
              (pprogn
               (fms "Function         ~x0~|~
                Formals:         ~y1~|~
@@ -9490,7 +11142,9 @@
                Guards Verified: ~y5~|~
                Defun-Mode:      ~@6~|~
                Type:            ~#7~[built-in (or unrestricted)~/~q8~]~|~
-               ~#9~[~/Constraint:  ~qa~|~]~
+               Badge:           ~#b~[built-in to apply$~/~yc~/none~]~|~
+               Warrant:         ~#b~[none needed~/~yd~/none~]~|~
+               ~#9~[~/Constraint:      ~@a~|~]~
                ~%"
                    (list (cons #\0 name)
                          (cons #\1 formals)
@@ -9503,8 +11157,11 @@
                          (cons #\6 (defun-mode-string (fdefun-mode name wrld)))
                          (cons #\7 (if tpthm 1 0))
                          (cons #\8 tpthm)
-                         (cons #\9 (if (eq constraint t) 0 1))
-                         (cons #\a constraint))
+                         (cons #\9 (if (equal constraint-msg "") 0 1))
+                         (cons #\a constraint-msg)
+                         (cons #\b (if (eq warrant t) 0 (if warrant 1 2)))
+                         (cons #\c badge)
+                         (cons #\d warrant))
                    channel state nil)
               (value name))))
           ((and (symbolp name)

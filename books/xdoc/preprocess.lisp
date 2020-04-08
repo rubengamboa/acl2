@@ -662,12 +662,12 @@
 (defun process-sym-directive (arg preproc-data acc) ;; ===> ACC
   ;; @(sym foo) just expands into the standard name mangling for foo
   (b* (((preproc-data preproc-data)))
-    (sym-mangle arg preproc-data.base-pkg acc)))
+    (sym-mangle arg preproc-data.base-pkg preproc-data.archive-p acc)))
 
 (defun process-sym-cap-directive (arg preproc-data acc) ;; ===> ACC
   ;; @(csym foo) just expands into the standard capitalized name mangling for foo
   (b* (((preproc-data preproc-data)))
-    (sym-mangle-cap arg preproc-data.base-pkg acc)))
+    (sym-mangle-cap arg preproc-data.base-pkg preproc-data.archive-p acc)))
 
 (defun want-to-preserve-case-p (arg arg-raw base-pkg)
   ;; Decide whether we want to preserve the case on a link like @(see Foo).
@@ -706,7 +706,7 @@
                 ;; BOZO can this possibly be right?  What if arg-raw has '<' in it?
                 ;; If this is a bug, fix the other see-like directives below, too.
                 (str::printtree-rconcat (str::trim arg-raw) acc)
-              (sym-mangle arg preproc-data.base-pkg acc)))
+              (sym-mangle arg preproc-data.base-pkg preproc-data.archive-p acc)))
        (acc (str::printtree-rconcat "</see>" acc)))
     acc))
 
@@ -716,14 +716,13 @@
        (acc (str::printtree-rconcat "<see topic=\"" acc))
        (acc (file-name-mangle arg acc))
        (acc (str::printtree-rconcat "\">" acc))
-       (acc (sym-mangle-cap arg preproc-data.base-pkg acc))
+       (acc (sym-mangle-cap arg preproc-data.base-pkg preproc-data.archive-p acc))
        (acc (str::printtree-rconcat "</see>" acc)))
     acc))
 
 (defun process-tsee-directive (arg arg-raw preproc-data acc) ;; ===> ACC
   ;; @(tsee foo) is basically <tt>@(see ...)</tt>.
-  (b* (((preproc-data preproc-data))
-       (acc (str::printtree-rconcat "<tt>" acc))
+  (b* ((acc (str::printtree-rconcat "<tt>" acc))
        (acc (process-see-directive arg arg-raw preproc-data acc))
        (acc (str::printtree-rconcat "</tt>" acc)))
     acc))
@@ -746,7 +745,7 @@
        (acc (str::printtree-rconcat "<tt>" acc))
        (acc (if (want-to-preserve-case-p arg arg-raw preproc-data.base-pkg)
                 (str::printtree-rconcat (str::trim arg-raw) acc)
-              (sym-mangle arg preproc-data.base-pkg acc)))
+              (sym-mangle arg preproc-data.base-pkg preproc-data.archive-p acc)))
        (acc (str::printtree-rconcat "</tt>" acc)))
     acc))
 
@@ -810,7 +809,7 @@
        (def (get-event arg preproc-data.context state))
        (acc (str::printtree-rconcat "<p>" acc))
        (acc (start-event def acc))
-       (acc (sym-mangle arg preproc-data.base-pkg acc))
+       (acc (sym-mangle arg preproc-data.base-pkg preproc-data.archive-p acc))
        (acc (str::printtree-rconcat "</p>" acc)))
     (process-obj-to-code def preproc-data state acc)))
 
@@ -832,7 +831,7 @@
        (def (get-event arg preproc-data.context state))
        (acc (str::printtree-rconcat "<p>" acc))
        (acc (start-event def acc))
-       (acc (sym-mangle arg preproc-data.base-pkg acc))
+       (acc (sym-mangle arg preproc-data.base-pkg preproc-data.archive-p acc))
        (acc (str::printtree-rconcat "</p>" acc)))
     (process-obj-to-code def preproc-data state acc)))
 

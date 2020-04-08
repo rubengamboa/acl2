@@ -10,7 +10,7 @@
 
 (in-package "ACL2")
 
-(include-book "kestrel/utilities/xdoc/constructors" :dir :system)
+(include-book "xdoc/constructors" :dir :system)
 (include-book "std/util/defrule" :dir :system)
 
 (local (include-book "std/lists/append" :dir :system))
@@ -22,7 +22,7 @@
   :parents (list-utilities append)
   :short "Some theorems about the built-in function @(tsee append)."
   :long
-  (xdoc::topp
+  (xdoc::topstring-p
    "The theorem @('equal-of-appends-decompose') is useful
     to decompose the equality of two @(tsee append)s
     into equalities of the appended lists,
@@ -57,4 +57,11 @@
        ((defruled lemma-lemma
           (implies (equal x y)
                    (equal (nthcdr n x)
-                          (nthcdr n y)))))))))
+                          (nthcdr n y))))))))
+
+  (defrule append-when-not-consp-2
+    (implies (and (true-listp y)
+                  (not (consp y)))
+             (equal (append x y)
+                    (true-list-fix x)))
+    :enable append))

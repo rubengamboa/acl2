@@ -1,5 +1,5 @@
-; ACL2 Version 8.1 -- A Computational Logic for Applicative Common Lisp
-; Copyright (C) 2018, Regents of the University of Texas
+; ACL2 Version 8.2 -- A Computational Logic for Applicative Common Lisp
+; Copyright (C) 2019, Regents of the University of Texas
 
 ; This version of ACL2 is a descendent of ACL2 Version 1.9, Copyright
 ; (C) 1997 Computational Logic, Inc.  See the documentation topic NOTE-2-0.
@@ -1493,14 +1493,8 @@
 ; returned here "assumes" that this further dive has already been done.)
 
   (case-match term
-    (('if *t* x2 *nil*) ; see untranslate-and
-     (addr-recur 2
-                 (and-addr n x2 iff-flg)))
     (('if x1 x2 *nil*)
-     (cond ((and iff-flg (equal x2 *t*)) ; see untranslate-and
-            (addr-recur 1
-                        (and-addr n x1 t)))
-           ((int= n 1)
+     (cond ((int= n 1)
             (mv '(1) x1 t nil))
            (t
             (addr-recur 2
@@ -1535,7 +1529,7 @@
 ; that the guard of ev-fncall-w will be satisfied.
 
                      (equal (stobjs-in val world) '(nil nil nil nil))
-                     (not (assoc-eq val *ttag-fns-and-macros*))
+                     (not (assoc-eq val *ttag-fns*))
 
 ; The following test is a bit too strong, since it fails to take into account
 ; temp-touchable-fns; see untouchable-fn-p.  However, this drawback seems quite
@@ -2186,12 +2180,6 @@
                                  (equal x target))))
                    (find-equivalence-hyp-term term (cdr hyps) target equiv w)))))
     nil))
-
-(defun flatten-ands-in-lit-lst (x)
-  (if (endp x)
-      nil
-    (append (flatten-ands-in-lit (car x))
-            (flatten-ands-in-lit-lst (cdr x)))))
 
 (define-pc-primitive equiv (x y &optional equiv)
   (mv-let
@@ -3195,7 +3183,7 @@
    1 target-name-or-rune target-index))
 
 (defun make-linear-instr (lemma-id raw-subst instantiate-free)
-  (list* (make-pretty-pc-command :linear)
+  (list* (make-pretty-pc-command :apply-linear)
          lemma-id
          (cond (instantiate-free (list raw-subst instantiate-free))
                (raw-subst (list raw-subst))
@@ -4775,7 +4763,17 @@
 (defun proof-builder-clause-list (state)
   (goals-to-clause-list (goals)))
 
-(defun proof-builder-cl-proc (cl instr-list state)
+(defun ttree-to-summary-data (ttree)
+  (and ttree ; optimization
+       (mv-let (use-names by-names cl-proc-fns)
+         (cl-proc-data-in-ttree ttree nil)
+         (make-summary-data
+          :runes (all-runes-in-ttree ttree nil)
+          :use-names (append use-names (use-names-in-ttree ttree nil))
+          :by-names (append by-names (by-names-in-ttree ttree nil))
+          :clause-processor-fns cl-proc-fns))))
+
+(defun proof-builder-cl-proc-1 (cl instr-list state)
   (let ((ctx 'proof-builder-cl-proc))
     (cond
      ((null cl)
@@ -4808,63 +4806,77 @@
            ((inhibit-output-lst new-inhibit-output-lst)
             (pc-output (f-get-global 'pc-output state)))
            (mv-let
-            (erp clause-list state)
-            (pprogn (pc-assign pc-depth new-pc-depth)
-                    (cond (outputp
-                           (io? prove nil state
-                                (new-pc-depth)
-                                (fms0 "~|~%[[~x0> Executing ~
+             (erp clause-list state)
+             (pprogn (pc-assign pc-depth new-pc-depth)
+                     (cond (outputp
+                            (io? prove nil state
+                                 (new-pc-depth)
+                                 (fms0 "~|~%[[~x0> Executing ~
                                             proof-builder instructions]]~%~%"
-                                      (list (cons #\0 new-pc-depth)))))
-                          (t state))
-                    (pc-assign next-pc-enabled-array-suffix
-                               (1+ (pc-value
-                                    next-pc-enabled-array-suffix)))
-                    (mv-let
-                     (erp pc-val state)
-                     (pc-main term
-                              (untranslate term t wrld)
-                              nil ; event-name
-                              nil ; rule-classes
-                              instr-list
-                              '(signal value) ; quit-conditions
-                              t ; pc-print-prompt-and-instr-flg, suitable for :pso
-                              nil ; in-verify-flg
-                              state)
-                     (pprogn
-                      (cond (outputp (io? prove nil state
-                                          (new-pc-depth)
-                                          (fms0 "~|~%[[<~x0 Completed ~
+                                       (list (cons #\0 new-pc-depth)))))
+                           (t state))
+                     (pc-assign next-pc-enabled-array-suffix
+                                (1+ (pc-value
+                                     next-pc-enabled-array-suffix)))
+                     (mv-let
+                       (erp pc-val state)
+                       (pc-main term
+                                (untranslate term t wrld)
+                                nil ; event-name
+                                nil ; rule-classes
+                                instr-list
+                                '(signal value) ; quit-conditions
+                                t ; pc-print-prompt-and-instr-flg, suitable for :pso
+                                nil ; in-verify-flg
+                                state)
+                       (pprogn
+                        (cond (outputp (io? prove nil state
+                                            (new-pc-depth)
+                                            (fms0 "~|~%[[<~x0 Completed ~
                                                  proof-builder ~
                                                  instructions]]~%"
-                                                (list (cons #\0 new-pc-depth)))))
-                            (t state))
-                      (cond ((or erp (null pc-val))
-                             (let ((name (intern
-                                          (concatenate
-                                           'string
-                                           "ERROR"
-                                           (coerce (explode-atom new-pc-depth
-                                                                 10)
-                                                   'string))
-                                          "KEYWORD")))
-                               (pprogn
-                                (io? error nil state
-                                     (name)
-                                     (fms0 "~%Saving proof-builder error ~
+                                                  (list (cons #\0 new-pc-depth)))))
+                              (t state))
+                        (cond ((or erp (null pc-val))
+                               (let ((name (intern
+                                            (concatenate
+                                             'string
+                                             "ERROR"
+                                             (coerce (explode-atom new-pc-depth
+                                                                   10)
+                                                     'string))
+                                            "KEYWORD")))
+                                 (pprogn
+                                  (io? error nil state
+                                       (name)
+                                       (fms0 "~%Saving proof-builder error ~
                                             state; see :DOC instructions.  To ~
                                             retrieve:~|~x0"
-                                           (list (cons #\0 `(retrieve ,name)))))
-                                (save-fn name (ss-alist) state)
-                                (er soft ctx
-                                    "The above :INSTRUCTIONS hint failed.  ~
+                                             (list (cons #\0 `(retrieve ,name)))))
+                                  (save-fn name (ss-alist) state)
+                                  (er soft ctx
+                                      "The above :INSTRUCTIONS hint failed.  ~
                                      For a discussion of ``failed'', follow ~
                                      the link to the SEQUENCE command under ~
                                      :DOC proof-builder-commands."))))
-                            (t (value (proof-builder-clause-list
-                                       state)))))))
-            (cond (erp (silent-error state))
-                  (t (value clause-list)))))))))))
+                              (t (value (proof-builder-clause-list
+                                         state)))))))
+             (cond (erp (silent-error state))
+                   (t (value (cons clause-list (state-stack)))))))))))))
+
+(defun proof-builder-cl-proc (cl instr-list state)
+  (mv-let (erp clause-list/state-stack state)
+    (proof-builder-cl-proc-1 cl instr-list state)
+    (cond (erp (mv erp clause-list/state-stack state nil))
+          (t (mv erp
+                 (car clause-list/state-stack)
+                 state
+                 (let ((state-stack (cdr clause-list/state-stack)))
+                   (and (consp state-stack)
+                        (ttree-to-summary-data
+                         (access pc-state
+                                 (car state-stack)
+                                 :tag-tree)))))))))
 
 #+acl2-loop-only
 (define-trusted-clause-processor

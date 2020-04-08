@@ -33,7 +33,7 @@
 (include-book "gtypes")
 (include-book "gl-util")
 (include-book "symbolic-arithmetic")
-(include-book "and-star")
+(include-book "centaur/misc/starlogic" :dir :system)
 (local (include-book "gtype-thms"))
 (local (include-book "data-structures/no-duplicates" :dir :system))
 (local (include-book "tools/mv-nth" :dir :system))
@@ -246,7 +246,8 @@
   :hints(("Goal" :in-theory (enable numlist-to-vars scdr s-endp
                                     slice-to-bdd-env
                                     nat-listp)
-          :induct (numlist-to-vars lst))))
+          :induct (numlist-to-vars lst)
+          :expand ((:free (a b env) (bfr-list->s (cons a b) env))))))
 
 ;; (defthm bfr-list->u-numlist-subset-append
 ;;   (implies (and (nat-listp lst)
@@ -349,7 +350,7 @@
          :hints(("Goal" :in-theory (e/d (acl2::list-equiv)
                                         (bfr-list->s-of-list-fix))
                  :use ((:instance bfr-list->s-of-list-fix)
-                       (:instance bfr-list->s-of-list-fix (x acl2::x-equiv)))))))
+                       (:instance bfr-list->s-of-list-fix (x x-equiv)))))))
 
 (defthm bfr-list->s-of-append
   (implies (consp b)
@@ -782,7 +783,7 @@
          :hints(("Goal" :in-theory (enable shape-spec-obj-in-range-iff)))))
 
 
-         
+
 
 (local
  (encapsulate nil
@@ -839,7 +840,8 @@
                    (bfr-list->s (numlist-to-vars lst) env)))
    :hints(("Goal" :in-theory (enable numlist-to-vars bfr-list->s
                                      scdr s-endp
-                                     nat-listp member-equal)))))
+                                     nat-listp member-equal)
+          :expand ((:free (a b env) (bfr-list->s (cons a b) env)))))))
 
 
 
@@ -899,7 +901,8 @@
                                        integer-env-slice
                                        logbitp
                                        logcons)
-             :induct (integer-env-slice lst n))))
+             :induct (integer-env-slice lst n)
+             :expand ((:free (a b env) (bfr-list->s (cons a b) env))))))
 
    ;; (defthm eval-slice-bfr-list->s-natural-env-slice
    ;;   (implies (and (mv-nth 0 (natural-env-slice lst n))
@@ -1344,7 +1347,7 @@
     shape-spec-obj-in-range-open-atom
     shape-spec-obj-in-range-open-list-of-g-booleans
     shape-spec-obj-in-range-var
-    and*-rem-first and*-rem-second
+    acl2::and*-rem-first acl2::and*-rem-second
     acl2::iff-implies-equal-and*-1
     acl2::iff-implies-iff-and*-2
     car-cons cdr-cons natp-compound-recognizer
@@ -1714,7 +1717,7 @@ for (e.g.)  adding rules to the coverage strategy are likely to change.</p>")
   (defthm ev-of-make-nth-terms
     (equal (sspec-geval-ev-lst (make-nth-terms x start n) a)
            (take n (nthcdr start (sspec-geval-ev x a))))
-    :hints(("Goal" :in-theory (enable acl2::take-redefinition
+    :hints(("Goal" :in-theory (enable acl2::take
                                       nthcdr))))
 
   (defthm len-of-make-nth-terms
@@ -2280,7 +2283,7 @@ for (e.g.)  adding rules to the coverage strategy are likely to change.</p>")
                   (no-duplicatesp (shape-spec-indices x)))
              (no-duplicatesp (g-integer->bits x)))
     :hints (("goal" :expand ((shape-spec-indices x))))))
-                  
+
 
 (defines shape-spec-env-term
   (define shape-spec-env-term ((x shape-specp)
@@ -2353,7 +2356,7 @@ for (e.g.)  adding rules to the coverage strategy are likely to change.</p>")
                        (car (sspec-geval-ev (shape-spec-env-term x obj-term) a)))
                       (shape-spec-indices x)))
       :hints ('(:expand ((shape-spec-env-term x obj-term)
-                         (shape-spec-indices x)))) 
+                         (shape-spec-indices x))))
       :flag ss)
     (defthm indices-of-shape-spec-env-term-iff
       (implies (shape-specp x)
@@ -2361,7 +2364,7 @@ for (e.g.)  adding rules to the coverage strategy are likely to change.</p>")
                        (car (sspec-geval-ev (shape-spec-env-term-iff x obj-term) a)))
                       (shape-spec-indices x)))
       :hints ('(:expand ((shape-spec-env-term-iff x obj-term)
-                         (shape-spec-indices x)))) 
+                         (shape-spec-indices x))))
       :flag iff)
     (defthm indices-of-shape-spec-list-env-term
       (implies (shape-spec-listp x)
@@ -2380,7 +2383,7 @@ for (e.g.)  adding rules to the coverage strategy are likely to change.</p>")
                        (cdr (sspec-geval-ev (shape-spec-env-term x obj-term) a)))
                       (shape-spec-vars x)))
       :hints ('(:expand ((shape-spec-env-term x obj-term)
-                         (shape-spec-vars x)))) 
+                         (shape-spec-vars x))))
       :flag ss)
     (defthm vars-of-shape-spec-env-term-iff
       (implies (shape-specp x)
@@ -2388,7 +2391,7 @@ for (e.g.)  adding rules to the coverage strategy are likely to change.</p>")
                        (cdr (sspec-geval-ev (shape-spec-env-term-iff x obj-term) a)))
                       (shape-spec-vars x)))
       :hints ('(:expand ((shape-spec-env-term-iff x obj-term)
-                         (shape-spec-vars x)))) 
+                         (shape-spec-vars x))))
       :flag iff)
     (defthm vars-of-shape-spec-list-env-term
       (implies (shape-spec-listp x)
@@ -2636,4 +2639,3 @@ for (e.g.)  adding rules to the coverage strategy are likely to change.</p>")
 
 
   )
-

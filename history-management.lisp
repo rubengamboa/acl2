@@ -1,5 +1,5 @@
-; ACL2 Version 8.1 -- A Computational Logic for Applicative Common Lisp
-; Copyright (C) 2018, Regents of the University of Texas
+; ACL2 Version 8.2 -- A Computational Logic for Applicative Common Lisp
+; Copyright (C) 2019, Regents of the University of Texas
 
 ; This version of ACL2 is a descendent of ACL2 Version 1.9, Copyright
 ; (C) 1997 Computational Logic, Inc.  See the documentation topic NOTE-2-0.
@@ -1174,7 +1174,7 @@
         (macro "macro")
         (const "constant")
         (stobj "single-threaded object")
-        (stobj-live-var "single-threaded object holder")
+        (stobj-live-var "single-threaded object live var")
         (theorem "theorem")
         (theory "theory")
         (label "label")
@@ -1635,6 +1635,7 @@
                  UNNORMALIZED-BODY
                  CONSTRAINT-LST
                  RECURSIVEP
+                 LOOP$-RECURSION
                  TYPE-PRESCRIPTIONS
                  GUARD
                  SPLIT-TYPES-TERM
@@ -1865,34 +1866,38 @@
   #+(and (not acl2-loop-only) acl2-rewrite-meter) ; for stats on rewriter depth
   (setq *rewrite-depth-max* 0)
 
-  (progn$
+  (cond
+   ((global-val 'include-book-path (w state))
+    state)
+   (t
+    (progn$
 
 ; If these time-tracker calls are changed, update :doc time-tracker
 ; accordingly.
 
-   (time-tracker :tau :end) ; in case interrupt prevented preceding summary
-   (time-tracker :tau :init
-                 :times '(1 5)
-                 :interval 10
-                 :msg (concatenate
-                       'string
-                       (if (f-get-global 'get-internal-time-as-realtime
-                                         state)
-                           "Elapsed realtime"
-                         "Elapsed runtime")
-                       " in tau is ~st secs; see :DOC time-tracker-tau.~|~%"))
-   (pprogn (cond ((null (cdr (get-timer 'other-time state))) ; top-level event
-                  (mv-let (x state)
-                          (main-timer state)
-                          (declare (ignore x))
-                          state))
-                 (t ; inbetween events
-                  (increment-timer 'other-time state)))
-           (push-timer 'other-time 0 state)
-           (push-timer 'prove-time 0 state)
-           (push-timer 'print-time 0 state)
-           (push-timer 'proof-tree-time 0 state)
-           (push-warning-frame state))))
+     (time-tracker :tau :end) ; in case interrupt prevented preceding summary
+     (time-tracker :tau :init
+                   :times '(1 5)
+                   :interval 10
+                   :msg (concatenate
+                         'string
+                         (if (f-get-global 'get-internal-time-as-realtime
+                                           state)
+                             "Elapsed realtime"
+                           "Elapsed runtime")
+                         " in tau is ~st secs; see :DOC time-tracker-tau.~|~%"))
+     (pprogn (cond ((null (cdr (get-timer 'other-time state))) ; top-level event
+                    (mv-let (x state)
+                      (main-timer state)
+                      (declare (ignore x))
+                      state))
+                   (t ; inbetween events
+                    (increment-timer 'other-time state)))
+             (push-timer 'other-time 0 state)
+             (push-timer 'prove-time 0 state)
+             (push-timer 'print-time 0 state)
+             (push-timer 'proof-tree-time 0 state)
+             (push-warning-frame state))))))
 
 (defun print-warnings-summary (state)
   (mv-let
@@ -2460,8 +2465,8 @@
 
 (defun lmi-seed-lst (lmi-lst)
   (cond ((null lmi-lst) nil)
-        (t (add-to-set-eq (lmi-seed (car lmi-lst))
-                          (lmi-seed-lst (cdr lmi-lst))))))
+        (t (add-to-set-equal (lmi-seed (car lmi-lst))
+                             (lmi-seed-lst (cdr lmi-lst))))))
 
 (defun lmi-techs-lst (lmi-lst)
   (cond ((null lmi-lst) nil)
@@ -2525,37 +2530,125 @@
                      state))))))
 
 (defun use-names-in-ttree (ttree names-only)
+
+; Warning: This does not include use-names under :clause-processor tags.
+
   (let* ((objs (tagged-objects :USE ttree))
          (lmi-lst (append-lst (strip-cars (strip-cars objs))))
          (seeds (lmi-seed-lst lmi-lst)))
     (if names-only
-        (sort-symbol-listp (lmi-seeds-info t seeds))
-      (merge-sort-lexorder (lmi-seeds-info 'hint-events seeds)))))
+        (lmi-seeds-info t seeds)
+      (lmi-seeds-info 'hint-events seeds))))
 
 (defun by-names-in-ttree (ttree names-only)
+
+; Warning: This does not include by-names under :clause-processor tags.
+
   (let* ((objs (tagged-objects :BY ttree))
          (lmi-lst (append-lst (strip-cars objs)))
          (seeds (lmi-seed-lst lmi-lst)))
     (if names-only
-        (sort-symbol-listp (lmi-seeds-info t seeds))
-      (merge-sort-lexorder (lmi-seeds-info 'hint-events seeds)))))
+        (lmi-seeds-info t seeds)
+      (lmi-seeds-info 'hint-events seeds))))
 
 (defrec clause-processor-hint
   (term stobjs-out . verified-p)
   nil)
 
-(defun clause-processor-fns (cl-proc-hints)
-  (cond ((endp cl-proc-hints) nil)
-        (t (cons (ffn-symb (access clause-processor-hint
-                                   (car cl-proc-hints)
-                                   :term))
-                 (clause-processor-fns (cdr cl-proc-hints))))))
+(defun collect-non-hint-events (lst non-symbols-okp)
+  (declare (xargs :guard (true-listp lst)))
+  (cond ((endp lst) nil)
+        (t (let ((x (car lst)))
+             (cond
+              ((symbolp x)
+               (collect-non-hint-events (cdr lst) non-symbols-okp))
+              ((and non-symbols-okp
+                    (consp x)
+                    (consp (cdr x))
+                    (null (cddr x))
+                    (member-eq (car x)
+                               '(:termination-theorem :guard-theorem))
+                    (symbolp (cadr x)))
+               (collect-non-hint-events (cdr lst) non-symbols-okp))
+              (t (cons x
+                       (collect-non-hint-events (cdr lst)
+                                                non-symbols-okp))))))))
 
-(defun cl-proc-names-in-ttree (ttree)
-  (let* ((objs (tagged-objects :CLAUSE-PROCESSOR ttree))
-         (cl-proc-hints (strip-cars objs))
-         (cl-proc-fns (clause-processor-fns cl-proc-hints)))
-    (sort-symbol-listp cl-proc-fns)))
+(defun hint-events-symbols (lst)
+  (declare (xargs :guard (null (collect-non-hint-events lst t))))
+  (cond ((atom lst) nil)
+        ((symbolp (car lst))
+         (cons (car lst)
+               (hint-events-symbols (cdr lst))))
+        (t
+         (cons (cadr (car lst))
+               (hint-events-symbols (cdr lst))))))
+
+(defmacro get-summary-data (summary-data field &optional names-only)
+  (declare (xargs :guard (member-eq field '(:use-names
+                                            :by-names
+                                            :clause-processor-fns))))
+  (let ((val-expr `(access summary-data ,summary-data ,field)))
+    `(cond (,names-only (let ((lst ,val-expr))
+                          (if (symbol-listp lst) ; common case
+                              lst
+                            (hint-events-symbols lst))))
+           (t ,val-expr))))
+
+(defun cl-proc-data-in-ttree-1 (objs use-names by-names cl-proc-fns
+                                     names-only)
+
+; Each member of the list, objs, is of the form (cl-proc-hint summary-data
+; . new-clauses), as per the call of add-to-tag-tree! on tag :clause-processor
+; in the definition of apply-top-hints-clause.
+
+  (cond ((endp objs) (mv use-names by-names cl-proc-fns))
+        (t (let* ((obj (car objs))
+                  (cl-proc-hint (car obj))
+                  (cl-proc-fn (ffn-symb (access clause-processor-hint
+                                                cl-proc-hint
+                                                :term)))
+                  (new-cl-proc-fns
+
+; We want to present the proof-builder clause-processor as a built-in, the way
+; we present simplify-clause and the other waterfall clause-processors.  So we
+; avoid recording it here.
+
+                   (if (eq cl-proc-fn 'proof-builder-cl-proc)
+                       cl-proc-fns
+                     (cons cl-proc-fn cl-proc-fns)))
+                  (summary-data (cadr obj)))
+             (cond
+              ((null summary-data)
+               (cl-proc-data-in-ttree-1 (cdr objs) use-names by-names
+                                        new-cl-proc-fns
+                                        names-only))
+              (t (cl-proc-data-in-ttree-1
+                  (cdr objs)
+                  (append (get-summary-data summary-data :use-names names-only)
+                          use-names)
+                  (append (get-summary-data summary-data :by-names names-only)
+                          by-names)
+                  (append (access summary-data summary-data
+                                  :clause-processor-fns)
+                          new-cl-proc-fns)
+                  names-only)))))))
+
+(defun cl-proc-data-in-ttree (ttree names-only)
+  (cl-proc-data-in-ttree-1 (tagged-objects :CLAUSE-PROCESSOR ttree)
+                           nil nil nil
+                           names-only))
+
+(defun hint-event-names-in-ttree (ttree)
+  (mv-let (use-names by-names cl-proc-fns)
+    (cl-proc-data-in-ttree ttree nil)
+    (mv (merge-sort-lexorder (union-equal-removing-duplicates
+                              use-names
+                              (use-names-in-ttree ttree nil)))
+        (merge-sort-lexorder (union-equal-removing-duplicates
+                              by-names
+                              (by-names-in-ttree ttree nil)))
+        (sort-symbol-listp cl-proc-fns))))
 
 (defun print-hint-events-summary (ttree state)
   (flet ((make-rune-like-objs (kwd lst)
@@ -2563,23 +2656,22 @@
                                    (pairlis$ (make-list (length lst)
                                                         :INITIAL-ELEMENT kwd)
                                              (pairlis$ lst nil)))))
-    (let* ((use-lst (use-names-in-ttree ttree nil))
-           (by-lst (by-names-in-ttree ttree nil))
-           (cl-proc-lst (cl-proc-names-in-ttree ttree))
-           (lst (append (make-rune-like-objs :BY by-lst)
-                        (make-rune-like-objs :CLAUSE-PROCESSOR cl-proc-lst)
-                        (make-rune-like-objs :USE use-lst))))
-      (pprogn (put-event-data 'hint-events lst state)
-              (cond (lst (io? summary nil state
-                              (lst)
-                              (let ((channel (proofs-co state)))
-                                (mv-let (col state)
-                                  (fmt1 "Hint-events: ~y0~|"
-                                        (list (cons #\0 lst))
-                                        0 channel state nil)
-                                  (declare (ignore col))
-                                  state))))
-                    (t state))))))
+    (mv-let (use-lst by-lst cl-proc-fns)
+      (hint-event-names-in-ttree ttree)
+      (let ((lst (append (make-rune-like-objs :BY by-lst)
+                         (make-rune-like-objs :CLAUSE-PROCESSOR cl-proc-fns)
+                         (make-rune-like-objs :USE use-lst))))
+        (pprogn (put-event-data 'hint-events lst state)
+                (cond (lst (io? summary nil state
+                                (lst)
+                                (let ((channel (proofs-co state)))
+                                  (mv-let (col state)
+                                    (fmt1 "Hint-events: ~y0~|"
+                                          (list (cons #\0 lst))
+                                          0 channel state nil)
+                                    (declare (ignore col))
+                                    state))))
+                      (t state)))))))
 
 (defun print-splitter-rules-summary-1 (cl-id clauses
                                              case-split immed-forced if-intro
@@ -2828,109 +2920,113 @@
 
   #-acl2-loop-only (dmr-flush)
 
-  (let ((wrld (w state))
-        (steps (prover-steps state)))
-    (pprogn
-     (clear-event-data state)
-     (let ((trip (car wrld)))
-       (cond ((and (not noop-flg)
-                   (eq (car trip) 'EVENT-LANDMARK)
-                   (eq (cadr trip) 'GLOBAL-VALUE))
-              (put-event-data 'namex
-                              (access-event-tuple-namex (cddr trip))
-                              state))
-             (t state)))
-     (put-event-data 'prover-steps-counted steps state)
-     (put-event-data 'form ctx state)
-     (increment-timer 'other-time state)
-     (put-event-data 'time
-                     (list (car (get-timer 'prove-time state))
-                           (car (get-timer 'print-time state))
-                           (car (get-timer 'proof-tree-time state))
-                           (car (get-timer 'other-time state)))
-                     state)
-     (let ((abort-causes
-            (tagged-objects 'abort-cause
-                            (f-get-global 'accumulated-ttree state))))
-       (if abort-causes
-           (put-event-data 'abort-causes abort-causes state)
-         state))
-     (cond
-      ((ld-skip-proofsp state)
-       (pprogn (if (or erp noop-flg)
-                   state
-                 (print-redefinition-warning wrld ctx state))
-               (pop-timer 'prove-time t state)
-               (pop-timer 'print-time t state)
-               (pop-timer 'proof-tree-time t state)
-               (pop-timer 'other-time t state)
-               (mv-let (warnings state)
-                 (pop-warning-frame nil state)
-                 (declare (ignore warnings))
-                 state)))
-      (t
+  (let ((wrld (w state)))
+    (cond
+     ((global-val 'include-book-path wrld)
+      (clear-event-data state))
+     (t
+      (let ((steps (prover-steps state)))
+        (pprogn
+         (clear-event-data state)
+         (let ((trip (car wrld)))
+           (cond ((and (not noop-flg)
+                       (eq (car trip) 'EVENT-LANDMARK)
+                       (eq (cadr trip) 'GLOBAL-VALUE))
+                  (put-event-data 'namex
+                                  (access-event-tuple-namex (cddr trip))
+                                  state))
+                 (t state)))
+         (put-event-data 'prover-steps-counted steps state)
+         (put-event-data 'form ctx state)
+         (increment-timer 'other-time state)
+         (put-event-data 'time
+                         (list (car (get-timer 'prove-time state))
+                               (car (get-timer 'print-time state))
+                               (car (get-timer 'proof-tree-time state))
+                               (car (get-timer 'other-time state)))
+                         state)
+         (let ((abort-causes
+                (tagged-objects 'abort-cause
+                                (f-get-global 'accumulated-ttree state))))
+           (if abort-causes
+               (put-event-data 'abort-causes abort-causes state)
+             state))
+         (cond
+          ((ld-skip-proofsp state)
+           (pprogn (if (or erp noop-flg)
+                       state
+                     (print-redefinition-warning wrld ctx state))
+                   (pop-timer 'prove-time t state)
+                   (pop-timer 'print-time t state)
+                   (pop-timer 'proof-tree-time t state)
+                   (pop-timer 'other-time t state)
+                   (mv-let (warnings state)
+                     (pop-warning-frame nil state)
+                     (declare (ignore warnings))
+                     state)))
+          (t
 
 ; Even if this case were only taken when 'summary is inhibited, we would still
 ; use io? below, and inside some functions below, because of its window hacking
 ; and saved-output functions.
 
-       (let ((output-ignored-p (output-ignored-p 'summary state)))
-         (pprogn
-          (if (or erp noop-flg output-ignored-p)
-              state
-            (print-redefinition-warning wrld ctx state))
-          (io? summary nil state
-               ()
-               (let ((channel (proofs-co state)))
-                 (cond ((member-eq 'header
-                                   (f-get-global 'inhibited-summary-types
-                                                 state))
-                        state)
-                       (t
-                        (pprogn (newline channel state)
-                                (princ$ "Summary" channel state)
-                                (newline channel state))))))
-          (io? summary nil state
-               (ctx)
-               (let ((channel (proofs-co state)))
-                 (cond ((member-eq 'form
-                                   (f-get-global 'inhibited-summary-types
-                                                 state))
-                        state)
-                       (t
-                        (mv-let
-                          (col state)
-                          (fmt1 "Form:  " nil 0 channel state nil)
-                          (mv-let
-                            (col state)
-                            (fmt-ctx ctx col channel state)
-                            (declare (ignore col))
-                            (newline channel state)))))))
-          (print-rules-and-hint-events-summary
-           (f-get-global 'accumulated-ttree state)
-           state)
-          (print-system-attachments-summary state)
-          (print-warnings-summary state)
-          (print-time-summary state)
-          (print-steps-summary steps state)
-          (progn$
-           (and (not output-ignored-p)
+           (let ((output-ignored-p (output-ignored-p 'summary state)))
+             (pprogn
+              (if (or erp noop-flg output-ignored-p)
+                  state
+                (print-redefinition-warning wrld ctx state))
+              (io? summary nil state
+                   ()
+                   (let ((channel (proofs-co state)))
+                     (cond ((member-eq 'header
+                                       (f-get-global 'inhibited-summary-types
+                                                     state))
+                            state)
+                           (t
+                            (pprogn (newline channel state)
+                                    (princ$ "Summary" channel state)
+                                    (newline channel state))))))
+              (io? summary nil state
+                   (ctx)
+                   (let ((channel (proofs-co state)))
+                     (cond ((member-eq 'form
+                                       (f-get-global 'inhibited-summary-types
+                                                     state))
+                            state)
+                           (t
+                            (mv-let
+                              (col state)
+                              (fmt1 "Form:  " nil 0 channel state nil)
+                              (mv-let
+                                (col state)
+                                (fmt-ctx ctx col channel state)
+                                (declare (ignore col))
+                                (newline channel state)))))))
+              (print-rules-and-hint-events-summary
+               (f-get-global 'accumulated-ttree state)
+               state)
+              (print-system-attachments-summary state)
+              (print-warnings-summary state)
+              (print-time-summary state)
+              (print-steps-summary steps state)
+              (progn$
+               (and (not output-ignored-p)
 
 ; If the time-tracker call below is changed, update :doc time-tracker
 ; accordingly.
 
-                (time-tracker
-                 :tau :print?
-                 :min-time 1
-                 :msg
-                 (concatenate
-                  'string
-                  "For the proof above, the total "
-                  (if (f-get-global 'get-internal-time-as-realtime
-                                    state)
-                      "realtime"
-                    "runtime")
-                  " spent in the tau system was ~st seconds.  See :DOC ~
+                    (time-tracker
+                     :tau :print?
+                     :min-time 1
+                     :msg
+                     (concatenate
+                      'string
+                      "For the proof above, the total "
+                      (if (f-get-global 'get-internal-time-as-realtime
+                                        state)
+                          "realtime"
+                        "runtime")
+                      " spent in the tau system was ~st seconds.  See :DOC ~
                     time-tracker-tau.~|~%")))
 
 ; At one time we put (time-tracker :tau :end) here.  But in community book
@@ -2940,25 +3036,25 @@
 ; to avoid :end here; after all, we invoke :end before invoking :init anyhow,
 ; in case the proof was aborted without printing this part of the summary.
 
-           state)
-          (pprogn
-           (cond (erp
-                  (pprogn
-                   (print-failure erp event-type ctx state)
-                   (cond
-                    ((f-get-global 'proof-tree state)
-                     (io? proof-tree nil state
-                          (ctx)
-                          (pprogn (f-put-global 'proof-tree-ctx
-                                                (cons :failed ctx)
-                                                state)
-                                  (print-proof-tree state))))
-                    (t state))))
-                 (t (pprogn
-                     #+acl2-par
-                     (erase-acl2p-checkpoints-for-summary state)
-                     state)))
-           (f-put-global 'proof-tree nil state)))))))))
+               state)
+              (pprogn
+               (cond (erp
+                      (pprogn
+                       (print-failure erp event-type ctx state)
+                       (cond
+                        ((f-get-global 'proof-tree state)
+                         (io? proof-tree nil state
+                              (ctx)
+                              (pprogn (f-put-global 'proof-tree-ctx
+                                                    (cons :failed ctx)
+                                                    state)
+                                      (print-proof-tree state))))
+                        (t state))))
+                     (t (pprogn
+                         #+acl2-par
+                         (erase-acl2p-checkpoints-for-summary state)
+                         state)))
+               (f-put-global 'proof-tree nil state))))))))))))
 
 (defun with-prover-step-limit-fn (limit form no-change-flg)
 
@@ -3718,21 +3814,6 @@
 
       nil))
     (with-prover-step-limit! :START ,form)))
-
-(defun attachment-alist (fn wrld)
-  (let ((prop (getpropc fn 'attachment nil wrld)))
-    (and prop
-         (cond ((symbolp prop)
-                (getpropc prop 'attachment nil wrld))
-               ((eq (car prop) :attachment-disallowed)
-                prop) ; (cdr prop) follows "because", e.g., (msg "it is bad")
-               (t prop)))))
-
-(defun attachment-pair (fn wrld)
-  (let ((attachment-alist (attachment-alist fn wrld)))
-    (and attachment-alist
-         (not (eq (car attachment-alist) :attachment-disallowed))
-         (assoc-eq fn attachment-alist))))
 
 (defconst *protected-system-state-globals*
   (let ((val
@@ -4499,7 +4580,7 @@
 
   (longest-common-tail-length-rec old new len-old 0))
 
-(defun extend-current-theory (old-th new-th old-aug-th wrld)
+(defun extend-current-theory (old-th len-old new-th len-new old-aug-th wrld)
 
 ; Logically this function just returns new-th.  However, the copy of new-th
 ; that is returned shares a maximal tail with old-th.  A second value similarly
@@ -4507,9 +4588,7 @@
 ; augmented-theory corresponding to old-th; except, if old-aug-th is :none then
 ; the second value is undefined.
 
-  (let* ((len-old (length old-th))
-         (len-new (length new-th))
-         (len-common
+  (let* ((len-common
           (cond ((int= len-old len-new)
                  (longest-common-tail-length old-th new-th len-old))
                 ((< len-old len-new)
@@ -4524,19 +4603,28 @@
                   len-new))))
          (take-new (- len-new len-common))
          (nthcdr-old (- len-old len-common))
+         (old-th-tail (nthcdr nthcdr-old old-th))
+         #-acl2-loop-only
+         (return-new-p (eq (nthcdr take-new new-th)
+                           old-th-tail))
          (new-part-of-new-rev
-          (first-n-ac-rev (the-unsigned-byte! 29 take-new
-                                              'extend-current-theory)
-                          new-th
-                          nil)))
-    (mv (revappend new-part-of-new-rev
-                   (nthcdr nthcdr-old old-th))
+          (cond #-acl2-loop-only
+                ((and return-new-p (eq old-aug-th :none))
+                 'irrelevant)
+                (t
+                 (first-n-ac-rev (the-unsigned-byte! 29 take-new
+                                                     'extend-current-theory)
+                                 new-th
+                                 nil)))))
+    (mv (cond #-acl2-loop-only
+              (return-new-p new-th)
+              (t (revappend new-part-of-new-rev old-th-tail)))
         (if (eq old-aug-th :none)
             :none
           (augment-runic-theory1 new-part-of-new-rev nil wrld
                                  (nthcdr nthcdr-old old-aug-th))))))
 
-(defun update-current-theory (theory0 wrld)
+(defun update-current-theory (theory0 theory0-length wrld)
   (mv-let (theory theory-augmented)
           (extend-current-theory
 
@@ -4551,14 +4639,19 @@
 ; calling extend-current-theory.
 
            (global-val 'current-theory wrld)
+           (global-val 'current-theory-length wrld)
            theory0
+           theory0-length
            (global-val 'current-theory-augmented wrld)
            wrld)
-          (global-set 'current-theory theory
-                      (global-set 'current-theory-augmented theory-augmented
-                                  (global-set 'current-theory-index
-                                              (1- (get-next-nume wrld))
-                                              wrld)))))
+          (global-set
+           'current-theory theory
+           (global-set
+            'current-theory-augmented theory-augmented
+            (global-set
+             'current-theory-index (1- (get-next-nume wrld))
+             (global-set 'current-theory-length theory0-length
+                         wrld))))))
 
 (defun put-cltl-command (cltl-cmd wrld wrld0)
 
@@ -4595,33 +4688,36 @@
 ; :by, or :clause-processor.  However, if the list of events is empty, then we
 ; do not extend wrld.  See :DOC dead-events.
 
-  (let* ((use-lst (use-names-in-ttree ttree t))
-         (by-lst (by-names-in-ttree ttree t))
-         (cl-proc-lst (cl-proc-names-in-ttree ttree))
-         (runes (all-runes-in-ttree ttree nil))
-         (names (append use-lst by-lst cl-proc-lst
-                        (strip-non-nil-base-symbols runes nil)))
-         (sorted-names (and names ; optimization
-                            (sort-symbol-listp
-                             (cond ((symbolp namex)
-                                    (cond ((member-eq namex names)
+  (mv-let (use-names0 by-names0 cl-proc-fns0)
+    (cl-proc-data-in-ttree ttree t)
+    (let* ((runes (all-runes-in-ttree ttree nil))
+           (use-lst (use-names-in-ttree ttree t))
+           (by-lst (by-names-in-ttree ttree t))
+           (names (append by-names0 by-lst
+                          cl-proc-fns0
+                          use-names0 use-lst
+                          (strip-non-nil-base-symbols runes nil)))
+           (sorted-names (and names ; optimization
+                              (sort-symbol-listp
+                               (cond ((symbolp namex)
+                                      (cond ((member-eq namex names)
 
 ; For example, the :induction rune for namex, or a :use (or maybe even :by)
 ; hint specifying namex, can be used in the guard proof.
 
-                                           (remove-eq namex names))
-                                          (t names)))
-                                   ((intersectp-eq namex names)
-                                    (set-difference-eq names namex))
-                                   (t names))))))
-    (cond ((and (not (eql namex 0))
-                sorted-names)
-           (global-set 'proof-supporters-alist
-                       (acons namex
-                              sorted-names
-                              (global-val 'proof-supporters-alist wrld))
-                       wrld))
-          (t wrld))))
+                                             (remove-eq namex names))
+                                            (t names)))
+                                     ((intersectp-eq namex names)
+                                      (set-difference-eq names namex))
+                                     (t names))))))
+      (cond ((and (not (eql namex 0))
+                  sorted-names)
+             (global-set 'proof-supporters-alist
+                         (acons namex
+                                sorted-names
+                                (global-val 'proof-supporters-alist wrld))
+                         wrld))
+            (t wrld)))))
 
 (defmacro update-w (condition new-w &optional retract-p)
 
@@ -6556,7 +6652,8 @@
   (command-block-names1 (cdr wrld) nil symbol-classes))
 
 (defun symbol-name-lst (lst)
-  (cond ((null lst) nil)
+  (declare (xargs :guard (symbol-listp lst)))
+  (cond ((endp lst) nil)
         (t (cons (symbol-name (car lst))
                  (symbol-name-lst (cdr lst))))))
 
@@ -7690,7 +7787,8 @@
        nil    ; cform
        'translam
        (w state)
-       (default-state-vars state)))
+       (default-state-vars state)
+       nil))
      (declare (ignore bindings))
      (mv flg val state)))
 
@@ -9407,117 +9505,118 @@
    (t
     (er-let*@par
      ((term (translate@par form t t t ctx wrld state)))
-     (cond
-      ((or (variablep term)
-           (fquotep term))
-       (er@par soft ctx
-         "The term ~x0 is not expandable.  See the :expand discussion in :DOC ~
-          hints."
-         form))
-      ((flambda-applicationp term)
+     (let ((term (remove-guard-holders term wrld)))
        (cond
-        (name (er@par soft ctx
-                "An :expand hint may only specify :WITH for an expression ~
-                 that is the application of a function, unlike ~x0."
-                form))
-        (t (value@par (make expand-hint
-                            :pattern term
-                            :alist (if (null free-vars)
-                                       :none
-                                     (let ((bound-vars
-                                            (set-difference-eq (all-vars term)
-                                                               free-vars)))
-                                       (pairlis$ bound-vars bound-vars)))
-                            :rune nil
-                            :equiv 'equal
-                            :hyp nil
-                            :lhs term
-                            :rhs (subcor-var (lambda-formals (ffn-symb term))
-                                             (fargs term)
-                                             (lambda-body (ffn-symb term))))))))
-      (t
-       (mv-let
-        (er-msg rune equiv hyp lhs rhs)
-        (cond
-         (name
-          (let* ((fn (ffn-symb term))
-                 (lemmas (getpropc fn 'lemmas nil wrld))
-                 (lemma (cond ((symbolp name)
-                               (find-named-lemma
-                                (deref-macro-name name (macro-aliases wrld))
-                                lemmas
-                                t))
-                              (t (find-runed-lemma name lemmas)))))
-            (cond
-             (lemma
-              (let* ((hyps (access rewrite-rule lemma :hyps))
-                     (lhs (access rewrite-rule lemma :lhs))
-                     (lhs-vars (all-vars lhs))
-                     (rhs (access rewrite-rule lemma :rhs)))
-                (cond
-                 ((or (free-varsp-member-lst hyps lhs-vars)
-                      (free-varsp-member rhs lhs-vars))
-                  (mv (msg "The ~@0 of a rule given to :with in an :expand ~
-                            hint must not contain free variables that are not ~
-                            among the variables on its left-hand side.  The ~
-                            ~#1~[variable ~&1 violates~/variables ~&1 ~
-                            violate~] this requirement."
-                           (if (free-varsp-member rhs lhs-vars)
-                               "left-hand side"
-                             "hypotheses")
-                           (if (free-varsp-member rhs lhs-vars)
-                               (reverse
-                                (set-difference-eq (all-vars rhs) lhs-vars))
-                             (reverse
-                              (set-difference-eq (all-vars1-lst hyps nil)
-                                                 lhs-vars))))
-                      nil nil nil nil nil))
-                 (t (mv nil
-                        (access rewrite-rule lemma :rune)
-                        (access rewrite-rule lemma :equiv)
-                        (and hyps (conjoin hyps))
-                        lhs
-                        rhs)))))
-             (t (mv (msg "Unable to find a lemma for :expand hint (:WITH ~x0 ~
-                          ...)."
-                         name)
-                    nil nil nil nil nil)))))
-         (t (let ((def-body (def-body (ffn-symb term) wrld)))
-              (cond
-               (def-body
-                 (let ((formals (access def-body def-body :formals)))
-                   (mv nil
-                       (access def-body def-body :rune)
-                       (access def-body def-body :equiv)
-                       (access def-body def-body :hyp)
-                       (cons-term (ffn-symb term) formals)
-                       (access def-body def-body :concl))))
-               (t (mv (msg "The :expand hint for ~x0 is illegal, because ~x1 ~
-                            is not a defined function."
-                           form
-                           (ffn-symb term))
-                      nil nil nil nil nil))))))
+        ((or (variablep term)
+             (fquotep term))
+         (er@par soft ctx
+           "The term ~x0 is not expandable.  See the :expand discussion in ~
+            :DOC hints."
+           form))
+        ((flambda-applicationp term)
+         (cond
+          (name (er@par soft ctx
+                  "An :expand hint may only specify :WITH for an expression ~
+                   that is the application of a function, unlike ~x0."
+                  form))
+          (t (value@par (make expand-hint
+                              :pattern term
+                              :alist (if (null free-vars)
+                                         :none
+                                       (let ((bound-vars
+                                              (set-difference-eq (all-vars term)
+                                                                 free-vars)))
+                                         (pairlis$ bound-vars bound-vars)))
+                              :rune nil
+                              :equiv 'equal
+                              :hyp nil
+                              :lhs term
+                              :rhs (subcor-var (lambda-formals (ffn-symb term))
+                                               (fargs term)
+                                               (lambda-body (ffn-symb term))))))))
+        (t
+         (mv-let
+           (er-msg rune equiv hyp lhs rhs)
+           (cond
+            (name
+             (let* ((fn (ffn-symb term))
+                    (lemmas (getpropc fn 'lemmas nil wrld))
+                    (lemma (cond ((symbolp name)
+                                  (find-named-lemma
+                                   (deref-macro-name name (macro-aliases wrld))
+                                   lemmas
+                                   t))
+                                 (t (find-runed-lemma name lemmas)))))
+               (cond
+                (lemma
+                 (let* ((hyps (access rewrite-rule lemma :hyps))
+                        (lhs (access rewrite-rule lemma :lhs))
+                        (lhs-vars (all-vars lhs))
+                        (rhs (access rewrite-rule lemma :rhs)))
+                   (cond
+                    ((or (free-varsp-member-lst hyps lhs-vars)
+                         (free-varsp-member rhs lhs-vars))
+                     (mv (msg "The ~@0 of a rule given to :with in an :expand ~
+                               hint must not contain free variables that are ~
+                               not among the variables on its left-hand side. ~
+                               ~ The ~#1~[variable ~&1 violates~/variables ~
+                               ~&1 violate~] this requirement."
+                              (if (free-varsp-member rhs lhs-vars)
+                                  "left-hand side"
+                                "hypotheses")
+                              (if (free-varsp-member rhs lhs-vars)
+                                  (reverse
+                                   (set-difference-eq (all-vars rhs) lhs-vars))
+                                (reverse
+                                 (set-difference-eq (all-vars1-lst hyps nil)
+                                                    lhs-vars))))
+                         nil nil nil nil nil))
+                    (t (mv nil
+                           (access rewrite-rule lemma :rune)
+                           (access rewrite-rule lemma :equiv)
+                           (and hyps (conjoin hyps))
+                           lhs
+                           rhs)))))
+                (t (mv (msg "Unable to find a lemma for :expand hint (:WITH ~
+                             ~x0 ...)."
+                            name)
+                       nil nil nil nil nil)))))
+            (t (let ((def-body (def-body (ffn-symb term) wrld)))
+                 (cond
+                  (def-body
+                    (let ((formals (access def-body def-body :formals)))
+                      (mv nil
+                          (access def-body def-body :rune)
+                          (access def-body def-body :equiv)
+                          (access def-body def-body :hyp)
+                          (cons-term (ffn-symb term) formals)
+                          (access def-body def-body :concl))))
+                  (t (mv (msg "The :expand hint for ~x0 is illegal, because ~
+                               ~x1 is not a defined function."
+                              form
+                              (ffn-symb term))
+                         nil nil nil nil nil))))))
 
 ; We could do an extra check that the lemma has some chance of applying.  This
 ; would involve a call of (one-way-unify lhs term) unless :free was specified,
 ; in which case we would need to call a full unification routine.  That doesn't
 ; seem worth the trouble merely for early user feedback.
 
-        (cond
-         (er-msg (er@par soft ctx "~@0" er-msg))
-         (t (value@par (make expand-hint
-                             :pattern term
-                             :alist (if (null free-vars)
-                                        :none
-                                      (let ((bound-vars
-                                             (set-difference-eq (all-vars term)
-                                                                free-vars)))
-                                        (pairlis$ bound-vars bound-vars)))
-                             :rune rune
-                             :equiv equiv
-                             :hyp hyp
-                             :lhs lhs
-                             :rhs rhs)))))))))))
+           (cond
+            (er-msg (er@par soft ctx "~@0" er-msg))
+            (t (value@par (make expand-hint
+                                :pattern term
+                                :alist (if (null free-vars)
+                                           :none
+                                         (let ((bound-vars
+                                                (set-difference-eq (all-vars term)
+                                                                   free-vars)))
+                                           (pairlis$ bound-vars bound-vars)))
+                                :rune rune
+                                :equiv equiv
+                                :hyp hyp
+                                :lhs lhs
+                                :rhs rhs))))))))))))
 
 (defun@par translate-expand-term (x ctx wrld state)
 
@@ -9859,8 +9958,10 @@
     (er-let*@par
      ((term (translate@par (cons (car arg) (cadr (car arg)))
                            t t t ctx wrld state))
+      (term (value@par (remove-guard-holders term wrld)))
 ; known-stobjs = t (stobjs-out = t)
-      (rst (translate-hands-off-hint1@par (cdr arg) ctx wrld state)))
+      (rst (translate-hands-off-hint1@par (cdr arg) ctx wrld state))
+      (rst (value@par (remove-guard-holders-lst rst wrld))))
 
 ; Below we assume that if you give translate ((lambda ...) ...) and it
 ; does not cause an error, then it gives you back a function application.
@@ -9974,13 +10075,14 @@
            (t (access type-prescription tp :corollary)))))
        ((and (eq (car rune) :induction)
              (equal (cddr rune) nil))
-        (prettyify-clause-set
-         (induction-formula (list (list (cons :p (formals (base-symbol rune)
-                                                          wrld))))
-                            (tests-and-alists-lst-from-fn (base-symbol rune)
-                                                          wrld))
-         nil
-         wrld))
+
+; At one time we returned a result based on induction-formula.  But that result
+; was not a term: it contained calls of :P and was untranslated (see pf-fn for
+; how that is now handled).  There is truly no formula associated with an
+; induction "rule", as opposed to the corresponding symbol (which represents a
+; defthm event with formula 'T), so we return nil here.
+
+        nil)
        (t (er hard 'corollary
               "It was thought to be impossible for a rune to have no ~
                'classes property except in the case of the four or five ~
@@ -10022,6 +10124,47 @@
                    (t (or (getpropc name 'theorem nil wrld)
                           (getpropc name 'defchoose-axiom nil wrld))))))))
 
+(defun pf-induction-scheme (x wrld state)
+  (declare (xargs :guard (or (symbolp x)
+                             (runep x wrld))))
+  (flet ((induction-pretty-clause-set
+          (name flg wrld)
+          (prettyify-clause-set
+           (induction-formula (list (list (cons :p (formals name wrld))))
+                              (tests-and-alists-lst-from-fn name wrld))
+           flg
+           wrld)))
+    (let* ((rune (if (symbolp x)
+                     (let ((r (list :induction x)))
+                       (and (runep r wrld)
+                            r))
+                   (and (eq (car x) :induction)
+                        (null (cddr x)) ; sanity check
+                        x)))
+           (name (and rune (base-symbol rune))))
+      (cond
+       ((null rune) (mv nil nil))
+       ((function-symbolp name wrld)
+        (mv (induction-pretty-clause-set name (let*-abstractionp state) wrld)
+            nil))
+       (t (let* ((class (truncated-class
+                         rune
+                         (getpropc name 'runic-mapping-pairs
+                                   '(:error "See COROLLARY.")
+                                   wrld)
+                         (getpropc name 'classes nil wrld)))
+                 (scheme (and (consp class)
+                              (eq (car class) :induction)
+                              (cadr (member :scheme class))))
+                 (fn (and scheme
+                          (ffn-symb scheme))))
+            (cond ((runep `(:induction ,fn) wrld)
+                   (mv (induction-pretty-clause-set fn
+                                                    (let*-abstractionp state)
+                                                    wrld)
+                       fn))
+                  (t (mv nil nil)))))))))
+
 (defun pf-fn (name state)
   (io? temporary nil (mv erp val state)
        (name)
@@ -10032,26 +10175,46 @@
            (let* ((name (if (symbolp name)
                             (deref-macro-name name (macro-aliases (w state)))
                           name))
-                  (term (formula name t wrld)))
+                  (term (if (and (not (symbolp name)) ; (runep name wrld)
+                                 (eq (car name) :induction))
+                            nil
+                          (formula name t wrld))))
              (mv-let (col state)
-                     (cond
-                      ((equal term *t*)
-                       (fmt1 "The formula associated with ~x0 is simply T.~%"
-                             (list (cons #\0 name))
-                             0
-                             (standard-co state) state nil))
-                      (term
-                       (fmt1 "~p0~|"
-                             (list (cons #\0 (untranslate term t wrld)))
-                             0
-                             (standard-co state) state
-                             (term-evisc-tuple nil state)))
-                      (t
-                       (fmt1 "There is no formula associated with ~x0.~%"
-                             (list (cons #\0 name))
-                             0 (standard-co state) state nil)))
-                     (declare (ignore col))
-                     (value :invisible))))
+               (cond
+                ((or (null term)
+                     (equal term *t*))
+                 (fmt1 (if (null term)
+                           "There is no formula associated with ~x0.~@1"
+                         "The formula associated with ~x0 is simply T.~@1")
+                       (list (cons #\0 name)
+                             (cons #\1
+                                   (mv-let (s fn)
+                                     (pf-induction-scheme name wrld state)
+                                     (if s
+                                         (msg "~|However, there is the ~
+                                               following associated induction ~
+                                               scheme~@0.~|~x1~|"
+                                              (if fn
+                                                  (msg " based on the ~
+                                                        function symbol, ~x0"
+                                                       fn)
+                                                "")
+                                              s)
+                                       "~|"))))
+                       0
+                       (standard-co state) state nil))
+                (term
+                 (fmt1 "~p0~|"
+                       (list (cons #\0 (untranslate term t wrld)))
+                       0
+                       (standard-co state) state
+                       (term-evisc-tuple nil state)))
+                (t
+                 (fmt1 "There is no formula associated with ~x0.~|"
+                       (list (cons #\0 name))
+                       0 (standard-co state) state nil)))
+               (declare (ignore col))
+               (value :invisible))))
           (t
            (er soft 'pf
                "~x0 is neither a symbol nor a rune in the current world."
@@ -10143,6 +10306,7 @@
         RETURN-LAST         ;;; affects constraints (see remove-guard-holders1)
         MV-LIST             ;;; affects constraints (see remove-guard-holders1)
         CONS-WITH-HINT      ;;; affects constraints (see remove-guard-holders1)
+        THE-CHECK           ;;; affects constraints (see remove-guard-holders1)
 
 ; The next six are used in built-in defpkg axioms.
 
@@ -10202,15 +10366,16 @@
            (and (body fn nil wrld)
                 t))))
 
-(defconst *unknown-constraints*
-
-; This value must not be a function symbol, because functions may need to
-; distinguish conses whose car is this value from those consisting of function
-; symbols.
-
-  :unknown-constraints)
-
 (defun constraint-info (fn wrld)
+
+; Warning: If fn is defined by mutual-recursion, this function returns only the
+; defining equation for f, not of its mutual-recursion siblings.  To obtain
+; their constraints as well, see constraint-info+.
+
+; Be careful about calling this function when fn is a program mode function
+; symbol!  In that case we return the formula equating the call of fn on its
+; formals with the unnormalized-body of fn, which probably is not sensible
+; logically (but might be useful for finding ancestors, for example).
 
 ; This function returns a pair (mv flg x).  In the simplest and perhaps most
 ; common case, there is no 'constraint-lst property for fn, e.g., when fn is
@@ -11575,9 +11740,352 @@
                               tests)))
                  (t tests)))))
 
+; Essay on Choking on Loop$ Recursion
+
+; Several system functions, e.g., termination-machine, termination-machines,
+; termination-theorem-clauses, and putprop-recursivep-lst have changed so that
+; they anticipate the possibility of recursive calls inside quoted lambda
+; objects.  This is necessary to support recursion in loop$ statements.  But
+; these system functions are sometimes called directly in user-authored books.
+; We do not want to be responsible for correcting those books.  So our
+; functions that deal with loop$ recursion -- at least, those of our functions
+; that are sometimes used directly by users -- have been modified to check
+; whether loop$ recursion is present and to cause a hard error.  We call this
+; ``choking on loop$ recursion.''  However, a difficulty is that some of our
+; functions do not take world as an argument and so cannot actually implement
+; the check properly!  For example, loop$ recursion requires a singly-recursive
+; defun with an xargs declaration of loop$-recursion t, but the old definition
+; of termination-machine can't see the declarations.  Furthermore, if
+; loop$-recursion t is declared, every lambda in the body must be well-formed
+; and that is checked by chk-acceptable-defuns1 before termination-machine ever
+; sees the definition.  But termination-machine doesn't take the world and so
+; can't check well-formedness and thus it can't really explore the body of the
+; quoted lambda object looking for recursive calls.  So our choke detector is
+; conservative and does a tree-occur-eq looking for the fn symbol in the
+; ``body'' of the evg.
+
+; As a final twist, choke detection slows us down.  So functions outfitted with
+; the choke detection have been given a new argument, loop$-recursion-checkedp,
+; which if T means the choke detection is skipped because, supposedly, the
+; caller has done all the necessary well-formedness checks.  This extra
+; argument, of course, breaks books that call such system functions.  That's by
+; design.  The regression will fail and we'll find them.  But rather than fix
+; them properly -- i.e., rather than figuring out how that user's book ought to
+; handle loop$ recursion -- we just add the loop$-recursion-checkedp argument
+; and set it to NIL, meaning choke detection is run.
+
+; Loop$-recursion, a different but similarly named flag, has the value declared
+; in the :loop$-recursion xarg.  If non-nil it means loop$ recursion is
+; permited and present!  If NIL it means loop$ recursion is prohibited and
+; doesn't occur.  But it is only valid if loop$ recursion has been checked.
+
+; Note that loop$-recursion-checkedp does not mean that loop$ recursion is
+; present!  It just means that the bodies have passed the tests in
+; chk-acceptable-defuns1.  What this really means is that the function being,
+; e.g., termination-machine, is being called from within our own source code,
+; where we know definitions have been checked thoroughly before other
+; processing occurs.  But a user might call these system functions and there we
+; advise the user to call them with loop$-recursion-checkedp nil.  That forces
+; the check.  Meanwhile, back in our own code, the choke check is never done
+; and we just proceed.  Note also that if the similarly named flag
+; loop$-recursion is t we know not only that loop$ recursion is allowed but
+; that it actually happens somewhere in the body.
+
+; Our convention is that any of our functions that involves loop$-recursion and
+; is called in a user's book must have a loop$-recursion-checkedp argument that
+; if nil means that the function must call the choke detector.  If a user book
+; calls one of these functions without the proper number of arguments we will
+; get a syntax error if the user's call is in a :program or :logic mode
+; function.  But if it is in a raw function, no compile error may be detected.
+; The result (at least in ccl) is often a runtime memory error and a print out
+; of the call stack.  That print out will show (somewhere) the offending
+; function which is called with insufficient arguments.
+
 (mutual-recursion
 
-(defun termination-machine (names body alist tests ruler-extenders)
+(defun choke-on-loop$-recursion1 (fn term sysfn)
+  (cond
+   ((variablep term) nil)
+   ((fquotep term) nil)
+   ((flambdap (ffn-symb term))
+    (or (choke-on-loop$-recursion1 fn (lambda-body (ffn-symb term)) sysfn)
+        (choke-on-loop$-recursion1-lst fn (fargs term) sysfn)))
+   ((and (loop$-scion-style (ffn-symb term) *loop$-keyword-info*)
+         (quotep (fargn term 1))
+         (consp (unquote (fargn term 1))))
+; This is a loop$ scion call on a quoted cons.  So this might be a loop$ scion
+; call on a quoted lambda.  But the lambda may not be well-formed and because
+; we do not have access to world, we can't check.  So we just see whether fn
+; occurs anywhere in the ``body'' of the ``lambda.''
+
+    (cond ((tree-occur-eq fn (lambda-object-body (unquote (fargn term 1))))
+           (er hard 'choke-on-loop$-recursion
+               "It appears that the ACL2 system function ~x0 has been called ~
+                inappropriately on a function body that engages in loop$ ~
+                recursion.  In particular, ~x1 in the body of ~x2 looks like ~
+                a call of a translated LOOP$ statement that recursively calls ~
+                ~x2.  (We can't be sure because we do not have enough ~
+                contextual information so we have been conservative in our ~
+                defensive check!)  Recursion in quoted LAMBDA constants was ~
+                disallowed when LOOP$ was first introduced but has since been ~
+                allowed.  We suspect some user-managed book calls ~x0 without ~
+                having been updated to anticipate the possibility of ~
+                recursion inside quoted LAMBDA objects!"
+               sysfn term fn))
+          (t (choke-on-loop$-recursion1-lst fn (fargs term) sysfn))))
+   (t (choke-on-loop$-recursion1-lst fn (fargs term) sysfn))))
+
+(defun choke-on-loop$-recursion1-lst (fn terms sysfn)
+  (cond ((endp terms) nil)
+        (t (or (choke-on-loop$-recursion1 fn (car terms) sysfn)
+               (choke-on-loop$-recursion1-lst fn (cdr terms) sysfn)))))
+)
+
+(defun choke-on-loop$-recursion (loop$-recursion-checkedp names body sysfn)
+
+; See the Essay on Choking on Loop$ Recursion above.  We can skip the choke
+; detector if loop$ recursion has already been exposed (i.e., removed) or if
+; there is more than one fn in names (meaning this is a mutual-recursion which
+; disallows loop$-recursion).  This function either causes a hard error or
+; returns nil.
+
+  (cond ((or loop$-recursion-checkedp
+             (cdr names))
+         nil)
+        (t (choke-on-loop$-recursion1
+            (car names)
+            body
+            sysfn))))
+
+; Essay on the Measure Conjectures for Loop$ Recursion
+
+; If a function, fn, with formals (v1 ... vn) and body fn-body contains
+; recursive calls of fn in translated loop$ statements, those calls are hidden
+; because they are in quoted lambda objects.  But the termination machine
+; generated for fn must expose these hidden calls, along with ruling
+; hypotheses, include the hypothesis explaining the iteration over the
+; target(s).
+
+; In this essay we show two generic examples, one for plain loop$s and one for
+; fancy loop$s.
+
+; Recall we has been guaranteed by chk-acceptable-defuns1: First, EVERY QUOTED
+; LAMBDA OBJECT IN IT IS WELL-FORMED, so we can treat the bodies like terms.
+; Second, the lambda provided for a plain loop has exactly one formal and the
+; lambda for a fancy loop has two.  Third, all recursive calls of fn in quoted
+; lambdas are in loop$ scions, so we don't have to look anywhere else.  Fourth,
+; there is at least one loop$ scion containing a recursive call, so we know fn
+; is recursive.  Also note that while we expect that almost all loop$ scion
+; calls will be generated by translate from loop$ statements -- and thereby
+; have very well-defined if complicated structural markings --we cannot count
+; on that!  Termination analysis must work even for well-formed calls of loop$
+; scions hand-written by the user.  So we do not look for translated loops,
+; just loop$ scion calls on quoted lambdas.
+
+; Dealing with Plain Loop$s
+
+; The most general form of a :plain loop$ scion calls approved by
+; chk-acceptable-defuns1 is:
+
+; (sum$ '(lambda (e) <dcl> lam-body) target)
+
+; where the <dcl> is optional.  Without loss of generality, assume lam-body has
+; been beta reduced so there are no ACL2 lambda expressions in it.
+
+; Suppose fn-body contains such a loop$ scion call ruled by hyps1, and that
+; within lam-body there is an occurrence of (fn d1 ... dn) ruled by hyps2.
+; Note that the only free variable in hyp2 and in the di is e.  But also
+; realize that e might occur outside the lambda, i.e., as a formal of fn and
+; thus in hyps1.  Let e' be a new variable that does not occur in hyps1, and
+; let s be the substitution {e <-- e'}.  Then the measure conjecture generated
+; for that recursive call in lam-body is:
+
+; (implies (and hyps1
+;               (member-equal e' target)
+;               hyps2/s)
+;          (rel (m d1 ... dn)/s (m v1 ... vn)))
+
+; Note that the only free variable in hyp2 and in the di is e and we rename e
+; to be e' to avoid conflating uses of e outside the lambda (i.e., in hyps1)
+; from those inside.  We illustrate that problem in a separate section of this
+; essay below.
+
+; Note also that we must generate the measure conjectures arising from
+; recursive calls in target as well!
+
+; Dealing with Fancy Loop$s
+
+; The most general form of a :fancy loop$ scion call approved by
+; chk-acceptable-defuns1 is:
+
+; (SUM$+ '(LAMBDA (gv iv) <dcl> lam-body)
+;        globals
+;        target)
+
+; Again assume lam-body has been beta reduced.  Suppose that hyp1 rules the
+; loop$ scion call and that within lam-body is a recursive call (fn d1 ... dn)
+; ruled by hyps2.  Note that the only free vars in lam-body are gv and iv.  But
+; gv is always bound to globals as the fancy loop$ scion iterates across
+; target.  Meanwhile, iv might occur outside the lambda and must be renamed.
+; So iv' be a new variable not occuring in hyps1 and let s be the substitution
+; {gv <-- globals, iv <-- iv'}.  Then the measure conjecture generated for this
+; call of (fn d1 ... dn) in lam-body is
+
+; (implies (and hyps1
+;               (member-equal e' target)
+;               hyps2/s)
+;          (rel (m d1 ... dn)/s (m v1 ... vn)))
+
+; Note also that we must generate the measure conjectures for both globals and
+; target.
+
+; Caveat about the Beta Reduction Assumption:  In the implementation we do not
+; actually beta reduce lam-body all at once but instead carry along a substitution
+; and beta reduce as we explore lam-body for recursive calls.
+
+; The Treachery of Variable Capture
+
+; Below is an example of maximal variable confusion for a plain loop.  First we
+; introduce some warranted functions that ought to be just stubbed out.
+
+; (encapsulate nil
+;   (defun$ hyp1 (x) (equal x 1))
+;   (defun$ hyp2 (x) (equal x 1))
+;   (defun$ hyp3 (x) (equal x 1))
+;   (defun$ fn1 (x) x)
+;   (defun$ fn2 (x) x)
+;   (defun$ fn3 (x) x)
+;   (defun$ fn4 (x) x)
+;   (defun$ fn5 (x) x)
+;   (defun$ fn6 (x) x)
+;   (in-theory (disable hyp1 hyp2 hyp3 fn1 fn2 fn3 fn4 fn5 fn6)))
+
+; The defun below will fail.  The column of comments renames the iteration
+; variables as termination-machine-rec will, and exhibits the beta reduced
+; versions of the corresponding let bindings and relevant terms on the line.
+
+; (defun fee (e)
+;   (declare (xargs :loop$-recursion t
+;                   :measure (acl2-count e)))
+;   (if (hyp1 e)
+;       (let ((e (fn1 e)))
+;         (loop$ for e in (fn2 e)                 ; nv0 in (fn2 (fn1 e))
+;                sum
+;                (let ((e (fn3 e)))               ; (e (fn3 nv0))
+;                  (if (hyp2 e)                   ; (hyp2 (fn3 nv0))
+;                      (loop$ for e in (fn4 e)    ; nv1 in (fn4 (fn3 nv0))
+;                             sum
+;                             (let ((e (fn5 e)))  ; (e (fn5 nv1))
+;                               (if (hyp3 e)      ; (hyp3 (fn5 nv1))
+;                                   (fee (fn6 e)) ; (fee (fn6 (fn5 nv1)))
+;                                   0)))
+;                      0))))
+;       0))
+
+; Here is the generated measure conjecture:
+
+; (IMPLIES (AND (HYP1 E)
+;               (MEMBER-EQUAL NV0 (FN2 (FN1 E)))
+;               (HYP2 (FN3 NV0))
+;               (MEMBER-EQUAL NV1 (FN4 (FN3 NV0)))
+;               (HYP3 (FN5 NV1)))
+;          (O< (ACL2-COUNT (FN6 (FN5 NV1)))
+;              (ACL2-COUNT E))))
+
+; Note how screwed up it would be if we used the user's names for the
+; iteration variables, i.e., if we replaced NV0 and NV1 both by E.
+
+; Enough said?
+
+; An Example of a Fancy Loop$'s Measure Conjecture
+
+; Execute the encapsulate above to get a bunch of disabled warranted stub-like
+; functions.  Then consider:
+
+; (defun fum (g x)
+;   (declare (xargs :loop$-recursion t
+;                   :measure (acl2-count x)))
+;   (if (and (consp x)
+;            (hyp1 g))
+;       (loop$ for e1 in (fn1 x) as e2 in (fn2 x)
+;              collect
+;              (if (hyp2 (nth g e1))
+;                  (fn3 (fum (fn4 g) (nth g e2)))
+;                  nil))
+;       x))
+
+; The measure conjecture is:
+
+; (IMPLIES (AND (AND (CONSP X)
+;                    (HYP1 G))
+;               (MEMBER-EQUAL NV0 (LOOP$-AS (LIST (FN1 X) (FN2 X))))
+;               (HYP2 (NTH (CAR (LIST G)) (CAR NV0))))
+;          (O< (ACL2-COUNT (NTH (CAR (LIST G)) (CADR NV0)))
+;              (ACL2-COUNT X)))
+
+; The (CAR (LIST G)) is, of course, immediately simplified to G so we get
+
+; (IMPLIES (AND (AND (CONSP X)
+;                    (HYP1 G))
+;               (MEMBER-EQUAL NV0 (LOOP$-AS (LIST (FN1 X) (FN2 X))))
+;               (HYP2 (NTH G (CAR NV0))))
+;          (O< (ACL2-COUNT (NTH G (CADR NV0)))
+;              (ACL2-COUNT X)))
+
+(mutual-recursion
+
+(defun all-loop$-scion-quote-lambdas (term alist)
+
+; We collect every subterm of term/alist that that is a call of a loop$ scion
+; on a quoted lambda and that is not within another such call.
+
+  (cond
+   ((variablep term) nil)
+   ((fquotep term) nil)
+   ((flambda-applicationp term)
+    (union-equal
+     (all-loop$-scion-quote-lambdas-lst (fargs term) alist)
+     (all-loop$-scion-quote-lambdas
+      (lambda-body (ffn-symb term))
+      (pairlis$ (lambda-formals (ffn-symb term))
+                (sublis-var-lst alist
+                                 (fargs term))))))
+   ((and (loop$-scion-style (ffn-symb term) *loop$-keyword-info*)
+         (quotep (fargn term 1))
+         (consp (unquote (fargn term 1)))
+         (eq (car (unquote (fargn term 1))) 'lambda))
+
+; We pay the price of instantiatiating the loop$ scion term now with the alist
+; even though it might not have any recursions in it.  C'est la vie.
+
+    (list (sublis-var alist term)))
+   (t (all-loop$-scion-quote-lambdas-lst (fargs term) alist))))
+
+(defun all-loop$-scion-quote-lambdas-lst (terms alist)
+  (cond ((endp terms) nil)
+        (t (union-equal
+            (all-loop$-scion-quote-lambdas (car terms) alist)
+            (all-loop$-scion-quote-lambdas-lst (cdr terms) alist)))))
+
+)
+
+(mutual-recursion
+
+(defun termination-machine-rec (loop$-recursion
+                                names body alist tests
+                                ruler-extenders avoid-vars)
+
+; This function is only called if loop$-recursion-checkedp is t, i.e., we have
+; run well-formedness checks on body.  The first argument above, the similarly
+; named variable loop$-recursion, if t, means that names is a singleton list
+; and that body actually exhibits loop$ recursion somewhere.
+
+; It is admittedly odd that `names' is a plural noun (and when loop$-recursion
+; is t, is a singleton list of function names) whereas `body' is singular (and
+; is the body of the only function listed in names).  The reason is that when
+; loop$-recursion is nil names may be a list of all the functions in a
+; mutually-recursive clique with the one defined by body and a call of any of
+; the functions in names constitutes recursion.
 
 ; This function builds a list of tests-and-call records for all calls in body
 ; of functions in names, but substituting alist into every term in the result.
@@ -11597,66 +12105,109 @@
 ; notion of "rules" is extended by ruler-extenders; see :doc
 ; acl2-defaults-table and see :doc ruler-extenders.
 
+; If loop$-recursion is non-nil and body is a loop$ scion call on a quoted
+; lambda (sum$ '(lambda ...) lst) then we know that the lambda is well-formed
+; (by the implicit loop$-recursion-checkedp = t mentioned above) and we look
+; for recursive calls inside the body of that lambda.  Furthermore, we generate
+; a new variable (i.e., not in avoid-vars), add it to avoid-vars, throw away
+; alist and replace it with one that binds the locals of the lambda to the new
+; variable, and add a ruling test that the value of this new variable is a
+; member of the target, lst.
+
   (cond
    ((or (variablep body)
         (fquotep body))
     nil)
    ((flambda-applicationp body)
     (let ((lambda-body-result
-           (termination-machine names
-                                (lambda-body (ffn-symb body))
-                                (pairlis$ (lambda-formals (ffn-symb body))
-                                          (sublis-var-lst alist (fargs body)))
-                                tests
-                                ruler-extenders)))
+           (termination-machine-rec loop$-recursion
+                                    names
+                                    (lambda-body (ffn-symb body))
+                                    (pairlis$ (lambda-formals (ffn-symb body))
+                                              (sublis-var-lst alist
+                                                              (fargs body)))
+                                    tests
+                                    ruler-extenders
+                                    avoid-vars)))
       (cond
        ((member-eq-all :lambdas ruler-extenders)
-        (union-equal (termination-machine-for-list names
-                                                   (fargs body)
-                                                   alist
-                                                   tests
-                                                   ruler-extenders)
+        (union-equal (termination-machine-rec-for-list loop$-recursion
+                                                       names
+                                                       (fargs body)
+                                                       alist
+                                                       tests
+                                                       ruler-extenders
+                                                       avoid-vars)
                      lambda-body-result))
        (t
-        (termination-machine1
-         (reverse tests)
-         (all-calls-lst names
-                        (fargs body)
-                        alist
-                        nil)
+        (append
+         (termination-machine1
+          (reverse tests)
+          (all-calls-lst names
+                         (fargs body)
+                         alist
+                         nil)
+          (termination-machine-rec-for-list
+           loop$-recursion
+           names
+           (all-loop$-scion-quote-lambdas-lst (fargs body) alist)
+           alist
+           tests
+           ruler-extenders
+           avoid-vars))
          lambda-body-result)))))
    ((eq (ffn-symb body) 'if)
     (let* ((inst-test (sublis-var alist
 
-; Since (remove-guard-holders x) is provably equal to x, the machine we
+; Since (remove-guard-holders-weak x) is provably equal to x, the machine we
 ; generate using it below is equivalent to the machine generated without it.
+; It might be sound also to call possibly-clean-up-dirty-lambda-objects (i.e.,
+; to call remove-guard-holders instead of remove-guard-holders-weak) so that
+; guard holders are removed from quoted lambdas in argument positions with ilk
+; :fn (or :fn?), but we don't expect to pay much of a price by playing it safe
+; here and in induction-machine-for-fn1.
 
-                                  (remove-guard-holders (fargn body 1))))
+                                  (remove-guard-holders-weak (fargn body 1))))
            (branch-result
-            (append (termination-machine names
-                                         (fargn body 2)
-                                         alist
-                                         (add-test-smart inst-test tests)
-                                         ruler-extenders)
-                    (termination-machine names
-                                         (fargn body 3)
-                                         alist
-                                         (add-test-smart
-                                          (dumb-negate-lit inst-test)
-                                          tests)
-                                         ruler-extenders))))
+            (append (termination-machine-rec loop$-recursion
+                                             names
+                                             (fargn body 2)
+                                             alist
+                                             (add-test-smart inst-test tests)
+                                             ruler-extenders
+                                             avoid-vars)
+                    (termination-machine-rec loop$-recursion
+                                             names
+                                             (fargn body 3)
+                                             alist
+                                             (add-test-smart
+                                              (dumb-negate-lit inst-test)
+                                              tests)
+                                             ruler-extenders
+                                             avoid-vars))))
       (cond
        ((member-eq-all 'if ruler-extenders)
-        (append (termination-machine names
-                                     (fargn body 1)
-                                     alist
-                                     tests
-                                     ruler-extenders)
+        (append (termination-machine-rec loop$-recursion
+                                         names
+                                         (fargn body 1)
+                                         alist
+                                         tests
+                                         ruler-extenders
+                                         avoid-vars)
                 branch-result))
        (t
-        (termination-machine1
-         (reverse tests)
-         (all-calls names (fargn body 1) alist nil)
+        (append
+         (termination-machine1
+          (reverse tests)
+          (all-calls names (fargn body 1) alist nil)
+          (termination-machine-rec-for-list
+           loop$-recursion
+           names
+           (all-loop$-scion-quote-lambdas (fargn body 1) alist)
+           alist
+           tests
+           ruler-extenders
+           avoid-vars))
          branch-result)))))
    ((and (eq (ffn-symb body) 'return-last)
          (quotep (fargn body 1))
@@ -11667,42 +12218,218 @@
 ; We could probably do this for any return-last call, but for legacy reasons
 ; (before introduction of return-last after v4-1) we restrict to 'mbe1-raw.
 
-    (termination-machine names
-                         (fargn body 3) ; (return-last 'mbe1-raw exec logic)
-                         alist
-                         tests
-                         ruler-extenders))
+    (termination-machine-rec loop$-recursion
+                             names
+                             (fargn body 3) ; (return-last 'mbe1-raw exec logic)
+                             alist
+                             tests
+                             ruler-extenders
+                             avoid-vars))
    ((member-eq-all (ffn-symb body) ruler-extenders)
-    (let ((rec-call (termination-machine-for-list names (fargs body) alist
-                                                  tests ruler-extenders)))
+    (let ((rec-call (termination-machine-rec-for-list loop$-recursion
+                                                      names (fargs body) alist
+                                                      tests ruler-extenders
+                                                      avoid-vars)))
       (if (member-eq (ffn-symb body) names)
           (cons (make tests-and-call
                       :tests (reverse tests)
                       :call (sublis-var alist body))
                 rec-call)
-        rec-call)))
-   (t (termination-machine1 (reverse tests)
-                            (all-calls names body alist nil)
-                            nil))))
+          rec-call)))
+   ((loop$-scion-style (ffn-symb body) *loop$-keyword-info*)
+    (let ((style (loop$-scion-style (ffn-symb body) *loop$-keyword-info*))
 
-(defun termination-machine-for-list (names bodies alist tests ruler-extenders)
+; Before we get too carried away with the possibility of loop$ recursion here,
+; we need to remember to deal with normal recursion in this term!  This
+; collects recursions in the globals and target expressions.
+
+          (normal-ans (termination-machine1 (reverse tests)
+                                            (all-calls names body alist nil)
+                                            nil)))
+      (cond
+       ((and loop$-recursion
+             (quotep (fargn body 1))
+             (consp (unquote (fargn body 1)))
+             (eq (car (unquote (fargn body 1))) 'lambda))
+
+; Loop$-recursion may be present in this call of a loop$ scion.  (We can't just
+; use ffnnamep to ask because it doesn't look inside of lambda objects that
+; might be in the body of this one; furthermore, that information alone
+; wouldn't help us since if a recursive call is buried several layers deep in
+; loop$ scions we need to generate the newvars and ruling member tests on the
+; way down.)  The well-formedness checks done by chk-acceptable-defuns1 ensures
+; that every quoted lambda is well-formed, and that every loop$ scion call is
+; on a quoted lambda of the right arity (1 or 2 depending on whether its a
+; :plain or :fancy loop$ scion).  We need give special attention to those loop$
+; scion calls whose quoted lambda contains a recursive call of the fn being
+; defined.  And this may be one!
+
+        (cond
+         ((eq style :plain)
+          (let* ((lamb (unquote (fargn body 1)))
+                 (v (car (lambda-object-formals lamb)))
+
+; While we generally follow the convention of calling
+; possibly-clean-up-dirty-lambda-objects anytime we're removing guard holders
+; we do not do so here because we don't want to think about the effect on
+; termination machines, at least not until we see it hurt us.
+
+                 (lamb-body (remove-guard-holders-weak
+                             (lambda-object-body lamb)))
+                 (target (sublis-var alist (fargn body 2)))
+                 (newvar (genvar v "NV" 0 avoid-vars))
+                 (avoid-vars (cons newvar avoid-vars))
+                 (inst-test `(MEMBER-EQUAL
+                              ,newvar
+                              ,(remove-guard-holders-weak target))))
+            (append normal-ans
+                    (termination-machine-rec loop$-recursion
+                                             names
+                                             lamb-body
+; Note: The only free var in lamb-body is v, so we can ignore the subsitutions
+; in alist!
+                                             (list (cons v newvar))
+                                             (add-test-smart inst-test tests)
+                                             ruler-extenders
+                                             avoid-vars)
+                    (termination-machine-rec-for-list
+                     loop$-recursion
+                     names
+                     (all-loop$-scion-quote-lambdas target alist)
+                     alist
+                     tests
+                     ruler-extenders
+                     avoid-vars))))
+         ((eq style :fancy)
+          (let* ((lamb (unquote (fargn body 1)))
+                 (gvars (car (lambda-object-formals lamb)))
+                 (ivars (cadr (lambda-object-formals lamb)))
+                 (lamb-body (remove-guard-holders-weak
+                             (lambda-object-body lamb)))
+                 (globals (sublis-var alist (fargn body 2)))
+                 (target (sublis-var alist (fargn body 3)))
+                 (newvar (genvar ivars "NV" 0 avoid-vars))
+                 (avoid-vars (cons newvar avoid-vars))
+                 (inst-test `(MEMBER-EQUAL
+                              ,newvar
+                              ,(remove-guard-holders-weak target))))
+            (append normal-ans
+                    (termination-machine-rec loop$-recursion
+                                             names
+                                             lamb-body
+                                             (list (cons gvars globals)
+                                                   (cons ivars newvar))
+                                             (add-test-smart inst-test tests)
+                                             ruler-extenders
+                                             avoid-vars)
+                    (termination-machine-rec-for-list
+                     loop$-recursion
+                     names
+; The following collects the top-level loop$-scion calls on quoted lambdas in
+; the globals and the target of a fancy loop$.
+                     (all-loop$-scion-quote-lambdas-lst (cdr (fargs body)) alist)
+                     alist
+                     tests
+                     ruler-extenders
+                     avoid-vars))))
+         (t normal-ans)))
+       (t
+
+; This is a loop$ scion call but not one that could have loop$ recursion in it,
+; (except possibly in the non-:FN arguments) so we just return the normal
+; answer.
+
+        normal-ans))))
+   (t (termination-machine1
+       (reverse tests)
+       (all-calls names body alist nil)
+       (termination-machine-rec-for-list
+        loop$-recursion
+        names
+        (all-loop$-scion-quote-lambdas body alist)
+        alist
+        tests
+        ruler-extenders
+        avoid-vars)))))
+
+(defun termination-machine-rec-for-list
+  (loop$-recursion names bodies alist tests ruler-extenders avoid-vars)
   (cond ((endp bodies) nil)
-        (t (append (termination-machine names (car bodies) alist tests
-                                        ruler-extenders)
-                   (termination-machine-for-list names (cdr bodies) alist tests
-                                                 ruler-extenders)))))
+        (t (append (termination-machine-rec loop$-recursion
+                                            names (car bodies) alist tests
+                                            ruler-extenders avoid-vars)
+                   (termination-machine-rec-for-list loop$-recursion
+                                                     names
+                                                     (cdr bodies)
+                                                     alist tests
+                                                     ruler-extenders
+                                                     avoid-vars)))))
 )
 
-(defun termination-machines (names bodies ruler-extenders-lst)
+(defun termination-machine (loop$-recursion-checkedp
+                            loop$-recursion
+                            names formals body
+                            alist tests ruler-extenders)
 
-; This function builds the termination machine for each function defined
-; in names with the corresponding body in bodies.  A list of machines
-; is returned.
+; See the Essay on Choking on Loop$ Recursion for an explanation of the first
+; argument.  See termination-machine-rec for the spec of what this function
+; does otherwise.
+
+; Names is the list of all the functions defined in a mutually recursive
+; clique, formals is the list of formals of one of those functions and body is
+; the body of one of those functions.  We are only interested in formals when
+; loop$-recursion-checkedp and loop$-recursion are t, in which case names is a
+; singleton containing the name of single function being defined.  In that
+; case, we use formals to initialize the list of all variables to avoid.  Note
+; that bound variables (e.g., from LET statements) occurring in body will be
+; eliminated by the on-the-fly beta reduction.
+
+; Note: formals is irrelevant (as described above) if loop$-recursion-checkedp
+; is nil.
+
+  (prog2$
+   (choke-on-loop$-recursion loop$-recursion-checkedp
+                             names
+                             body
+                             'termination-machine)
+   (termination-machine-rec loop$-recursion
+                            names body alist tests ruler-extenders
+                            (if (and loop$-recursion-checkedp
+                                     loop$-recursion)
+
+; We know names, formals-lst, and bodies are singleton lists and that loop$
+; recursion is present.  In this case, we compute the list of all formals and
+; all bound vars in the body of the fn being defined.  This is the initial list
+; of variable names to avoid when generating newvars for the member-equal hyps
+; implicitly ruling recursions hidden in quoted lambdas.
+
+                                formals
+                                nil))))
+
+(defun termination-machines (loop$-recursion-checkedp
+                             loop$-recursion
+                             names arglists bodies ruler-extenders-lst)
+
+; This function builds the termination machine for each function defined in
+; names with the corresponding formals in arglists and body in bodies.  A list
+; of machines is returned.
+
+; Note: arglists is irrelevant (as implied by the comment in
+; termination-machine) if loop$-recursion-checkedp is nil.  Otherwise, it
+; should be in 1:1 correspondence with names and bodies.  This function chokes
+; on unchecked loop$ recursion, but inherits the call of
+; (choke-on-loop$-recursion loop$-recursion-checkedp ...) from
+; termination-machine.
 
   (cond ((null bodies) nil)
-        (t (cons (termination-machine names (car bodies) nil nil
+        (t (cons (termination-machine loop$-recursion-checkedp
+                                      loop$-recursion
+                                      names (car arglists) (car bodies)
+                                      nil nil
                                       (car ruler-extenders-lst))
-                 (termination-machines names (cdr bodies)
+                 (termination-machines loop$-recursion-checkedp
+                                       loop$-recursion
+                                       names (cdr arglists) (cdr bodies)
                                        (cdr ruler-extenders-lst))))))
 
 ; Function measure-clauses-for-clique was originally defined in defuns.lisp,
@@ -11918,9 +12645,20 @@
                                         measure-alist mp rel measure-debug
                                         wrld)))))
 
-(defun termination-theorem-clauses (names bodies measure-alist mp rel
-                                          ruler-extenders-lst wrld)
-  (let ((t-machines (termination-machines names bodies ruler-extenders-lst)))
+(defun termination-theorem-clauses (loop$-recursion-checkedp
+                                    loop$-recursion
+                                    names arglists bodies measure-alist mp rel
+                                    ruler-extenders-lst wrld)
+
+; Observe that arglist is only used in termination-machines, and in that
+; function we observe that it is irrelevant if loop$-recursion-checkedp is nil.
+; So that holds here too: arglists is irrelevant if loop$-recursion-checkedp is
+; nil.  This function inherits the call of (choke-on-loop$-recursion
+; loop$-recursion-checkedp ...)  from termination-machines.
+
+  (let ((t-machines (termination-machines loop$-recursion-checkedp
+                                          loop$-recursion
+                                          names arglists bodies ruler-extenders-lst)))
     (measure-clauses-for-clique names t-machines
                                 measure-alist
                                 mp rel
@@ -12032,11 +12770,21 @@
                                       fn))))))))))
          (t
           (let ((clauses
-                 (termination-theorem-clauses names
-                                              (get-unnormalized-bodies names wrld)
-                                              measure-alist mp rel
-                                              (ruler-extenders-lst names wrld)
-                                              wrld)))
+                 (termination-theorem-clauses
+                  t ; loop$-recursion-checkedp
+                  (if (cdr names)
+                      nil
+                      (getpropc (car names) 'loop$-recursion nil wrld))
+                  names
+; Formals, below, is relevant only if there's exactly one name and its
+; loop$-recursion property is t.  But we just check the first and pay the price
+; of fetching the formals even though we might not need them.
+
+                  (if (cdr names) nil (list (formals (car names) wrld)))
+                  (get-unnormalized-bodies names wrld)
+                  measure-alist mp rel
+                  (ruler-extenders-lst names wrld)
+                  wrld)))
             (termify-clause-set clauses)))))))))
 
 ; Before completing the implementation of defun we implement support for the
@@ -12056,27 +12804,39 @@
 ; satisfied.
 
 (defun eval-ground-subexpressions1-lst-lst (lst-lst ens wrld safe-mode gc-off
-                                                    ttree)
-  (cond ((null lst-lst) (mv nil nil ttree))
+                                                    ttree hands-off-fns memo)
+  (cond ((null lst-lst) (mv nil nil ttree memo))
         (t (mv-let
-            (flg1 x ttree)
+            (flg1 x ttree memo)
             (eval-ground-subexpressions1-lst (car lst-lst) ens wrld safe-mode
-                                             gc-off ttree)
+                                             gc-off ttree hands-off-fns memo)
             (mv-let
-             (flg2 y ttree)
+             (flg2 y ttree memo)
              (eval-ground-subexpressions1-lst-lst (cdr lst-lst) ens wrld
-                                                  safe-mode gc-off ttree)
+                                                  safe-mode gc-off ttree
+                                                  hands-off-fns memo)
              (mv (or flg1 flg2)
                  (if (or flg1 flg2)
                      (cons x y)
                    lst-lst)
-                 ttree))))))
+                 ttree
+                 memo))))))
 
 (defun eval-ground-subexpressions-lst-lst (lst-lst ens wrld state ttree)
-  (eval-ground-subexpressions1-lst-lst lst-lst ens wrld
-                                       (f-get-global 'safe-mode state)
-                                       (gc-off state)
-                                       ttree))
+
+; Note: This function does not support hands-off-fns but we could add that as a
+; new formal and pass it instead of nil below.
+
+  (mv-let (flg x ttree memo)
+    (eval-ground-subexpressions1-lst-lst lst-lst ens wrld
+                                         (f-get-global 'safe-mode state)
+                                         (gc-off state)
+                                         ttree
+                                         nil ; hands-off-fns
+                                         nil ; memo
+                                         )
+    (declare (ignore memo))
+    (mv flg x ttree)))
 
 (defun sublis-var-lst-lst (alist clauses)
   (cond ((null clauses) nil)
@@ -12135,7 +12895,652 @@
 
 (mutual-recursion
 
-(defun guard-clauses (term debug-info stobj-optp clause wrld ttree)
+(defun all-vars!1 (term wrld ans)
+
+; We collect every symbol used as a variable in term, whether it's used freely
+; or not.  We also collect all the symbols used as variables in well-formed
+; LAMBDA objects, including their guards.
+
+  (declare (xargs :guard (and (pseudo-termp term)
+                              (symbol-listp ans))
+                  :mode :program))
+  (cond ((variablep term)
+         (add-to-set-eq term ans))
+        ((fquotep term)
+         (cond
+          ((well-formed-lambda-objectp (unquote term) wrld)
+           (let ((obj (unquote term)))
+             (all-vars!1 (lambda-object-body obj)
+                         wrld
+                         (all-vars!1 (lambda-object-guard obj)
+                                     wrld
+                                     (union-eq (lambda-object-formals (ffn-symb term))
+                                               ans)))))
+          (t ans)))
+        ((flambdap (ffn-symb term))
+         (all-vars!1-lst (fargs term)
+                         wrld
+                         (all-vars!1 (lambda-body (ffn-symb term))
+                                     wrld
+                                     (union-eq (lambda-formals (ffn-symb term))
+                                               ans))))
+        (t (all-vars!1-lst (fargs term) wrld ans))))
+
+(defun all-vars!1-lst (lst wrld ans)
+  (declare (xargs :guard (and (pseudo-term-listp lst)
+                              (symbol-listp ans))
+                  :mode :program))
+  (cond ((endp lst) ans)
+        (t (all-vars!1-lst (cdr lst)
+                           wrld
+                           (all-vars!1 (car lst) wrld ans)))))
+
+)
+
+(defun all-vars!-of-fn (fn wrld)
+
+; Warning: fn is either the name of a function defined in wrld or a well-formed
+; LAMBDA object.  We return every symbol used somehow as a variable in fn,
+; whether bound or free, including those occurring in the guard or body or
+; quoted well-formed LAMBDA objects within either.  The only point of this list
+; of variables is to allow us to genvar a new variable symbol that is not used
+; as a variable in any way in fn.
+
+  (cond
+   ((symbolp fn)
+    (all-vars!1
+     (guard fn nil wrld)
+     wrld
+     (all-vars!1
+      (getpropc fn 'unnormalized-body
+                '(:error "See ALL-VARS!-OF-FN.")
+                wrld)
+      wrld
+      (formals fn wrld))))
+   (t (all-vars!1
+       (lambda-object-guard fn)
+       wrld
+       (all-vars!1
+        (lambda-object-body fn)
+        wrld
+        (lambda-object-formals fn))))))
+
+; The following block of code culminates in the definition of
+; special-loop-guard-clauses, which generates Special Conjectures (a), (b), and
+; (c) described in the Essay on Loop$.  Most of the development work below is
+; on Special Conjectures (c).
+
+(defun recover-type-spec-exprs1 (term)
+
+; Term is possibly a nest that looks like this
+; (return-last 'progn (check-dcl-guardian guard1 &)
+;               (return-last 'progn (check-dcl-guardian guard2 &)
+;                             ...
+;                             body)).
+; Each guardi was generated from a TYPE spec.  We return (guard1 guard2 ...).
+
+  (case-match term
+    (('RETURN-LAST ''PROGN ('CHECK-DCL-GUARDIAN guard &) rest)
+     (cons guard (recover-type-spec-exprs1 rest)))
+    (('CHECK-DCL-GUARDIAN guard &)
+     (cons guard nil))
+    (& nil)))
+
+(defun recover-type-spec-exprs (term)
+  (case-match term
+    (('RETURN-LAST ''PROGN ('RETURN-LAST ''PROGN ('CHECK-DCL-GUARDIAN & &) &) &)
+     (recover-type-spec-exprs1 (fargn term 2)))
+    (('RETURN-LAST ''PROGN ('CHECK-DCL-GUARDIAN guard &) &)
+     (list guard))
+    (t nil)))
+
+(defun terms-in-var (var terms)
+  (cond
+   ((endp terms) nil)
+   ((occur var (car terms))
+    (cons (car terms) (terms-in-var var (cdr terms))))
+   (t (terms-in-var var (cdr terms)))))
+
+(defun type-specs-for-var (var type-spec-exprs)
+  (conjoin (terms-in-var var type-spec-exprs)))
+
+(defun recover-fancy-targets (term)
+  (case-match term
+    (('CONS target rest)
+     (cons target (recover-fancy-targets rest)))
+    (& nil)))
+
+(defun recover-deep-targets (term)
+
+; Dig down into a loop$ scion nest representing a loop$ statement and recover
+; the list of targets appearing the original loop$ statement, e.g., from (sum$
+; ... (when$ ... (until$ ... target))) recover (list target), or in the case of
+; a fancy nest, (target1 target2 ...).  Note also that the length of our answer
+; is the number of iteration variables in the loop$ statement.  Note also that
+; the length can be 1 even in the case of fancy loop$s.
+
+  (let ((style (and (nvariablep term)
+                    (not (fquotep term))
+                    (loop$-scion-style (ffn-symb term)
+                                       *loop$-keyword-info*))))
+    (cond
+     ((null style)
+      (cond ((and (nvariablep term)
+                  (not (fquotep term))
+                  (eq (ffn-symb term) 'LOOP$-AS))
+             (recover-fancy-targets (fargn term 1)))
+            (t (list term))))
+     (t (recover-deep-targets
+         (if (eq style :plain) (fargn term 2) (fargn term 3)))))))
+
+(defun vars-specs-and-targets1 (vars type-spec-exprs targets)
+  (cond
+   ((endp vars) nil)
+   (t (cons (list (car vars)
+                  (type-specs-for-var (car vars) type-spec-exprs)
+                  (car targets))
+            (vars-specs-and-targets1 (cdr vars) type-spec-exprs (cdr targets))))))
+
+(defun vars-specs-and-targets (scion-term wrld)
+
+; This function is the workhorse for recognizing the need for Special
+; Conjectures (c).
+
+; Scion-term is a loop$ scion call of :plain or :fancy style.  Consider the
+; loop$ statement from which scion-term arose:
+
+; (loop$ for v1 of-type spec1 in/on/from-to-by target1
+;         as v2 of-type spec2 in/on/from-to-by target2
+;         ...
+;         until ... when ... op ...)
+
+; We return a list of triplets ((v1 spec1-expr target1) ...), listing every
+; iteration variable in the loop$ statement that has an of-type specification.
+; The speci-expr is the term expressing the type spec, not the type spec
+; itself, e.g., (INTEGERP v1) not INTEGER.
+
+; This is harder than you might think because we have to dig the vars and
+; type-specs out of the LAMBDA objects!
+
+; Note that to recover the targets we have to dig down through UNTIL and WHEN
+; terms.  I.e., the :plain scion-term corresponding to a loop$ might be: (sum$
+; ... (when$ ... (until$ ... target))).  Since every LAMBDA object in the nest
+; of loop$ scions includes the same type specs, we could get these triplets
+; from the innermost term rather than the outermost but it seems slightly
+; simpler to do it this way.
+
+; Keep this function in sync with both make-plain-loop$-lambda-object and
+; make-fancy-loop$-lambda-object!
+
+; Note on another way to do things:  This function must recognize every
+; translated loop$ that uses either ... FROM i TO j ... or ON ... iteration
+; because those are the cases that require Special Conjectures (c).
+; We may find it too onerous to keep tracking that.  There is another
+; way.  Abandon Special Conjecture (c) and instead change the translation of
+; those loop$ statements to explicitly include THE terms.  For example,
+; instead of translating
+
+; (loop for x of-type spec on lst collect (foo x))
+
+; to
+
+; (collect$ (lambda$ (x) (declare (type spec x)) (foo x)) (tails lst))
+
+; we could translate it to
+
+; (prog2$ (the spec NIL)
+;         (collect$ (lambda$ (x) (declare (type spec x)) (foo x)) (tails lst)))
+
+; and instead of translating
+
+; (loop$ for x of-type spec from i to j by k collect (foo x))
+
+; to
+
+; (collect$ (lambda$ (x) (declare (type spec x)) (foo x)) (from-to-by i j k))
+
+; we could use
+
+; (prog2$ (the spec (+ i k (* k (floor (- j i) k))))
+;         (collect$ (lambda$ (x) (declare (type spec x)) (foo x))
+;                   (from-to-by (the spec i)
+;                               (the spec j)
+;                               (the spec k))))
+
+; (Of course, the collect$s would be properly tagged as loop$s as now.)
+
+; This translation would obviate the need to recognize the translated terms
+; corresponding to such loop$s.
+
+  (cond
+   ((and (loop$-operator-scionp (ffn-symb scion-term) *loop$-keyword-info*)
+         (quotep (fargn scion-term 1))
+         (well-formed-lambda-objectp
+          (unquote (fargn scion-term 1))
+          wrld))
+    (let* ((targets (recover-deep-targets scion-term))
+           (n (length targets))
+           (fn (unquote (fargn scion-term 1))))
+      (mv-let (style vars type-spec-exprs)
+        (case-match fn
+          (('LAMBDA (var) ('DECLARE . edcls) &)
+           (let ((type-spec (assoc-eq 'type edcls)))
+             (cond (type-spec
+                    (mv :plain
+                        (list var)
+                        (list (conjoin (get-guards2 `(,type-spec) '(types)
+                                                    t wrld nil nil)))))
+                   (t (mv :plain (list var) (list *t*))))))
+          (('LAMBDA (var) . &)
+           (mv :plain (list var) (list *t*)))
+          (('LAMBDA '(LOOP$-GVARS LOOP$-IVARS)
+                    ('DECLARE ('XARGS ':GUARD & ':SPLIT-TYPES 'T) . &)
+                    ('RETURN-LAST
+                     ''PROGN
+                     ('QUOTE ('LAMBDA$ . &))
+                     (('LAMBDA loop$-gvars-and-loop$-ivars
+                               optionally-marked-body)
+                      . &)))
+; Note: The type specs in a translated fancy LAMBDA object do not appear in
+; DECLARE forms!  Instead, they are coded as CHECK-DCL-GUARDIAN expressions
+; because they appear in a translated LET.  So we need a different way to
+; collect them.  See recover-type-spec-exprs.
+
+; Loop$-gvars-and-loop$-ivars is a list of symbols like (G1 G2 G3 L1 L2) where
+; the Gi are the (three, in this case) global variables involved in this lambda
+; and the Li are the (two) local variables.  We need to recover the names (L1
+; L2) and we don't know how many globals there are, but we can figure it out!
+
+           (cond
+            ((<= n (length loop$-gvars-and-loop$-ivars))
+             (mv :fancy
+                 (first-n-ac n
+                             (nthcdr
+                              (- (length loop$-gvars-and-loop$-ivars) n)
+                              loop$-gvars-and-loop$-ivars)
+                             nil)
+; Note:  None of the gvars have type specs!
+
+                 (recover-type-spec-exprs optionally-marked-body)))
+            (t (mv nil nil nil))))
+          (& (mv nil nil nil)))
+        (cond
+         ((eq style nil) nil)
+         (t (vars-specs-and-targets1 vars type-spec-exprs targets))))))
+   (t nil)))
+
+; This macro tests the extraction of locals and their type-specs from the
+; lambdas generated by loop$.  See the er-let* just below for some
+; sample calls and their expected returns.
+
+; (defmacro tester (stmt)
+;   `(mv-let (erp term bindings)
+;      (translate11-loop$ ',stmt '(nil) nil nil nil nil 'tester (w state)
+;                         (default-state-vars state))
+;      (declare (ignore bindings))
+;      (cond
+;       (erp (er soft 'tester "~@0" term))
+;       (t (value (vars-specs-and-targets
+;                  (fargn term 3)
+;                  (w state)))))))
+
+; The form below should return (value t).
+
+; (er-let*
+;     ((test1
+;       (tester
+;        (loop$ for x in lst collect x)))
+;      (test2
+;       (tester
+;        (loop$ for x of-type integer in lst collect x)))
+;      (test3
+;       (tester
+;        (loop$ for x of-type (and integer (satisfies evenp)) in lst collect x)))
+;      (test4
+;       (tester
+;        (loop$ for x of-type integer in xlst as y in ylst collect (list x y))))
+;      (test5
+;       (tester
+;        (loop$ for x in xlst as y of-type integer in ylst collect (list x y))))
+;      (test6
+;       (tester
+;        (loop$ for x of-type symbol in xlst
+;               as y of-type integer in ylst
+;               as u in ulst
+;               as z of-type rational in zlst
+;               when (> y z)
+;               collect :guard (> u (+ y z)) (list x y u z a b c))))
+;      (test7
+;       (tester
+;        (loop$ for x of-type (and symbol (not (satisfies null))) in xlst
+;               as y of-type (and integer (satisfies evenp)) in ylst
+;               as u in ulst
+;               as z of-type (and rational (satisfies posp)) in zlst
+;               when (> y z)
+;               collect :guard (> u (+ y z)) (list x y u z a b c)))))
+;   (value (and (equal test1 '((X 'T LST)))
+;               (equal test2 '((X (INTEGERP X) LST)))
+;               (equal test3
+;                      '((X (IF (INTEGERP X) (EVENP X) 'NIL)
+;                           LST)))
+;               (equal test4
+;                      '((X (INTEGERP X) XLST) (Y 'T YLST)))
+;               (equal test5
+;                      '((X 'T XLST) (Y (INTEGERP Y) YLST)))
+;               (equal test6
+;                      '((X (SYMBOLP X) XLST)
+;                        (Y (INTEGERP Y) YLST)
+;                        (U 'T ULST)
+;                        (Z (RATIONALP Z) ZLST)))
+;               (equal test7
+;                      '((X (IF (SYMBOLP X) (NOT (NULL X)) 'NIL)
+;                           XLST)
+;                        (Y (IF (INTEGERP Y) (EVENP Y) 'NIL)
+;                           YLST)
+;                        (U 'T ULST)
+;                        (Z (IF (RATIONALP Z) (POSP Z) 'NIL)
+;                           ZLST))))))
+
+(defun special-loop$-guard-clauses-c2 (clause var type-expr target)
+; See special-loop$-guard-clauses-c.
+  (cond
+   ((equal type-expr *t*) nil)
+   (t (case-match target
+        (('TAILS &)
+         (conjoin-clause-to-clause-set
+          (add-literal-smart
+           (subst-var *nil* var type-expr)
+           clause
+           t)
+          nil))
+        (('FROM-TO-BY i j k)
+         (conjoin-clause-to-clause-set
+          (add-literal-smart
+           (subst-var i var type-expr)
+           clause
+           t)
+          (conjoin-clause-to-clause-set
+           (add-literal-smart
+            (subst-var j var type-expr)
+            clause
+            t)
+           (conjoin-clause-to-clause-set
+            (add-literal-smart
+             (subst-var k var type-expr)
+             clause
+             t)
+            (conjoin-clause-to-clause-set
+             (add-literal-smart
+              (subst-var
+               `(BINARY-+ ,i
+                          (BINARY-+
+                           ,k
+                           (BINARY-* ,k
+                                     (FLOOR (BINARY-+ ,j (UNARY-- ,i))
+                                            ,k))))
+               var type-expr)
+              clause
+              t)
+             nil)))))
+        (& nil)))))
+
+(defun special-loop$-guard-clauses-c1 (clause vars-specs-and-targets)
+; See special-loop$-guard-clauses-c.
+  (cond
+   ((null vars-specs-and-targets) nil)
+   (t (conjoin-clause-sets
+       (special-loop$-guard-clauses-c2
+        clause
+        (car (car vars-specs-and-targets))
+        (cadr (car vars-specs-and-targets))
+        (caddr (car vars-specs-and-targets)))
+       (special-loop$-guard-clauses-c1 clause
+                                       (cdr vars-specs-and-targets))))))
+
+(defun special-loop$-guard-clauses-c (clause term wrld)
+
+; If term is a loop$ scion term corresponding to the operator of a loop$
+; statement, e.g., a call of sum$ or perhaps collect$+ but not a call of when$,
+; we get the triplets (vari type-expri targeti) corresponding to the iteration
+; variables, their type spec expressions, and their targets, and generate
+; Special Conjectures (c) for each one, as a function of each target.
+
+; For a (FROM-TO-BY i j k) target, the generated clauses insist that
+; i, j, k, and (+ i (* k (floor (- j i) k)) k) each satisfy the type-expr.
+
+; For a (TAILS lst) target, the generated clauses insist that NIL
+; satisfies the type-expr.
+
+; No other targets generate Special Conjectures (c).
+
+  (special-loop$-guard-clauses-c1
+   clause
+   (vars-specs-and-targets term wrld)))
+
+(defun special-loop$-scion-callp (term wrld)
+
+; We recognize calls of *loop$-keyword-info* scions on quoted LAMBDA objects,
+; e.g., (sum$ (quote (LAMBDA ...)) lst) or (when$+ (quote (LAMBDA ...)) globals
+; lst) that might have come from translations of loop$ statements.
+
+; Motivation: We generate special guard conjectures for each such a call,
+; presuming that it WAS generated by a loop$ and that the loop$ is lying in
+; wait in the raw CLTL code of the function whose guards are being verified.
+; If the guard conjectures are ultimately verified then the corresponding loop
+; will run in raw Lisp and we must be sure no errors will be caused.
+
+; Nothing prevents the user from typing such calls, so we're being over
+; protective here: there may be no loop$ in the raw Lisp.  C'est la vie.
+
+; We do not build in much about what such calls look like except that we know
+; the function argument is a quoted well-formed LAMBDA object of the right
+; arity for the style of the loop$ scion.
+
+  (case-match term
+    ((loop-scion ('quote obj) . &)
+     (let ((style (loop$-scion-style loop-scion *loop$-keyword-info*)))
+       (and style ; a :plain  or :fancy loop$ scion
+            (and (well-formed-lambda-objectp obj wrld)
+                 (equal (length (lambda-object-formals obj))
+                        (if (eq style :plain) 1 2))))))
+    (t nil)))
+
+(defun warrant-name-inverse (warrant-fn)
+
+; Warning: Keep this in sync with warrant-name.
+
+  (declare (xargs :guard (symbolp warrant-fn)))
+  (let ((warrant-fn-name (symbol-name warrant-fn)))
+    (and (string-prefixp "APPLY$-WARRANT-" warrant-fn-name)
+         (intern-in-package-of-symbol
+          (subseq warrant-fn-name
+                  15 ; (length "APPLY$-WARRANT-")
+                  (length warrant-fn-name))
+          warrant-fn))))
+
+(defun warrantp (warrant-fn wrld)
+
+; We check whether warrant-fn is the warrant of some function, fn.  But fn has
+; a warrant iff fn has a badge in the badge-table.
+
+  (declare (xargs :guard (and (symbolp warrant-fn)
+                              (plist-worldp wrld))))
+  (let* ((fn (warrant-name-inverse warrant-fn))
+         (badge (and fn
+                     (get-badge fn wrld))))
+    (and badge t)))
+
+(mutual-recursion
+
+(defun collect-warranted-fns (term ilk collect-p wrld)
+
+; This function collects a list of function symbols having warrants that may be
+; useful in simplifying the given term.
+
+; At the top level collect-p is nil, meaning that we are not collecting
+; function symbols.  Collection begins when entering a quoted constant that is
+; in an argument position whose ilk is :fn or :expr.
+
+  (declare (xargs :guard (and (plist-worldp wrld)
+                              (termp term wrld))))
+  (cond ((variablep term) nil)
+        ((fquotep term)
+         (let ((val (unquote term)))
+           (cond ((eq ilk :FN)
+                  (cond ((case-match val
+                           (('lambda . &) t)
+                           (& nil))
+                         (let ((body (car (last val))))
+                           (and (pseudo-termp body)
+                                (collect-warranted-fns body nil t wrld))))
+                        ((and (symbolp val)
+                              (warrantp val wrld))
+                         (list val))
+                        (t nil)))
+                 ((eq ilk :EXPR)
+                  (and (pseudo-termp val)
+                       (collect-warranted-fns val nil t wrld)))
+                 (t nil))))
+        ((flambda-applicationp term)
+         (union-equal
+          (collect-warranted-fns (lambda-body (ffn-symb term)) nil collect-p
+                                 wrld)
+          (collect-warranted-fns-lst (fargs term) nil collect-p wrld)))
+        (t (let ((badge (get-badge (ffn-symb term) wrld)))
+             (cond
+              (badge
+               (let* ((ilks0 (access apply$-badge badge :ilks))
+                      (ilks (if (eq ilks0 t) nil ilks0))
+                      (fns (collect-warranted-fns-lst (fargs term) ilks
+                                                      collect-p wrld)))
+                 (cond (collect-p (add-to-set-equal (ffn-symb term) fns))
+                       (t fns))))
+              (t
+               (collect-warranted-fns-lst (fargs term) nil collect-p
+                                          wrld)))))))
+
+(defun collect-warranted-fns-lst (lst ilks collect-p wrld)
+  (declare (xargs :guard (and (plist-worldp wrld)
+                              (term-listp lst wrld))))
+  (cond ((endp lst) nil)
+        (t (union-equal
+            (collect-warranted-fns (car lst) (car ilks) collect-p wrld)
+            (collect-warranted-fns-lst (cdr lst) (cdr ilks) collect-p wrld)))))
+)
+
+(defun collect-negated-warrants1 (lst clause)
+  (cond ((endp lst) clause)
+        ((equal clause *true-clause*) clause)
+        (t (collect-negated-warrants1
+            (cdr lst)
+            (add-literal (fcons-term* 'not
+                                      (fcons-term* (warrant-name (car lst))))
+                         clause
+
+; It's perhaps a bit inefficient to add to the end every time, but that seems
+; the most natural way to get the desired functionality (see the discussion
+; about Special Conjecture (b) in the Essay on LOOP$).
+
+                         t)))))
+
+(defun collect-negated-warrants (term wrld clause)
+  (collect-negated-warrants1 (collect-warranted-fns term nil nil wrld)
+                             clause))
+
+(defun special-loop$-guard-clauses (clause term wrld newvar ttree)
+
+; Clause is an evolving clause governing an occurrence of term with derivation
+; ttree.  Term may or may not be a call of a special loop$ scionp.  If it is
+; and newvar is non-nil, we generate and return the list of special loop$ guard
+; clauses appropriate for term, together with ttree, (mv clauses ttree').  Else
+; we return (mv nil ttree).  Newvar is the new variable used in the special
+; loop$ guard clauses.  Newvar is only non-nil when this function is called on
+; functions or lambdas being defined.  Newvar is nil when we're generating
+; guards for theorems and ordinary terms.
+
+; Note: As of this writing, ttree is just passed through and returned; it is
+; not used or modified.
+
+; See the Essay on Loop$ for an explanation of Special Conjectures (a) (b) and
+; (c).
+
+  (cond
+   ((null newvar) (mv nil ttree))
+   ((special-loop$-scion-callp term wrld)
+    (let* ((style (loop$-scion-style (ffn-symb term) *loop$-keyword-info*))
+           (test-b (loop$-scion-restriction (ffn-symb term)
+                                            *loop$-keyword-info*))
+
+; Test-b is either NIL or a monadic predicate like ACL2-NUMBERP that the
+; output of the apply$ must satisfy.
+
+           (fn (unquote (fargn term 1)))
+           (globals (if (eq style :plain)
+                        nil
+                      (fargn term 2)))
+           (lst (if (eq style :plain)
+                    (fargn term 2)
+                  (fargn term 3))))
+      (mv-let (var1 var2 fngp body)
+        (cond
+         ((symbolp fn)
+          (mv (car (formals fn wrld))
+              (cadr (formals fn wrld)) ; nil if fn of arity 1
+              (guard fn nil wrld)
+              (cons fn (formals fn wrld))))
+         (t (mv (car (lambda-object-formals fn))
+                (cadr (lambda-object-formals fn))
+                (lambda-object-guard fn)
+                (lambda-object-body fn))))
+        (declare (ignore body))
+        (let* ((subst (if (eq style :plain)
+                          `((,var1 . ,newvar))
+                        `((,var1 . ,globals)
+                          (,var2 . ,newvar))))
+               (warranted-clause
+                (collect-negated-warrants term wrld clause))
+               (special-conjecture-a
+                (if (equal fngp *t*)
+                    *true-clause*
+                  (add-literal-smart
+                   (sublis-var subst fngp)
+                   (add-literal-smart
+                    `(NOT (MEMBER-EQUAL ,newvar ,lst))
+                    warranted-clause
+                    t)
+                   t)))
+               (special-conjecture-b
+                (if test-b
+                    (add-literal-smart
+                     `(,test-b
+                       (APPLY$ ',fn
+                               ,(if (eq style :plain)
+                                    `(CONS ,newvar 'NIL)
+                                  `(CONS ,globals
+                                         (CONS ,newvar
+                                               'NIL)))))
+                     (add-literal-smart
+                      `(NOT (MEMBER-EQUAL ,newvar ,lst))
+                      warranted-clause
+                      t)
+                     t)
+                  *true-clause*))
+               (special-conjectures-c
+                (special-loop$-guard-clauses-c clause term wrld)))
+          (mv (append (if (equal special-conjecture-a *true-clause*)
+                          nil
+                        (list special-conjecture-a))
+                      (if (equal special-conjecture-b *true-clause*)
+                          nil
+                        (list special-conjecture-b))
+                      special-conjectures-c
+                      )
+              ttree)))))
+   (t (mv nil ttree))))
+
+(mutual-recursion
+
+(defun guard-clauses (term debug-info stobj-optp clause wrld ttree newvar)
 
 ; See also guard-clauses+, which is a wrapper for guard-clauses that eliminates
 ; ground subexpressions.
@@ -12154,6 +13559,10 @@
 ; ultimately the caller, and is happy not to burden the user with mention of
 ; that rune.
 
+; In addition, if term is one of the special loop$ scions, e.g., sum, applied
+; to a quoted well-formed function object, we generate the special loop$
+; conjectures.  Search for ``special'' below for details.
+
 ; Note: Once upon a time, this function took an additional argument, alist, and
 ; was understood to be generating the guards for term/alist.  Alist was used to
 ; carry the guard generation process into lambdas.
@@ -12164,7 +13573,7 @@
          (mv-let
           (cl-set1 ttree)
           (guard-clauses-lst (fargs term) debug-info stobj-optp clause wrld
-                             ttree)
+                             ttree newvar)
           (mv-let
            (cl-set2 ttree)
            (guard-clauses (lambda-body (ffn-symb term))
@@ -12175,11 +13584,11 @@
 ; wrapping up the lambda term that we are about to create.
 
                           nil
-                          wrld ttree)
+                          wrld ttree newvar)
            (let* ((term1 (make-lambda-application
                           (lambda-formals (ffn-symb term))
                           (termify-clause-set cl-set2)
-                          (remove-guard-holders-lst (fargs term))))
+                          (remove-guard-holders-lst (fargs term) wrld)))
                   (cl (reverse (add-literal-smart term1 clause nil)))
                   (cl-set3 (if (equal cl *true-clause*)
                                cl-set1
@@ -12194,7 +13603,7 @@
                               (list cl)))))
              (mv cl-set3 ttree)))))
         ((eq (ffn-symb term) 'if)
-         (let ((test (remove-guard-holders (fargn term 1))))
+         (let ((test (remove-guard-holders (fargn term 1) wrld)))
            (mv-let
             (cl-set1 ttree)
 
@@ -12202,7 +13611,7 @@
 ; holders removed!
 
             (guard-clauses (fargn term 1) debug-info stobj-optp clause wrld
-                           ttree)
+                           ttree newvar)
             (mv-let
              (cl-set2 ttree)
              (guard-clauses (fargn term 2)
@@ -12215,7 +13624,7 @@
                             (add-literal-smart (dumb-negate-lit test)
                                                clause
                                                nil)
-                            wrld ttree)
+                            wrld ttree newvar)
              (mv-let
               (cl-set3 ttree)
               (guard-clauses (fargn term 3)
@@ -12224,7 +13633,7 @@
                              (add-literal-smart test
                                                 clause
                                                 nil)
-                             wrld ttree)
+                             wrld ttree newvar)
               (mv (conjoin-clause-sets+
                    debug-info
                    cl-set1
@@ -12271,13 +13680,15 @@
                 (name-dropper-term (fargn term 3))
                 (new-var (if whs
                              (genvar whs (symbol-name whs) nil
-                                     (all-vars1-lst clause
-                                                    (all-vars name-dropper-term)))
+                                     (all-vars1-lst
+                                      clause
+                                      (all-vars name-dropper-term)))
                            nil))
                 (new-body (if (eq whs new-var)
                               body
                             (subst-var new-var whs body))))
-           (guard-clauses new-body debug-info stobj-optp clause wrld ttree)))
+           (guard-clauses new-body debug-info stobj-optp clause
+                          wrld ttree newvar)))
         ((throw-nonexec-error-p term :non-exec nil)
 
 ; It would be sound to replace the test above by (throw-nonexec-error-p term
@@ -12290,7 +13701,8 @@
 ; only the throw-non-exec-error call needs to be considered for guard
 ; generation, not targ3.
 
-         (guard-clauses (fargn term 2) debug-info stobj-optp clause wrld ttree))
+         (guard-clauses (fargn term 2) debug-info stobj-optp clause
+                        wrld ttree newvar))
 
 ; At one time we optimized away the guards on (nth 'n MV) if n is an integerp
 ; and MV is bound in (former parameter) alist to a call of a multi-valued
@@ -12314,6 +13726,8 @@
 ; know that all those stobj recognizer calls are true.
 
 ; Once upon a time, we normalized the 'guard first.  Is that important?
+
+; We also generate the special loop$ conjectures as necessary.
 
          (let ((guard-concl-segments (clausify
                                       (guard (ffn-symb term)
@@ -12367,54 +13781,62 @@
 
                   (fargs term))))
               (t (fargs term)))
-             debug-info stobj-optp clause wrld ttree)
-            (mv (conjoin-clause-sets+
-                 debug-info
-                 cl-set1
-                 (add-segments-to-clause
-                  (maybe-add-extra-info-lit debug-info term (reverse clause)
-                                            wrld)
-                  (add-each-literal-lst
-                   (and guard-concl-segments ; optimization (nil for ec-call)
-                        (sublis-var-lst-lst
-                         (pairlis$
-                          (formals (ffn-symb term) wrld)
-                          (remove-guard-holders-lst
-                           (fargs term)))
-                         guard-concl-segments)))))
-                ttree))))))
+             debug-info stobj-optp clause wrld ttree newvar)
+            (mv-let (cl-set2 ttree)
+              (special-loop$-guard-clauses
+               clause term wrld newvar ttree)
+              (mv (conjoin-clause-sets+
+                   debug-info
+                   (conjoin-clause-sets+
+                    debug-info
+                    cl-set1
+                    (add-segments-to-clause
+                     (maybe-add-extra-info-lit debug-info term (reverse clause)
+                                               wrld)
+                     (add-each-literal-lst
+                      (and guard-concl-segments ; optimization (nil for ec-call)
+                           (sublis-var-lst-lst
+                            (pairlis$
+                             (formals (ffn-symb term) wrld)
+                             (remove-guard-holders-lst (fargs term) wrld))
+                            guard-concl-segments)))))
+                   cl-set2)
+                  ttree)))))))
 
-(defun guard-clauses-lst (lst debug-info stobj-optp clause wrld ttree)
+(defun guard-clauses-lst (lst debug-info stobj-optp clause wrld ttree newvar)
   (cond ((null lst) (mv nil ttree))
         (t (mv-let
             (cl-set1 ttree)
-            (guard-clauses (car lst) debug-info stobj-optp clause wrld ttree)
+            (guard-clauses (car lst) debug-info stobj-optp clause
+                           wrld ttree newvar)
             (mv-let
              (cl-set2 ttree)
-             (guard-clauses-lst (cdr lst) debug-info stobj-optp clause wrld
-                                ttree)
+             (guard-clauses-lst (cdr lst) debug-info stobj-optp clause
+                                wrld ttree newvar)
              (mv (conjoin-clause-sets+ debug-info cl-set1 cl-set2) ttree))))))
 
 )
 
 (defun guard-clauses+ (term debug-info stobj-optp clause ens wrld safe-mode
-                            gc-off ttree)
+                            gc-off ttree newvar)
 
 ; Ens may have the special value :do-not-simplify, in which case no
 ; simplification will take place in producing the guard clauses.
 
   (mv-let (clause-lst0 ttree)
-          (guard-clauses term debug-info stobj-optp clause wrld ttree)
+          (guard-clauses term debug-info stobj-optp clause wrld ttree newvar)
           (cond ((eq ens :DO-NOT-SIMPLIFY)
                  (mv clause-lst0 ttree))
-                (t (mv-let (flg clause-lst ttree)
+                (t (mv-let (flg clause-lst ttree memo)
                      (eval-ground-subexpressions1-lst-lst
-                      clause-lst0 ens wrld safe-mode gc-off ttree)
-                     (declare (ignore flg))
+                      clause-lst0 ens wrld safe-mode gc-off ttree
+                      *loop$-special-function-symbols*
+                      nil)
+                     (declare (ignore flg memo))
                      (mv clause-lst ttree))))))
 
 (defun guard-clauses-for-body (hyp-segments body debug-info stobj-optp ens
-                                            wrld safe-mode gc-off ttree)
+                                            wrld safe-mode gc-off ttree newvar)
 
 ; Hyp-segments is a list of clauses derived from the guard for body.  We
 ; generate the guard clauses for the unguarded body, body, under each of the
@@ -12431,13 +13853,15 @@
    ((null hyp-segments) (mv nil ttree))
    (t (mv-let
        (cl-set1 ttree)
-       (guard-clauses+ body debug-info stobj-optp (car hyp-segments) ens wrld
-                       safe-mode gc-off ttree)
+       (guard-clauses+ body debug-info stobj-optp
+                       (car hyp-segments)
+                       ens wrld
+                       safe-mode gc-off ttree newvar)
        (mv-let
         (cl-set2 ttree)
         (guard-clauses-for-body (cdr hyp-segments)
                                 body debug-info stobj-optp ens wrld safe-mode
-                                gc-off ttree)
+                                gc-off ttree newvar)
         (mv (conjoin-clause-sets+ debug-info cl-set1 cl-set2) ttree))))))
 
 (defun normalize-ts-backchain-limit-for-defs (wrld)
@@ -12504,10 +13928,23 @@
 ; Ens may have the special value :do-not-simplify, in which case no
 ; simplification will take place in producing the guard clauses.
 
-  (let ((guard
+; Newvar is a variable symbol in the ``same'' package as fn seems to be (an odd
+; concept for a LAMBDA object which may have many packages mentioned in it) but
+; that is not used as a variable in any way in the formals, guard, or body of
+; fn.  See all-vars!.  Newvar may be used in the so-called ``Special loop$
+; conjectures.''
+
+  (let ((newvar
+         (genvar (cond ((symbolp name) name)
+                       ((lambda-formals name) (car (lambda-formals name)))
+                       (t 'APPLY$))
+                 "NEWV"
+                 nil
+                 (all-vars!-of-fn name wrld)))
+        (guard
          (if (symbolp name)
              (guard name nil wrld)
-             (lambda-object-guard name)))
+           (lambda-object-guard name)))
         (stobj-optp (not (and (symbolp name)
                               (eq (getpropc name 'non-executablep
                                             nil wrld)
@@ -12535,72 +13972,64 @@
 ; guards on <specified-guard>.
 
                       stobj-optp
-                      nil ens wrld safe-mode gc-off ttree)
+                      nil ens wrld safe-mode gc-off ttree newvar)
       (let ((unnormalized-body
              (if (symbolp name)
                  (getpropc name 'unnormalized-body
                            '(:error "See GUARD-CLAUSES-FOR-FN.")
                            wrld)
-                 (lambda-object-body name))))
+               (lambda-object-body name))))
         (mv-let
           (normal-guard ttree)
           (cond ((eq ens :do-not-simplify)
                  (mv guard nil))
                 (t (normalize guard
-                              t ; iff-flg
+                              t   ; iff-flg
                               nil ; type-alist
                               ens wrld ttree
                               (normalize-ts-backchain-limit-for-defs wrld))))
-          (mv-let
-            (changedp body ttree)
-            (cond ((eq ens :do-not-simplify)
-                   (mv nil unnormalized-body nil))
-                  (t (eval-ground-subexpressions1
-                      unnormalized-body
-                      ens wrld safe-mode gc-off ttree)))
-            (declare (ignore changedp))
-            (let ((hyp-segments
+          (let ((hyp-segments
 
 ; Should we expand lambdas here?  I say ``yes,'' but only to be
 ; conservative with old code.  Perhaps we should change the t to nil?
 
-                   (clausify (dumb-negate-lit normal-guard)
-                             nil t (sr-limit wrld))))
-              (mv-let
-                (cl-set2 ttree)
-                (guard-clauses-for-body hyp-segments
-                                        body
-                                        (and debug-p `(:guard (:body ,name)))
+                 (clausify (dumb-negate-lit normal-guard)
+                           nil t (sr-limit wrld))))
+            (mv-let
+              (cl-set2 ttree)
+              (guard-clauses-for-body hyp-segments
+                                      unnormalized-body
+                                      (and debug-p `(:guard (:body ,name)))
 
 ; Observe that when we generate the guard clauses for the body we optimize
 ; the stobj recognizers away, provided the named function is executable.
 
-                                        stobj-optp
-                                        ens wrld safe-mode gc-off ttree)
-                (mv-let (type-clauses ttree)
-                  (guard-clauses-for-body
-                   hyp-segments
-                   (fcons-term* 'insist
-                                (if (symbolp name)
-                                    (getpropc name 'split-types-term *t* wrld)
-                                    *t*))
-                   (and debug-p `(:guard (:type ,name)))
+                                      stobj-optp
+                                      ens wrld safe-mode gc-off ttree newvar)
+              (mv-let (type-clauses ttree)
+                (guard-clauses-for-body
+                 hyp-segments
+                 (fcons-term* 'insist
+                              (if (symbolp name)
+                                  (getpropc name 'split-types-term *t* wrld)
+                                *t*))
+                 (and debug-p `(:guard (:type ,name)))
 
 ; There seems to be no clear reason for setting stobj-optp here to t.  This
 ; decision could easily be reconsidered; we are being conservative here since
 ; as we write this comment in Oct. 2017, stobj-optp = nil has been probably
 ; been used here since the inception of split-types.
 
-                   nil
-                   ens wrld safe-mode gc-off ttree)
-                  (let ((cl-set2
-                         (if type-clauses ; optimization
-                             (conjoin-clause-sets+ debug-p
-                                                   type-clauses cl-set2)
-                             cl-set2)))
-                    (mv (conjoin-clause-sets+ debug-p
-                                              cl-set1 cl-set2)
-                        ttree)))))))))))
+                 nil
+                 ens wrld safe-mode gc-off ttree newvar)
+                (let ((cl-set2
+                       (if type-clauses ; optimization
+                           (conjoin-clause-sets+ debug-p
+                                                 type-clauses cl-set2)
+                         cl-set2)))
+                  (mv (conjoin-clause-sets+ debug-p
+                                            cl-set1 cl-set2)
+                      ttree))))))))))
 
 (defun guard-clauses-for-fn1-lst (fns debug-p ens wrld safe-mode gc-off ttree)
 
@@ -12732,7 +14161,7 @@
 ; functions because this function is called by clean-up-clause-set which is in
 ; turn called by prove-termination, guard-obligation-clauses, and
 ; verify-valid-std-usage (which is used in the non-standard defun-fn1).  We
-; just didn't think it mattered so much as to to warrant changing all those
+; just didn't think it mattered so much as to warrant changing all those
 ; functions.
 
         'defun-or-guard-verification
@@ -12861,25 +14290,29 @@
 ; function is already guard-verified.
 
                               (logicp fn wrld))))
-  (let ((names (or (getpropc fn 'recursivep nil wrld)
-                   (list fn))))
-    (mv-let (cl-set ttree)
-      (guard-clauses-for-clique names
-                                guard-debug
-                                :DO-NOT-SIMPLIFY ; ens
-                                wrld
-                                (f-get-global 'safe-mode state)
-                                (gc-off state)
-                                nil)
+  (cond
+   ((not (getpropc fn 'unnormalized-body nil wrld))
+    *t*)
+   (t
+    (let ((names (or (getpropc fn 'recursivep nil wrld)
+                     (list fn))))
+      (mv-let (cl-set ttree)
+        (guard-clauses-for-clique names
+                                  guard-debug
+                                  :DO-NOT-SIMPLIFY ; ens
+                                  wrld
+                                  (f-get-global 'safe-mode state)
+                                  (gc-off state)
+                                  nil)
 ; Note that ttree is assumption-free; see guard-clauses-for-clique.
-      (let ((cl-set
-             (cond (simp-p
-                    (mv-let (cl-set ttree)
-                      (clean-up-clause-set cl-set nil wrld ttree state)
-                      (declare (ignore ttree)) ; assumption-free
-                      cl-set))
-                   (t cl-set))))
-        (termify-clause-set cl-set)))))
+        (let ((cl-set
+               (cond (simp-p
+                      (mv-let (cl-set ttree)
+                        (clean-up-clause-set cl-set nil wrld ttree state)
+                        (declare (ignore ttree)) ; assumption-free
+                        cl-set))
+                     (t cl-set))))
+          (termify-clause-set cl-set)))))))
 
 (defun guard-or-termination-theorem-msg (kwd args coda)
   (declare (xargs :guard (and (member-eq kwd '(:gthm :tthm))
@@ -13042,7 +14475,8 @@
                ""))))
      ((eq (car lmi) :theorem)
       (er-let*@par
-       ((term (translate@par (cadr lmi) t t t ctx wrld state)))
+       ((term (translate@par (cadr lmi) t t t ctx wrld state))
+        (term (value@par (remove-guard-holders term wrld))))
 ; known-stobjs = t (stobjs-out = t)
        (value@par (list term (list term) nil nil))))
      ((or (eq (car lmi) :instance)
@@ -13828,12 +15262,6 @@
             (t nil))))))
       (value@par runic-value)))))
 
-(defun all-function-symbolps (fns wrld)
-  (cond ((atom fns) (equal fns nil))
-        (t (and (symbolp (car fns))
-                (function-symbolp (car fns) wrld)
-                (all-function-symbolps (cdr fns) wrld)))))
-
 (defun non-function-symbols (lst wrld)
   (cond ((null lst) nil)
         ((function-symbolp (car lst) wrld)
@@ -14107,7 +15535,7 @@
 ;    or any term macroexpanding to (cl-proc & &) with at most CLAUSE free
 
 ; For signature ((cl-proc cl hint stobj1 ... stobjk) =>
-;                (mv erp cl-list stobj1 ... stobjk)):
+;                (mv erp cl-list stobj1 ... stobjk &optional summary-data)):
 ; :CLAUSE-PROCESSOR (:FUNCTION cl-proc :HINT hint)
 ; :CLAUSE-PROCESSOR (cl-proc CLAUSE hint stobj1 ... stobjk):
 ;    or any term macroexpanding to (cl-proc & & stobj1 ... stobjk)
@@ -14151,8 +15579,7 @@
                             (list* cl-proc
                                    'clause
                                    hint
-                                   (cddr (stobjs-out cl-proc
-                                                     wrld))))))))
+                                   (cddr (stobjs-in cl-proc wrld))))))))
                     (t (er@par soft ctx "~@0" err-msg
                          "the :FUNCTION is an atom that is not a symbol"))))
              (& (value@par form)))))))
@@ -16561,6 +17988,19 @@
         "Illegal attempt to set the include-book-dir!-table.  This can only ~
          be done by calling ~v0."
         '(add-include-book-dir! delete-include-book-dir!)))
+   ((and (eq name 'puff-included-books)
+         (not (f-get-global 'modifying-include-book-dir-alist state)))
+
+; It's a bit of a hack (maybe a major hack) to use
+; modifying-include-book-dir-alist as a way of supporting the use of the
+; puff-included-books table when checking redundancy of include-book events.
+; But that works well; it's not used for very much else, it's set to t while
+; using :puff, and anyhow :puff is really a hack too.  This way we avoid adding
+; yet another state global.
+
+    (er soft ctx
+        "Illegal attempt to set the puff-included-books table.  This can only ~
+         be done by calling :puff or :puff*."))
    (t (let ((term (getpropc name 'table-guard *t* wrld)))
         (er-progn
          (mv-let
@@ -16572,11 +18012,10 @@
                     (cons 'ens ens))
               state nil nil
 
-; We need aokp to be true; otherwise def-warrant can run into the following
+; We need aokp to be true; otherwise defwarrant can run into the following
 ; problem.  The function badge-table-guard calls badger, which can call
-; acceptable-warranted-justificationp, which can call type-set, which can lead
-; to a call of ancestors-check, which typically has an attachment,
-; ancestors-check-builtin.
+; g2-justification which can call type-set, which can lead to a call of
+; ancestors-check, which typically has an attachment, ancestors-check-builtin.
 
               t)
           (declare (ignore latches))
@@ -16729,6 +18168,8 @@
                           ,(cdr (assoc-eq :aokp val))
                           ,(cdr (assoc-eq :stats val)))))
              (t `(unmemoize ,key))))
+      #+hons
+      (badge-table *special-cltl-cmd-attachment-mark*)
       (t nil))))
 
 (defun table-fn1 (name key val op term ctx wrld ens state event-form)
@@ -16761,43 +18202,62 @@
         (:put
          (with-ctx-summarized
           (make-ctx-for-event event-form ctx)
-          (let* ((tbl (getpropc name 'table-alist nil wrld)))
+          (let* ((tbl (getpropc name 'table-alist nil wrld))
+                 (old-pair (assoc-equal key tbl)))
             (er-progn
              (chk-table-nil-args :put term '(5) ctx state)
              (cond
-              ((let ((pair (assoc-equal key tbl)))
-                 (and pair (equal val (cdr pair))))
+              ((and old-pair (equal val (cdr old-pair)))
                (stop-redundant-event ctx state))
               (t (er-let*
-                  ((pair (chk-table-guard name key val ctx wrld ens state))
-                   (wrld1 (cond
-                           ((null pair)
-                            (value wrld))
-                           (t (let ((ttags-allowed1 (car pair))
-                                    (ttags-seen1 (cdr pair)))
-                                (pprogn (f-put-global 'ttags-allowed
-                                                      ttags-allowed1
-                                                      state)
-                                        (value (global-set?
-                                                'ttags-seen
-                                                ttags-seen1
-                                                wrld
-                                                (global-val 'ttags-seen
-                                                            wrld)))))))))
-                  (install-event
-                   name
-                   event-form
-                   'table
-                   0
-                   nil
-                   (table-cltl-cmd name key val op ctx wrld)
-                   nil ; theory-related events do their own checking
-                   nil
-                   (putprop name 'table-alist
-                            (put-assoc-equal-fast
-                             key val tbl)
-                            wrld1)
-                   state))))))))
+                     ((pair (chk-table-guard name key val ctx wrld ens state))
+                      (wrld0 (value
+                              (cond
+                               ((eq name 'puff-included-books)
+                                (global-set
+                                 'include-book-alist
+
+; This setting is for use in the implementation of :puff, where the
+; puff-included-books table records books that have been puffed.  We could
+; consider setting 'include-book-alist-all as well, but since that is only used
+; for certification and one can't certify on a puffled world, we don't bother.
+; (If that changes, then be careful that val is also the right tuple to push
+; onto the global value of 'include-book-alist-all.)
+
+                                 (cons val
+                                       (global-val 'include-book-alist
+                                                   wrld))
+                                 wrld))
+                               (t wrld))))
+                      (wrld1 (cond
+                              ((null pair)
+                               (value wrld0))
+                              (t (let ((ttags-allowed1 (car pair))
+                                       (ttags-seen1 (cdr pair)))
+                                   (pprogn (f-put-global 'ttags-allowed
+                                                         ttags-allowed1
+                                                         state)
+                                           (value (global-set?
+                                                   'ttags-seen
+                                                   ttags-seen1
+                                                   wrld0
+                                                   (global-val 'ttags-seen
+                                                               wrld)))))))))
+                   (install-event
+                    name
+                    event-form
+                    'table
+                    0
+                    nil
+                    (table-cltl-cmd name key val op ctx wrld)
+                    nil ; theory-related events do their own checking
+                    nil
+                    (putprop name 'table-alist
+                             (if old-pair
+                                 (put-assoc-equal key val tbl)
+                               (acons key val tbl))
+                             wrld1)
+                    state))))))))
         (:clear
          (with-ctx-summarized
           (make-ctx-for-event event-form ctx)

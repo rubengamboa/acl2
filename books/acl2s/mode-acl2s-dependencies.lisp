@@ -7,7 +7,9 @@
 (begin-book t :ttags :all);$ACL2s-Preamble$|#
 
 ;; Note: This book just gathers in one place all ACL2 books
-;; that need to be certified for acl2s-mode to be used in emacs.
+;; that should be certified to build ACL2s.
+
+;; Books ACL2s depends on.
 (in-package "ACL2")
 
 (include-book "misc/expander" :dir :system)
@@ -23,15 +25,18 @@
 (include-book "data-structures/utilities" :dir :system)
 (include-book "tools/templates" :dir :system)
 (include-book "tools/rulesets" :dir :system)
-(include-book "coi/util/pseudo-translate" :dir :system)
 (include-book "std/lists/top" :dir :system)
 (include-book "std/alists/top" :dir :system)
-(include-book "acl2s/cgen/top" :dir :system :ttags :all)
+(include-book "std/strings/top" :dir :system)
 (include-book "xdoc/defxdoc-raw" :dir :system)
 (include-book "tools/include-raw" :dir :system)
 (include-book "xdoc/topics" :dir :system)
 (include-book "system/doc/acl2-doc-wrap" :dir :system)
-(include-book "misc/eval" :dir :system)
+(include-book "std/testing/eval" :dir :system)
+(include-book "std/lists/flatten" :dir :system)
+(include-book "kestrel/utilities/system/terms" :dir :system)
+
+(include-book "acl2s/cgen/top" :dir :system :ttags :all)
 
 #|
  (include-book 
@@ -47,3 +52,4 @@
 ;;         (include-book "centaur/gl/bfr-satlink" :dir :system :ttags :all)
 ;;         (include-book "centaur/satlink/check-config" :dir :system))
 ;;    '(value-triple :invisible)))
+

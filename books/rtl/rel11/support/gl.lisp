@@ -5,8 +5,9 @@
 (local (include-book "bits"))
 (local (include-book "log"))
 (local (include-book "float"))
-(include-book "masc")
+(include-book "rac")
 
+(local (include-book "basic"))
 (local (include-book "arithmetic-5/top" :dir :system))
 
 ;;;**********************************************************************

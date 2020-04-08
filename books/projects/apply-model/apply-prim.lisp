@@ -94,7 +94,15 @@
 
   (declare (xargs :mode :program))
   (first-order-like-terms-and-out-arities1
-   (function-theory :here)
+   (member-equal '(:DEFINITION ACL2::EV$-LIST)
+
+; This member-equal call produces a tail of the function-theory that eliminates
+; runes near the end of ACL2 source file boot-strap-pass-2-b.lisp, added around
+; the end of January, 2019 to support loop$, thus eliminating definition runes
+; like ACL2::APPLY$-WARRANT-MEMPOS-DEFINITION that do not have corresponding
+; function symbols.
+
+                 (function-theory :here))
    '(SYNP                                      ; bad
      HIDE                                      ; stupid
      MV-LIST                                   ; restricts arguments
@@ -109,6 +117,7 @@
      SYS-CALL                                  ; bad -- requires trust tag
      HONS-CLEAR!                               ; bad -- requires trust tag
      HONS-WASH!                                ; bad -- requires trust tag
+     UNTOUCHABLE-MARKER                        ; bad -- untouchable
 ;    BREAK$
 ;    PRINT-CALL-HISTORY
 ;    NEVER-MEMOIZE-FN
@@ -324,6 +333,8 @@
                         args))))))
         (t term)))
 
+(comp t) ; e.g., for Allegro CL
+
 (make-event
  `(encapsulate
     nil
@@ -364,21 +375,47 @@
 ; If the above fix is ever made, it would be good to add a well-formedness
 ; guarantee lemma.
 
-    (with-output
-      :off (prove event)
-      (defthm apply$-prim-meta-fn-correct
-        (equal (apply$-prim-meta-fn-ev term alist)
-               (apply$-prim-meta-fn-ev (meta-apply$-prim term) alist))
-        :hints (("Goal" :in-theory (disable acl2::apply$-primp
-                                            acl2::apply$-prim
-                                            (:executable-counterpart break$))))
-        :rule-classes ((:meta :trigger-fns (apply$-prim)))))
+; The original proof of the next lemma didn't involve the proof-builder, but
+; has been observed to take about 9 times as long that way.
+
+;   (with-output
+;     :off (prove event)
+;     (defthm apply$-prim-meta-fn-correct
+;       (equal (apply$-prim-meta-fn-ev term alist)
+;              (apply$-prim-meta-fn-ev (meta-apply$-prim term) alist))
+;       :hints (("Goal" :in-theory (disable acl2::apply$-primp
+;                                           acl2::apply$-prim
+;                                           (:executable-counterpart break$))))
+;       :rule-classes ((:meta :trigger-fns (apply$-prim)))))
+
+    (defthm apply$-prim-meta-fn-correct
+      (equal (apply$-prim-meta-fn-ev term alist)
+             (apply$-prim-meta-fn-ev (meta-apply$-prim term)
+                                     alist))
+      :instructions
+      ((quiet!
+        (:bash ("Goal" :in-theory '((:definition hons-assoc-equal)
+                                    (:definition hons-equal)
+                                    (:definition hons-get)
+                                    (:definition meta-apply$-prim)
+                                    (:definition quotep)
+                                    (:executable-counterpart car)
+                                    (:executable-counterpart cdr)
+                                    (:executable-counterpart consp))))
+        (:in-theory (union-theories
+                     '((:definition apply$-prim)
+                       (:definition n-car-cadr-caddr-etc))
+                     (union-theories acl2::*expandable-boot-strap-non-rec-fns*
+                                     (set-difference-theories
+                                      (current-theory :here)
+                                      (cons '(:rewrite default-car)
+                                            (function-theory :here))))))
+        (:repeat :prove)))
+      :rule-classes ((:meta :trigger-fns (apply$-prim))))
 
     (defthm apply$-primp-implies-symbolp
       (implies (apply$-primp fn)
                (symbolp fn))
-      :rule-classes :forward-chaining)
-
-    ))
+      :rule-classes :forward-chaining)))
 
 (in-theory (disable apply$-prim apply$-primp))

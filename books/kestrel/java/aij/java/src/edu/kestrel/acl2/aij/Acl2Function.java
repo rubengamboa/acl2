@@ -6,10 +6,8 @@
 
 package edu.kestrel.acl2.aij;
 
-import java.util.Map;
-
 /**
- * Representation of ACL2 functions in ACL2 terms.
+ * Representation of ACL2 functions in terms.
  * These are named functions (subclass {@link Acl2NamedFunction})
  * and lambda expressions (subclass {@link Acl2LambdaExpression}).
  */
@@ -18,39 +16,87 @@ public abstract class Acl2Function implements Comparable<Acl2Function> {
     //////////////////////////////////////// package-private members:
 
     /**
-     * Applies this ACL2 function to the given ACL2 values.
-     *
-     * @throws Acl2EvaluationException if the application fails
+     * Prevents the creation of subclasses outside this package.
+     * Since this constructor is package-private,
+     * it inhibits the generation of the default public constructor.
      */
-    abstract Acl2Value apply(Acl2Value[] values) throws Acl2EvaluationException;
+    Acl2Function() {
+    }
 
     /**
-     * Checks if this function is the {@code if} ACL2 function.
+     * Validates all the function calls in this function.
+     * See the overriding methods for details.
      *
-     * @throws IllegalStateException if the "ACL2" package is not defined yet
+     * @throws Acl2InvalidFunctionCallException If some call is invalid.
+     */
+    abstract void validateFunctionCalls();
+
+    /**
+     * Returns the number of parameters of this function.
+     *
+     * @return The number of parameters of this function.
+     * If the function is a defined one but it has no definition yet,
+     * -1 is returned.
+     */
+    abstract int getArity();
+
+    /**
+     * Sets the indices of all the variables in this function.
+     * See {@link Acl2Variable} for more information about variable indices.
+     *
+     * @throws IllegalArgumentException If some index is already set,
+     *                                  or this function contains some variable
+     *                                  that is in the body
+     *                                  of some lambda expression
+     *                                  and that is not bound in the formals of
+     *                                  its smallest enclosing
+     *                                  lambda expression.
+     */
+    abstract void setVariableIndices();
+
+    /**
+     * Checks if this function is the {@code if} ACL2 primitive function.
+     *
+     * @return {@code true} if this function is {@code if},
+     * otherwise {@code false}.
      */
     abstract boolean isIf();
 
     /**
      * Checks if this function is the {@code or} ACL2 "pseudo-function".
      * This is not an ACL2 notion; it is an AIJ notion.
-     * See {@link Acl2FunctionApplication#eval(Map)} for details.
+     * See {@link Acl2FunctionCall#eval(Acl2Value[])} for details.
+     *
+     * @return {@code true} if this function is {@code or},
+     * otherwise {@code false}.
      */
     abstract boolean isOr();
+
+    /**
+     * Applies this function to the given values.
+     *
+     * @param values The actual arguments to pass to the function.
+     *               Invariants: not null, no null elements.
+     * @return The result of the function on the given arguments.
+     * @throws Acl2UndefinedPackageException If a call of {@code pkg-imports}
+     *                                       or {@code pkg-witness} fails.
+     */
+    abstract Acl2Value apply(Acl2Value[] values) throws Acl2UndefinedPackageException;
 
     //////////////////////////////////////// public members:
 
     /**
-     * Compares this ACL2 function with the argument ACL2 function for order.
+     * Compares this function with the argument function for order.
      * This order consists of:
      * first named functions, ordered according to their underlying symbols;
      * then lambda expressions, ordered lexicographically according to
      * their list of formal parameters followed by their body.
      *
-     * @return a negative integer, zero, or a positive integer as
-     * this function is less than, equal to, or greater than the argument
-     * @throws NullPointerException if the argument is null
+     * @return A negative integer, zero, or a positive integer as
+     * this function is less than, equal to, or greater than the argument.
+     * @throws NullPointerException If the argument is null.
      */
     @Override
     public abstract int compareTo(Acl2Function o);
+
 }

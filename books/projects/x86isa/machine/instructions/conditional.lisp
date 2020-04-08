@@ -194,15 +194,15 @@
   ;; 7F    JNLE/G rel8                                  Jump if ZF = 0 and SF = OF
 
   :parents (one-byte-opcodes)
+
   :guard-hints (("Goal" :in-theory (e/d (riml08 riml32 rime-size) ())))
 
   :returns (x86 x86p :hyp (x86p x86)
 		:hints (("Goal" :in-theory (enable rime-size))))
+
   :body
 
-  (b* ((ctx 'x86-one-byte-jcc)
-
-       ;; temp-rip right now points to the rel8 byte.  Add 1 to
+  (b* (;; temp-rip right now points to the rel8 byte.  Add 1 to
        ;; temp-rip to account for rel8 when computing the length
        ;; of this instruction.
        (badlength? (check-instruction-length start-rip temp-rip 1))
@@ -266,6 +266,7 @@
   ;; 0F 8F JNLE/G rel32                                 Jump if ZF = 0 and SF = OF
 
   :parents (two-byte-opcodes)
+
   :guard-hints (("Goal" :in-theory (e/d (riml08 riml32 rime-size) ())))
 
   :returns (x86 x86p :hyp (x86p x86)
@@ -275,18 +276,8 @@
 
   ;; Note: Here opcode is the second byte of the two byte opcode.
 
-  (b* ((ctx 'x86-two-byte-jcc)
-
-       ((the (integer 0 4) offset-size)
-	(if (equal proc-mode #.*64-bit-mode*)
-	    4 ; always 32 bits (rel32) -- 16 bits (rel16) not supported
-	  (b* (((the (unsigned-byte 16) cs-attr) (xr :seg-hidden-attr #.*cs* x86))
-	       (cs.d (code-segment-descriptor-attributesBits->d cs-attr))
-	       (p3? (eql #.*operand-size-override* (prefixes->opr prefixes))))
-	    ;; 16 or 32 bits (rel16 or rel32):
-	    (if (= cs.d 1)
-		(if p3? 2 4)
-	      (if p3? 4 2)))))
+  (b* (((the (integer 0 4) offset-size)
+        (select-operand-size proc-mode nil rex-byte nil prefixes nil t t x86))
 
        ;; temp-rip right now points to the rel16/rel32 byte.  Add 2 or 4 to
        ;; temp-rip to account for rel16/rel32 when computing the length
@@ -337,6 +328,7 @@
   ;; Op/En: D
 
   :parents (one-byte-opcodes)
+
   :guard-hints (("Goal" :in-theory (e/d (riml08
 					 riml32
 					 rime-size
@@ -345,11 +337,10 @@
 
   :returns (x86 x86p :hyp (x86p x86)
 		:hints (("Goal" :in-theory (enable rime-size))))
+
   :body
 
-  (b* ((ctx 'x86-jrcxz)
-
-       ;; temp-rip right now points to the rel8 byte.  Add 1 to
+  (b* (;; temp-rip right now points to the rel8 byte.  Add 1 to
        ;; temp-rip to account for rel8 when computing the length
        ;; of this instruction.
        (badlength? (check-instruction-length start-rip temp-rip 1))
@@ -410,28 +401,27 @@
   ;; 0F 4F CMOVG/CMOVNLE r16/32/64, r/m16/32/64         Move if ZF = 0 and SF = OF
 
   :parents (two-byte-opcodes)
+
   :guard-hints (("Goal" :in-theory (e/d (riml08 riml32) ())))
 
   :returns (x86 x86p :hyp (x86p x86))
+
+  :modr/m t
+
   :body
 
   ;; Note, opcode here denotes the second byte of the two-byte opcode.
 
-  (b* ((ctx 'x86-cmovcc)
-
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod  modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg  modr/m)))
-
-       (p2 (prefixes->seg prefixes))
+  (b* ((p2 (prefixes->seg prefixes))
 
        ((the (integer 1 8) operand-size)
-	(select-operand-size proc-mode nil rex-byte nil prefixes x86))
+	(select-operand-size
+         proc-mode nil rex-byte nil prefixes nil nil nil x86))
 
        (p4? (equal #.*addr-size-override*
 		   (prefixes->adr prefixes)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod  r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        (inst-ac? t)
        ((mv flg0
@@ -494,19 +484,18 @@
   ;; 0F 9F SETG/SETNLE r/m8                             Set if ZF = 0 and SF = OF
 
   :parents (two-byte-opcodes)
+
   :guard-hints (("Goal" :in-theory (e/d (riml08 riml32) ())))
 
   :returns (x86 x86p :hyp (x86p x86))
+
+  :modr/m t
 
   :body
 
   ;; Note, opcode here denotes the second byte of the two-byte opcode.
 
-  (b* ((ctx 'x86-setcc)
-
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod  modr/m)))
-       (p2 (prefixes->seg prefixes))
+  (b* ((p2 (prefixes->seg prefixes))
        (p4? (equal #.*addr-size-override*
 		   (prefixes->adr prefixes)))
 
@@ -537,7 +526,7 @@
 
        (branch-cond (jcc/cmovcc/setcc-spec opcode x86))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        ;; Update the x86 state:
        (inst-ac? t)

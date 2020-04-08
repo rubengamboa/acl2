@@ -1,5 +1,5 @@
-; ACL2 Version 8.1 -- A Computational Logic for Applicative Common Lisp
-; Copyright (C) 2018, Regents of the University of Texas
+; ACL2 Version 8.2 -- A Computational Logic for Applicative Common Lisp
+; Copyright (C) 2019, Regents of the University of Texas
 
 ; This version of ACL2 is a descendent of ACL2 Version 1.9, Copyright
 ; (C) 1997 Computational Logic, Inc.  See the documentation topic NOTE-2-0.
@@ -146,7 +146,18 @@
   ;; Has an under-the-hood implementation
   nil)
 
-(table hons 'slow-alist-warning :warning)
+(table hons 'slow-alist-warning
+
+; By default, ensure that the ACL2 user sees any violation of fast alist
+; discipline.
+
+       #-acl2-par :break
+
+; Except: In ACL2(p), when waterfall-parallelism is enabled, hons-get will fail
+; the fast alist discipline when it is called from any any thread other than
+; the top-level thread.  We avoid breaking in that case.
+
+       #+acl2-par :warning)
 
 (defmacro set-slow-alist-action (action)
   (declare (xargs :guard (or (eq action :warning)

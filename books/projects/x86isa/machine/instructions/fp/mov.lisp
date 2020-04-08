@@ -68,17 +68,13 @@
 
   :sp/dp t
 
-  :returns (x86 x86p :hyp (and (x86p x86)
-                               (canonical-address-p temp-rip)))
+  :returns (x86 x86p :hyp (x86p x86))
+
+  :modr/m t
 
   :body
-  (b* ((ctx 'x86-movss/movsd-Op/En-RM)
 
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-
-       ((the (integer 4 8) operand-size)
+  (b* (((the (integer 4 8) operand-size)
         (if (equal sp/dp #.*OP-DP*) 8 4))
 
        ((the (unsigned-byte 4) xmm-index)
@@ -87,7 +83,7 @@
        (p2 (prefixes->seg prefixes))
        (p4? (eql #.*addr-size-override* (prefixes->adr prefixes)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        (inst-ac? ;; Exceptions Type 5
         t)
@@ -148,17 +144,13 @@
 
   :sp/dp t
 
-  :returns (x86 x86p :hyp (and (x86p x86)
-                               (canonical-address-p temp-rip)))
+  :returns (x86 x86p :hyp (x86p x86))
+
+  :modr/m t
 
   :body
-  (b* ((ctx 'x86-movss/movsd-Op/En-MR)
 
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-
-       ((the (integer 4 8) operand-size)
+  (b* (((the (integer 4 8) operand-size)
         (if (equal sp/dp #.*OP-DP*) 8 4))
 
        ((the (unsigned-byte 4) xmm-index)
@@ -168,7 +160,7 @@
        (p2 (prefixes->seg prefixes))
        (p4? (eql #.*addr-size-override* (prefixes->adr prefixes)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        ((mv flg0
             (the (signed-byte 64) addr)
@@ -220,23 +212,19 @@
      0F 28: MOVAPS xmm1, xmm2/m128<br/>
   66 0F 28: MOVAPD xmm1, xmm2/m128<br/>"
 
-  :returns (x86 x86p :hyp (and (x86p x86)
-                               (canonical-address-p temp-rip)))
+  :returns (x86 x86p :hyp (x86p x86))
+
+  :modr/m t
 
   :body
-  (b* ((ctx 'x86-movaps/movapd-Op/En-RM)
 
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-
-       ((the (unsigned-byte 4) xmm-index)
+  (b* (((the (unsigned-byte 4) xmm-index)
         (reg-index reg rex-byte #.*r*))
 
        (p2 (prefixes->seg prefixes))
        (p4? (eql #.*addr-size-override* (prefixes->adr prefixes)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        (inst-ac? ;; Exceptions Type 1
         t)
@@ -287,17 +275,13 @@
      0F 29: MOVAPS xmm2/m128, xmm1<br/>
   66 0F 29: MOVAPD xmm2/m128, xmm1<br/>"
 
-  :returns (x86 x86p :hyp (and (x86p x86)
-                               (canonical-address-p temp-rip)))
+  :returns (x86 x86p :hyp (x86p x86))
+
+  :modr/m t
 
   :body
-  (b* ((ctx 'x86-movaps/movapd-Op/En-MR)
 
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-
-       ((the (unsigned-byte 4) xmm-index)
+  (b* (((the (unsigned-byte 4) xmm-index)
         (reg-index reg rex-byte #.*r*))
        ((the (unsigned-byte 128) xmm)
         (xmmi-size 16 xmm-index x86))
@@ -305,7 +289,7 @@
        (p2 (prefixes->seg prefixes))
        (p4? (eql #.*addr-size-override* (prefixes->adr prefixes)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        ((mv flg0
             (the (signed-byte 64) addr)
@@ -365,23 +349,19 @@
  implementation when data addresses are not aligned on an 8-byte
  boundary.</p>"
 
-  :returns (x86 x86p :hyp (and (x86p x86)
-                               (canonical-address-p temp-rip)))
+  :returns (x86 x86p :hyp (x86p x86))
+
+  :modr/m t
 
   :body
-  (b* ((ctx 'x86-movups/movupd/movdqu-Op/En-RM)
 
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-
-       ((the (unsigned-byte 4) xmm-index)
+  (b* (((the (unsigned-byte 4) xmm-index)
         (reg-index reg rex-byte #.*r*))
 
        (p2 (prefixes->seg prefixes))
        (p4? (eql #.*addr-size-override* (prefixes->adr prefixes)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        (inst-ac?
         ;; Exceptions Type 4 but treatment of #AC varies. For now, we
@@ -434,17 +414,13 @@
   66 0F 11: MOVUPD xmm2/m128, xmm1<br/>
   F3 0F 7F: MOVDQU xmm2/m128, xmm1<br/>"
 
-  :returns (x86 x86p :hyp (and (x86p x86)
-                               (canonical-address-p temp-rip)))
+  :returns (x86 x86p :hyp (x86p x86))
+
+  :modr/m t
 
   :body
-  (b* ((ctx 'x86-movups/movupd/movdqu-Op/En-MR)
 
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-
-       ((the (unsigned-byte 4) xmm-index)
+  (b* (((the (unsigned-byte 4) xmm-index)
         (reg-index reg rex-byte #.*r*))
        ((the (unsigned-byte 128) xmm)
         (xmmi-size 16 xmm-index x86))
@@ -453,7 +429,7 @@
        (p4? (eql #.*addr-size-override*
                  (prefixes->adr prefixes)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        ((mv flg0
             (the (signed-byte 64) addr)
@@ -509,24 +485,20 @@
      0F 12: MOVLPS xmm, m64<br/>
   66 0F 12: MOVLPD xmm, m64<br/>"
 
-  :returns (x86 x86p :hyp (and (x86p x86)
-                               (canonical-address-p temp-rip)))
+  :returns (x86 x86p :hyp (x86p x86))
+
+  :modr/m t
 
   :body
-  (b* ((ctx 'x86-movlps/movlpd-Op/En-RM)
 
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-
-       ((the (unsigned-byte 4) xmm-index)
+  (b* (((the (unsigned-byte 4) xmm-index)
         (reg-index reg rex-byte #.*r*))
 
        (p2 (prefixes->seg prefixes))
 
        (p4? (eql #.*addr-size-override* (prefixes->adr prefixes)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        (inst-ac? ;; Exceptions Type 5
         t)
@@ -578,17 +550,13 @@
      0F 13: MOVLPS m64, xmm<br/>
   66 0F 13: MOVLPD m64, xmm<br/>"
 
-  :returns (x86 x86p :hyp (and (x86p x86)
-                               (canonical-address-p temp-rip)))
+  :returns (x86 x86p :hyp (x86p x86))
+
+  :modr/m t
 
   :body
-  (b* ((ctx 'x86-movlps/movlpd-Op/En-MR)
 
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-
-       ((the (unsigned-byte 4) xmm-index)
+  (b* (((the (unsigned-byte 4) xmm-index)
         (reg-index reg rex-byte #.*r*))
        ((the (unsigned-byte 64) xmm)
         (xmmi-size 8 xmm-index x86))
@@ -597,7 +565,7 @@
 
        (p4? (eql #.*addr-size-override* (prefixes->adr prefixes)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        ((mv flg0
             (the (signed-byte 64) addr)
@@ -649,24 +617,20 @@
      0F 16: MOVHPS xmm, m64<br/>
   66 0F 16: MOVHPD xmm, m64<br/>"
 
-  :returns (x86 x86p :hyp (and (x86p x86)
-                               (canonical-address-p temp-rip)))
+  :returns (x86 x86p :hyp (x86p x86))
+
+  :modr/m t
 
   :body
-  (b* ((ctx 'x86-movhps/movhpd-Op/En-RM)
 
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-
-       ((the (unsigned-byte 4) xmm-index)
+  (b* (((the (unsigned-byte 4) xmm-index)
         (reg-index reg rex-byte #.*r*))
 
        (p2 (prefixes->seg prefixes))
 
        (p4? (eql #.*addr-size-override* (prefixes->adr prefixes)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        (inst-ac? ;; Exceptions Type 5
         t)
@@ -719,17 +683,13 @@
      0F 17: MOVHPS m64, xmm<br/>
   66 0F 17: MOVHPD m64, xmm<br/>"
 
-  :returns (x86 x86p :hyp (and (x86p x86)
-                               (canonical-address-p temp-rip)))
+  :returns (x86 x86p :hyp (x86p x86))
+
+  :modr/m t
 
   :body
-  (b* ((ctx 'x86-movhps/movhpd-Op/En-MR)
 
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-
-       ((the (unsigned-byte 4) xmm-index)
+  (b* (((the (unsigned-byte 4) xmm-index)
         (reg-index reg rex-byte #.*r*))
        ((the (unsigned-byte 128) xmm)
         (xmmi-size 16 xmm-index x86))
@@ -744,7 +704,7 @@
        (p4? (eql #.*addr-size-override*
                  (prefixes->adr prefixes)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        ((mv flg0
             (the (signed-byte 64) addr)

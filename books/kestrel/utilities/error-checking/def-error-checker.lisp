@@ -1,6 +1,6 @@
 ; Error Checking -- Generator
 ;
-; Copyright (C) 2018 Kestrel Institute (http://www.kestrel.edu)
+; Copyright (C) 2020 Kestrel Institute (http://www.kestrel.edu)
 ;
 ; License: A 3-clause BSD license. See the LICENSE file distributed with ACL2.
 ;
@@ -10,9 +10,9 @@
 
 (in-package "ACL2")
 
+(include-book "kestrel/std/system/pseudo-event-formp" :dir :system)
 (include-book "kestrel/utilities/er-soft-plus" :dir :system)
 (include-book "kestrel/utilities/enumerations" :dir :system)
-(include-book "kestrel/utilities/event-forms" :dir :system)
 (include-book "kestrel/utilities/messages" :dir :system)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -26,12 +26,12 @@
 
   :long
 
-  (xdoc::topapp
+  (xdoc::topstring
 
    (xdoc::p
     "This macro generates an error-checking function
      and an associated macro abbreviation of the following form:")
-   (xdoc::code
+   (xdoc::codeblock
     "(define <name> (<x1> ... <xn>"
     "                (description msgp)"
     "                (error-erp (not (null error-erp))"
@@ -145,7 +145,7 @@
 
    (xdoc::p
     "The macro is called as follows:")
-   (xdoc::code
+   (xdoc::codeblock
     "(def-error-checker <name>"
     "  (<x1> ... <xn>)"
     "  <short>"
@@ -162,7 +162,7 @@
     "A table keeps track of all the successful calls to this macro,
      for <see topic='@(url redundant-events)'>redundancy</see> checking.")
 
-   (xdoc::def "def-error-checker"))
+   (xdoc::@def "def-error-checker"))
 
   ;; record successful calls to DEF-ERROR-CHECKER, for redundancy checking:
   (table def-error-checker-calls nil nil
@@ -178,10 +178,10 @@
     :parents (def-error-checker)
     :short "Generate the @(tsee b*) bindings of the error-checking function."
     :long
-    (xdoc::topapp
+    (xdoc::topstring
      (xdoc::p
       "These are the")
-     (xdoc::code
+     (xdoc::codeblock
       "((unless <conditionj>) (er-soft+ ctx error-erp error-val . <messagej>))")
      (xdoc::p
       "bindings,

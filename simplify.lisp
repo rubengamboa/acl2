@@ -1,5 +1,5 @@
-; ACL2 Version 8.1 -- A Computational Logic for Applicative Common Lisp
-; Copyright (C) 2018, Regents of the University of Texas
+; ACL2 Version 8.2 -- A Computational Logic for Applicative Common Lisp
+; Copyright (C) 2019, Regents of the University of Texas
 
 ; This version of ACL2 is a descendent of ACL2 Version 1.9, Copyright
 ; (C) 1997 Computational Logic, Inc.  See the documentation topic NOTE-2-0.
@@ -1293,74 +1293,81 @@
 
 (mutual-recursion
 
-(defun ev-respecting-ens (form alist state latches ttree ens wrld)
+(defun ev-respecting-ens (form alist state ttree ens wrld)
 
-; This is a variant of ev (see also ev-rec) that avoids calling functions whose
-; executable-counterparts are disabled.  Thus, here we return (mv erp val
-; latches ttree), where ev would return (mv erp val latches) and ttree extends
-; the given ttree by adding executable-counterpart runes justifying the
-; evaluation.  If erp is non-nil then val and ttree are to be taken as
-; meaningless.
+; This is a variant of ev (see also ev-rec), for use when latches is nil, that
+; avoids calling functions whose executable-counterparts are disabled.  Thus,
+; here we return (mv erp val ttree), where ev would return (mv erp val latches)
+; and ttree extends the given ttree by adding executable-counterpart runes
+; justifying the evaluation.  If erp is non-nil then val and ttree are to be
+; taken as meaningless.
 
   (cond ((or (variablep form)
              (fquotep form))
          (mv-let (erp val latches)
-           (ev form alist state latches t nil)
-           (mv erp val latches ttree)))
+           (ev form alist state nil t nil)
+           (assert$ (null latches)
+                    (mv erp val ttree))))
         (t (let ((fn (ffn-symb form)))
              (cond
               ((or (flambdap fn)
                    (enabled-xfnp fn ens wrld))
                (cond ((eq fn 'if)
                       (mv-let
-                        (test-er test latches ttree)
+                        (test-er test ttree)
                         (ev-respecting-ens (fargn form 1) alist state
-                                           latches ttree ens wrld)
-                        (cond (test-er (mv t test latches ttree))
+                                           ttree ens wrld)
+                        (cond (test-er (mv t test ttree))
                               (test (ev-respecting-ens
                                      (fargn form 2)
-                                     alist state latches
+                                     alist state
                                      (push-lemma '(:EXECUTABLE-COUNTERPART if)
                                                  ttree)
                                      ens wrld))
                               (t (ev-respecting-ens
                                   (fargn form 3)
-                                  alist state latches
+                                  alist state
                                   (push-lemma '(:EXECUTABLE-COUNTERPART if)
-                                                 ttree)
+                                              ttree)
                                   ens wrld)))))
                      (t (mv-let
-                          (args-er args latches ttree)
+                          (args-er args ttree)
                           (ev-lst-respecting-ens (fargs form) alist state
-                                                 latches ttree ens wrld)
+                                                 ttree ens wrld)
                           (cond
-                           (args-er (mv t args latches ttree))
+                           (args-er (mv t args ttree))
                            (t (cond
                                ((flambdap fn)
                                 (ev-respecting-ens
                                  (lambda-body (ffn-symb form))
                                  (pairlis$ (lambda-formals (ffn-symb form))
                                            args)
-                                 state latches ttree ens wrld))
+                                 state ttree ens wrld))
                                (t (mv-let (erp val latches)
-                                    (ev-fncall fn args state latches t nil)
-                                    (mv erp val latches
-                                        (push-lemma
-                                         `(:EXECUTABLE-COUNTERPART ,fn)
-                                         ttree)))))))))))
-              (t (mv t nil latches ttree)))))))
+                                    (ev-fncall fn args
+                                               nil ; irrelevant (latches = nil)
+                                               state
+                                               nil ; latches
+                                               t nil)
+                                    (assert$
+                                     (null latches)
+                                     (mv erp val
+                                         (push-lemma
+                                          `(:EXECUTABLE-COUNTERPART ,fn)
+                                          ttree))))))))))))
+              (t (mv t nil ttree)))))))
 
-(defun ev-lst-respecting-ens (lst alist state latches ttree ens wrld)
+(defun ev-lst-respecting-ens (lst alist state ttree ens wrld)
   (cond ((endp lst)
-         (mv nil nil latches ttree))
-        (t (mv-let (erp val latches ttree)
-             (ev-respecting-ens (car lst) alist state latches ttree ens wrld)
-             (cond (erp (mv erp val latches ttree))
-                   (t (mv-let (erp rst latches ttree)
-                        (ev-lst-respecting-ens (cdr lst) alist state latches
+         (mv nil nil ttree))
+        (t (mv-let (erp val ttree)
+             (ev-respecting-ens (car lst) alist state ttree ens wrld)
+             (cond (erp (mv erp val ttree))
+                   (t (mv-let (erp rst ttree)
+                        (ev-lst-respecting-ens (cdr lst) alist state
                                                ttree ens wrld)
-                        (cond (erp (mv erp rst latches ttree))
-                              (t (mv nil (cons val rst) latches ttree))))))))))
+                        (cond (erp (mv erp rst ttree))
+                              (t (mv nil (cons val rst) ttree))))))))))
 )
 
 ; Forward Chaining Derivations - fc-derivations - fcds
@@ -2992,10 +2999,9 @@
 ; only using evaluation on ground terms where it makes the most sense.
 
                        (mv-let
-                        (erp val latches ttree2)
+                        (erp val ttree2)
                         (ev-respecting-ens
-                         inst-hyp nil state nil nil ens wrld)
-                        (declare (ignore latches))
+                         inst-hyp nil state nil ens wrld)
 
 ; Note that ttree2 is the ttree for the evaluation and it does not
 ; include ttree or ttree1.  We are not using the type-set stuff because
@@ -8346,8 +8352,26 @@
 ; expand-hint created by the system, say because some non-controller argument
 ; in the pattern had simplified to 0 or nil.
 
-                           (cons :constants
-                                 (controller-unify-subst name term def-body))
+                           (let ((alist
+                                  (controller-unify-subst name term def-body)))
+
+; Once upon a time we had a bug here.  We simply consed :constants onto alist.
+; That could produce an :alist of the form (:constants . :none).  But this is
+; silly because :none means we do an exact match and produce no substitution
+; whereas the :constants means each var is bound to itself or a quoted evg.
+; If (:constants . :none) means anything it would be the same as :none, so we
+; no longer produce (:constants . :none).  The bug arose because in the code
+; that interprets :alist, namely in the function expand-permission-result1, we
+; expect :alist to be :none, unify-subst, or (:constant . unify-subst) and
+; made no provision for the silly case, which meant we ended up calling
+; one-way-unify1 with a partial alist of :NONE.  This bug was further obscured
+; by an out-of-date comment defrec expand-hint which indicated that :alist
+; was either :none or a substitution.
+
+                             (if (eq alist :none)
+                                 :none
+                                 (cons :constants
+                                       alist)))
                            :rune (access def-body def-body :rune)
                            :equiv (access def-body def-body :equiv)
                            :hyp (access def-body def-body :hyp)
@@ -8980,21 +9004,6 @@
               "primitive type reasoning")
         (cons (car *fake-rune-for-cert-data*)
               "previously-computed data")))
-
-(defun rune-< (x y)
-  (cond
-   ((eq (car x) (car y))
-    (or (symbol-< (cadr x) (cadr y))
-        (and (eq (cadr x) (cadr y))
-             (cond ((null (cddr x))
-                    (cddr y))
-                   ((null (cddr y))
-                    nil)
-                   (t (< (cddr x) (cddr y)))))))
-   ((symbol-< (car x) (car y))
-    t)
-   (t
-    nil)))
 
 (defun merge-runes (l1 l2)
   (cond ((null l1) l2)

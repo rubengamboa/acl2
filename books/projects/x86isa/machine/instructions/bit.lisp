@@ -68,6 +68,7 @@
   ;;      8          -2^63 to 2^63-1
 
   :parents (two-byte-opcodes)
+
   :returns (x86 x86p :hyp (x86p x86))
 
   :guard-hints (("Goal" :in-theory (e/d (segment-base-and-bounds)
@@ -92,24 +93,21 @@
 		     signed-byte-p
 		     unsigned-byte-p)))))
 
+  :modr/m t
+
   :body
 
   ;; Note: opcode is the second byte of the two-byte opcode.
 
-  (b* ((ctx 'x86-bt-0f-a3)
-
-       (r/m (the (unsigned-byte 3) (modr/m->r/m  modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod  modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg  modr/m)))
-
-       (p2 (prefixes->seg prefixes))
+  (b* ((p2 (prefixes->seg prefixes))
        (p4? (equal #.*addr-size-override*
 		   (prefixes->adr prefixes)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        ((the (integer 1 8) operand-size)
-	(select-operand-size proc-mode nil rex-byte nil prefixes x86))
+	(select-operand-size
+         proc-mode nil rex-byte nil prefixes nil nil nil x86))
 
        (bitOffset (rgfi-size operand-size
 			     (reg-index reg rex-byte #.*r*)
@@ -162,7 +160,7 @@
 	       (bitNumber (mod bitOffset-int-abs 8))
 	       (byte-addr (+ addr
 			     (floor bitOffset-int 8)))
-	       (inst-ac? t)
+	       (inst-ac? (alignment-checking-enabled-p x86))
 	       ((mv flg byte x86)
 		(if (signed-byte-p 64 byte-addr)
 		    (rme-size-opt proc-mode 1 byte-addr seg-reg :r inst-ac? x86
@@ -201,23 +199,21 @@
 
   :guard-hints (("Goal" :in-theory (enable rme-size-of-1-to-rme08)))
 
+  :modr/m t
+
   :body
 
   ;; Note: opcode is the second byte of the two-byte opcode.
 
-  (b* ((ctx 'x86-bt-0f-ba)
-
-       (r/m (the (unsigned-byte 3) (modr/m->r/m  modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod  modr/m)))
-
-       ((the (integer 1 8) operand-size)
-	(select-operand-size proc-mode nil rex-byte nil prefixes x86))
+  (b* (((the (integer 1 8) operand-size)
+	(select-operand-size
+         proc-mode nil rex-byte nil prefixes nil nil nil x86))
 
        (p2 (prefixes->seg prefixes))
        (p4? (equal #.*addr-size-override*
 		   (prefixes->adr prefixes)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        (inst-ac? t)
        ((mv flg0

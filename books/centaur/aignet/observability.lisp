@@ -34,6 +34,7 @@
 (include-book "centaur/aignet/prune" :dir :system)
 (include-book "centaur/aignet/ipasir" :dir :system)
 (include-book "transform-utils")
+(include-book "count")
 
 (local (include-book "centaur/satlink/cnf-basics" :dir :system))
 (local (include-book "centaur/aignet/cnf" :dir :system))
@@ -51,53 +52,6 @@
 (local (std::add-default-post-define-hook :fix))
 
 (local (xdoc::set-default-parents observability-fix))
-
-
-(define count-gates-mark-rec ((id natp)
-                              (mark)
-                              (aignet))
-  :guard (and (< id (num-fanins aignet))
-              (<= (num-fanins aignet) (bits-length mark)))
-  :returns (mv (num-subnodes natp :rule-classes :type-prescription)
-               new-mark)
-  :measure (nfix id)
-  :verify-guards nil
-  (b* (((when (eql 1 (get-bit id mark)))
-        (mv 0 mark))
-       (mark (set-bit id 1 mark))
-       (slot0 (id->slot id 0 aignet))
-       (type (snode->type slot0)))
-    (aignet-case type
-      :in (mv 0 mark)
-      :gate (b* (((mv subs0 mark) (count-gates-mark-rec (lit-id (snode->fanin slot0)) mark aignet))
-                 ((mv subs1 mark) (count-gates-mark-rec (lit-id (gate-id->fanin1 id aignet)) mark aignet)))
-              (mv (+ 1 subs0 subs1) mark))
-      :const (mv 0 mark)
-      :out (count-gates-mark-rec (lit-id (snode->fanin slot0)) mark aignet)))
-  ///
-  (local (in-theory (disable (:d count-gates-mark-rec) nth update-nth)))
-
-  (local (defthm len-update-nth-when-less
-           (implies (< (nfix n) (len x))
-                    (equal (len (update-nth n val x)) (len x)))))
-
-  (defret len-mark-of-count-gates-mark-rec
-    (implies (and (< (nfix id) (num-fanins aignet))
-                  (<= (num-fanins aignet) (len mark)))
-             (equal (len new-mark) (len mark)))
-    :hints (("goal" :induct <call>
-             :expand ((:free () <call>)))))
-
-  (Verify-guards count-gates-mark-rec :hints(("goal" :in-theory(enable aignet-idp)))))
-
-(define count-gates-mark ((id natp) aignet)
-  :guard (< id (num-fanins aignet))
-  :returns (num-subnodes natp :rule-classes :type-prescription)
-  (b* (((acl2::local-stobjs mark)
-        (mv ans mark))
-       (mark (resize-bits (num-fanins aignet) mark)))
-    (count-gates-mark-rec id mark aignet)))
-       
 
 
 
@@ -356,6 +310,8 @@
              (equal (input-copy-values 0 some-invals some-regvals aignet new-copy new-aignet2)
                     (input-copy-values 0 some-invals some-regvals aignet copy aignet2)))))
 
+(local (in-theory (disable w)))
+
 (define observability-fix-input-copies ((lit litp)
                                         (aignet)
                                         (copy)
@@ -466,7 +422,10 @@
   (defret observability-fix-input-copies-not-unsat-when-sat
     (implies (and (equal (lit-eval lit some-invals some-regvals aignet2) 1)
                   (aignet-litp lit aignet2))
-             (not (equal status :unsat)))))
+             (not (equal status :unsat))))
+
+  (defret w-state-of-<fn>
+    (equal (w new-state) (w state))))
        
 
 
@@ -554,6 +513,13 @@
                (equal (stype-count stype new-aignet2)
                       (stype-count stype aignet2)))
       :hints ('(:expand (<call>))))
+
+  (defret copy-length-of-<fn>
+    (implies (and (<= (num-fanins aignet) (len copy))
+                  (aignet-litp hyp aignet)
+                  (aignet-litp concl aignet))
+             (equal (len new-copy) (len copy)))
+    :hints(("Goal" :in-theory (enable aignet-idp))))
 
 
   ;; (local (defthm aignet-idp-when-lte-max-fanin
@@ -646,7 +612,10 @@
                                   (LIT-EVAL HYP
                                             (INPUT-COPY-VALUES 0 INVALS REGVALS AIGNET COPY AIGNET2)
                                             (REG-COPY-VALUES 0 INVALS REGVALS AIGNET COPY AIGNET2)
-                                            AIGNET))))))))
+                                            AIGNET)))))))
+
+  (defret w-state-of-<fn>
+    (equal (w new-state) (w state))))
                                      
 
 (define observability-split-supergate-aux ((lits lit-listp)
@@ -761,124 +730,6 @@
                     (stype-count stype aignet)))))
 
 
-;; BOZO move
-(define aignet-copy-set-ins ((n natp)
-                             (aignet)
-                             (copy)
-                             (aignet2))
-  ;; Sets the copy of each PI ID of aignet to the corresponding PI lit of aignet2, beginning at input number N.
-  :guard (and (<= n (num-ins aignet))
-              (<= (num-ins aignet) (num-ins aignet2))
-              (<= (num-fanins aignet) (lits-length copy)))
-  :measure (nfix (- (num-ins aignet) (nfix n)))
-  :returns (new-copy)
-  (b* (((when (mbe :logic (zp (- (num-ins aignet) (nfix n)))
-                   :exec (eql n (num-ins aignet))))
-        copy)
-       (copy (set-lit (innum->id n aignet)
-                      (make-lit (innum->id n aignet2) 0)
-                      copy)))
-    (aignet-copy-set-ins (1+ (lnfix n)) aignet copy aignet2))
-  ///
-  (local (defthm len-of-update-nth-lit
-           (implies (< (nfix n) (len x))
-                    (equal (len (update-nth-lit n val x))
-                           (len x)))
-           :hints(("Goal" :in-theory (enable update-nth-lit)))))
-
-  (defret len-of-aignet-copy-set-ins
-    (implies (<= (num-fanins aignet) (len copy))
-             (equal (len new-copy) (len copy))))
-
-  (defret nth-lit-of-aignet-copy-set-ins
-    (equal (nth-lit id new-copy)
-           (if (and (eq (stype (car (lookup-id id aignet))) :pi)
-                    (<= (nfix n) (stype-count :pi (cdr (lookup-id id aignet)))))
-               (make-lit (fanin-count (lookup-stype (stype-count :pi (cdr (lookup-id id aignet))) :pi aignet2))
-                         0)
-             (nth-lit id copy))))
-
-  (defret input-copy-values-of-aignet-copy-set-ins
-    (implies (<= (num-ins aignet) (num-ins aignet2))
-             (equal (input-copy-values n invals regvals aignet new-copy aignet2)
-                    (bit-list-fix (take (- (num-ins aignet) (nfix n)) (nthcdr n invals)))))
-    :hints(("Goal" :in-theory (enable input-copy-values))
-           (and stable-under-simplificationp
-                '(:expand ((:free (i) (lit-eval (make-lit i 0) invals regvals aignet2))
-                           (:free (i) (id-eval i invals regvals aignet2)))))))
-
-  (defret reg-copy-values-of-aignet-copy-set-ins
-    (equal (reg-copy-values m invals regvals aignet new-copy aignet2)
-           (reg-copy-values m invals regvals aignet copy aignet2)))
-
-  ;; (local (defthm aignet-litp-of-lookup-stype
-  ;;          (aignet-litp (make-lit (fanin-count (lookup-stype n :pi aignet)) neg) aignet)
-  ;;          :hints(("Goal" :in-theory (enable aignet-litp)
-  ;;                  :cases ((< (nfix n) (num-ins aignet)))))))
-
-  (defret aignet-copies-in-bounds-of-aignet-copy-set-ins
-    (implies (aignet-copies-in-bounds copy aignet2)
-             (aignet-copies-in-bounds new-copy aignet2))))
-
-
-
-(define aignet-copy-set-regs ((n natp)
-                             (aignet)
-                             (copy)
-                             (aignet2))
-  ;; Sets the copy of each PI ID of aignet to the corresponding PI lit of aignet2, beginning at input number N.
-  :guard (and (<= n (num-regs aignet))
-              (<= (num-regs aignet) (num-regs aignet2))
-              (<= (num-fanins aignet) (lits-length copy)))
-  :measure (nfix (- (num-regs aignet) (nfix n)))
-  :returns (new-copy)
-  (b* (((when (mbe :logic (zp (- (num-regs aignet) (nfix n)))
-                   :exec (eql n (num-regs aignet))))
-        copy)
-       (copy (set-lit (regnum->id n aignet)
-                      (make-lit (regnum->id n aignet2) 0)
-                      copy)))
-    (aignet-copy-set-regs (1+ (lnfix n)) aignet copy aignet2))
-  ///
-  (local (defthm len-of-update-nth-lit
-           (implies (< (nfix n) (len x))
-                    (equal (len (update-nth-lit n val x))
-                           (len x)))
-           :hints(("Goal" :in-theory (enable update-nth-lit)))))
-
-  (defret len-of-aignet-copy-set-regs
-    (implies (<= (num-fanins aignet) (len copy))
-             (equal (len new-copy) (len copy))))
-
-  (defret nth-lit-of-aignet-copy-set-regs
-    (equal (nth-lit id new-copy)
-           (if (and (eq (stype (car (lookup-id id aignet))) :reg)
-                    (<= (nfix n) (stype-count :reg (cdr (lookup-id id aignet)))))
-               (make-lit (fanin-count (lookup-stype (stype-count :reg (cdr (lookup-id id aignet))) :reg aignet2))
-                         0)
-             (nth-lit id copy))))
-
-  (defret reg-copy-values-of-aignet-copy-set-regs
-    (implies (<= (num-regs aignet) (num-regs aignet2))
-             (equal (reg-copy-values n invals regvals aignet new-copy aignet2)
-                    (bit-list-fix (take (- (num-regs aignet) (nfix n)) (nthcdr n regvals)))))
-    :hints(("Goal" :in-theory (enable reg-copy-values))
-           (and stable-under-simplificationp
-                '(:expand ((:free (i) (lit-eval (make-lit i 0) invals regvals aignet2))
-                           (:free (i) (id-eval i invals regvals aignet2)))))))
-
-  (defret input-copy-values-of-aignet-copy-set-regs
-    (equal (input-copy-values m invals regvals aignet new-copy aignet2)
-           (input-copy-values m invals regvals aignet copy aignet2)))
-
-  ;; (local (defthm aignet-litp-of-lookup-stype
-  ;;          (aignet-litp (make-lit (fanin-count (lookup-stype n :reg aignet)) neg) aignet)
-  ;;          :hints(("Goal" :in-theory (enable aignet-litp)
-  ;;                  :cases ((< (nfix n) (num-regs aignet)))))))
-
-  (defret aignet-copies-in-bounds-of-aignet-copy-set-regs
-    (implies (aignet-copies-in-bounds copy aignet2)
-             (aignet-copies-in-bounds new-copy aignet2))))
 
 (local (defthm nth-of-bit-list-fix
          (bit-equiv (nth n (bit-list-fix x))
@@ -986,6 +837,11 @@
              (equal (stype-count stype new-aignet2)
                     (stype-count stype aignet2))))
 
+  (defret copy-length-of-<fn>
+    (implies (aignet-litp lit aignet)
+             (equal (len new-copy)
+                    (num-fanins new-aignet))))
+
   ;; (defret copy-size-of-observability-fix-lit
   ;;   (implies (aignet-litp lit aignet)
   ;;            (< (max-fanin new-aignet) (len new-copy)))
@@ -1015,7 +871,10 @@
                   (<= (num-ins aignet) (num-ins aignet2))
                   (<= (num-regs aignet) (num-regs aignet2)))
              (equal (lit-eval new-lit invals regvals new-aignet2)
-                    (lit-eval lit invals regvals aignet)))))
+                    (lit-eval lit invals regvals aignet))))
+
+  (defret w-state-of-<fn>
+    (equal (w new-state) (w state))))
        
 
 
@@ -1093,7 +952,10 @@
             :induct <call>
             :expand (<call>))
            (and stable-under-simplificationp
-                '(:expand ((:free (a b) (lookup-stype m :po (cons a b)))))))))
+                '(:expand ((:free (a b) (lookup-stype m :po (cons a b))))))))
+
+  (defret w-state-of-<fn>
+    (equal (w new-state) (w state))))
 
 
 (define observability-fix-nxsts ((n natp)
@@ -1193,7 +1055,10 @@
            (and stable-under-simplificationp
                 '(:expand ((:free (a b) (lookup-reg->nxst m (cons a b))))))
            (and stable-under-simplificationp
-                '(:cases ((< (nfix m) (num-regs aignet2))))))))
+                '(:cases ((< (nfix m) (num-regs aignet2)))))))
+
+  (defret w-state-of-<fn>
+    (equal (w new-state) (w state))))
 
 
 (define observability-fix-core ((aignet)
@@ -1277,7 +1142,15 @@
 
   (defret comb-equiv-of-observability-fix-core
     (comb-equiv new-aignet2 aignet)
-    :hints(("Goal" :in-theory (enable comb-equiv)))))
+    :hints(("Goal" :in-theory (enable comb-equiv))))
+
+  (defret normalize-inputs-of-<fn>
+    (implies (syntaxp (not (equal aignet2 ''nil)))
+             (equal <call>
+                    (let ((aignet2 nil)) <call>))))
+
+  (defret w-state-of-<fn>
+    (equal (w new-state) (w state))))
              
 
 
@@ -1287,7 +1160,7 @@
                                    "Settings for the transform")
                            (state))
   :guard-debug t
-  :returns (mv new-aignet2 state)
+  :returns (mv new-aignet2 new-state)
   :parents (aignet-comb-transforms)
   :short "Transform the aignet so that some observability don't-care conditions
           don't affect the logical equivalence of nodes."
@@ -1349,14 +1222,17 @@ only changed in cases where @('A') des not hold:</p>
   (defthm normalize-input-of-observability-fix
     (implies (syntaxp (not (equal aignet2 ''nil)))
              (equal (observability-fix aignet aignet2 config state)
-                    (observability-fix aignet nil config state)))))
+                    (observability-fix aignet nil config state))))
+
+  (defret w-state-of-<fn>
+    (equal (w new-state) (w state))))
 
 
 (define observability-fix! ((aignet  "Input aignet -- will be replaced with transformation result")
                             (config observability-config-p)
                             (state))
   :guard-debug t
-  :returns (mv new-aignet state)
+  :returns (mv new-aignet new-state)
   :parents (observability-fix)
   :short "Like @(see observability-fix), but overwrites the original network instead of returning a new one."
   (b* (((acl2::local-stobjs aignet-tmp)
@@ -1378,7 +1254,10 @@ only changed in cases where @('A') des not hold:</p>
            (stype-count :po aignet)))
 
   (defret observability-fix!-comb-equivalent
-    (comb-equiv new-aignet aignet)))
+    (comb-equiv new-aignet aignet))
+
+  (defret w-state-of-<fn>
+    (equal (w new-state) (w state))))
 
 
   

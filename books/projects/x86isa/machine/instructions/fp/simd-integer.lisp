@@ -116,20 +116,17 @@
 
      ///
 
-     (defthm-usb n32p-pcmpeqb32
+     (defthm-unsigned-byte-p n32p-pcmpeqb32
        :bound 32
        :concl (pcmpeqb32 xmm xmm/mem)
        :gen-type t
        :gen-linear t)))
 
+  :modr/m t
+
   :body
-  (b* ((ctx 'x86-pcmpeqb-Op/En-RM)
 
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-
-       ((the (unsigned-byte 4) xmm-index)
+  (b* (((the (unsigned-byte 4) xmm-index)
         (reg-index reg rex-byte #.*r*))
        ((the (unsigned-byte 128) xmm)
         (xmmi-size 16 xmm-index x86))
@@ -137,7 +134,7 @@
        (p2 (prefixes->seg prefixes))
        (p4? (eql #.*addr-size-override* (prefixes->adr prefixes)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        ;; Cuong: Although this requirement is not specified in the
        ;; Intel manual, I got a segmentation fault when trying with
@@ -276,26 +273,23 @@
 
      ///
 
-     (defthm-usb n08p-pmovmskb8
+     (defthm-unsigned-byte-p n08p-pmovmskb8
        :bound 8
        :concl (pmovmskb8 xmm)
        :gen-type t
        :gen-linear t)))
 
+  :modr/m t
+
   :body
-  (b* ((ctx 'x86-pmovmskb-Op/En-RM)
 
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-
-       ((the (unsigned-byte 4) rgf-index)
+  (b* (((the (unsigned-byte 4) rgf-index)
         (reg-index reg rex-byte #.*r*))
 
        (p2 (prefixes->seg prefixes))
        (p4? (eql #.*addr-size-override* (prefixes->adr prefixes)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        (inst-ac? ;; Exceptions Type 7
         nil)

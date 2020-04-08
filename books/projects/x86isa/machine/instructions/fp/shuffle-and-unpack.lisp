@@ -102,14 +102,11 @@
 
   :returns (x86 x86p :hyp (x86p x86))
 
+  :modr/m t
+
   :body
-  (b* ((ctx 'x86-shufps-Op/En-RMI)
 
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-
-       ((the (unsigned-byte 4) xmm-index)
+  (b* (((the (unsigned-byte 4) xmm-index)
         (reg-index reg rex-byte #.*r*))
        ((the (unsigned-byte 128) xmm)
         (xmmi-size 16 xmm-index x86))
@@ -117,7 +114,7 @@
        (p2 (prefixes->seg prefixes))
        (p4? (eql #.*addr-size-override* (prefixes->adr prefixes)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        ;; Cuong: Although this requirement is not specified in the
        ;; Intel manual, I got a segmentation fault when trying with
@@ -206,14 +203,11 @@
 
   :returns (x86 x86p :hyp (x86p x86))
 
+  :modr/m t
+
   :body
-  (b* ((ctx 'x86-shufpd-Op/En-RMI)
 
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-
-       ((the (unsigned-byte 4) xmm-index)
+  (b* (((the (unsigned-byte 4) xmm-index)
         (reg-index reg rex-byte #.*r*))
        ((the (unsigned-byte 128) xmm)
         (xmmi-size 16 xmm-index x86))
@@ -221,7 +215,7 @@
        (p2 (prefixes->seg prefixes))
        (p4? (eql #.*addr-size-override* (prefixes->adr prefixes)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        ;; Cuong: Although this requirement is not specified in the
        ;; Intel manual, I got a segmentation fault when trying with
@@ -306,7 +300,7 @@
   ;; logtail-96-of-usb-128, the guard proof succeeds if :guard-debug t
   ;; is provided.
   ((local
-    (defthm-usb logtail-96-of-usb-128
+    (defthm-unsigned-byte-p logtail-96-of-usb-128
       :hyp (unsigned-byte-p 128 x)
       :bound 32
       :concl (logtail 96 x)
@@ -317,14 +311,11 @@
       :hints-l (("Goal" :in-theory (e/d* ()
                                          (unsigned-byte-p-of-logtail)))))))
 
+  :modr/m t
+
   :body
-  (b* ((ctx 'x86-unpck?ps-Op/En-RM)
 
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-
-       ((the (unsigned-byte 4) xmm-index)
+  (b* (((the (unsigned-byte 4) xmm-index)
         (reg-index reg rex-byte #.*r*))
        ((the (unsigned-byte 128) xmm)
         (xmmi-size 16 xmm-index x86))
@@ -332,7 +323,7 @@
        (p2 (prefixes->seg prefixes))
        (p4? (eql #.*addr-size-override* (prefixes->adr prefixes)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        ;; Cuong: Although this requirement is not specified in the
        ;; Intel manual, I got a segmentation fault when trying with
@@ -431,7 +422,7 @@
   ;; x86-unpck?pd-Op/En-RM, the guard proof succeeds if :guard-debug t
   ;; is provided.
   ((local
-    (defthm-usb logtail-64-of-usb-128
+    (defthm-unsigned-byte-p logtail-64-of-usb-128
       :hyp (unsigned-byte-p 128 x)
       :bound 64
       :concl (logtail 64 x)
@@ -442,14 +433,11 @@
       :hints-l (("Goal" :in-theory (e/d* ()
                                          (unsigned-byte-p-of-logtail)))))))
 
+  :modr/m t
+
   :body
-  (b* ((ctx 'x86-unpck?pd-Op/En-RM)
 
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-
-       ((the (unsigned-byte 4) xmm-index)
+  (b* (((the (unsigned-byte 4) xmm-index)
         (reg-index reg rex-byte #.*r*))
        ((the (unsigned-byte 128) xmm)
         (xmmi-size 16 xmm-index x86))
@@ -457,7 +445,7 @@
        (p2 (prefixes->seg prefixes))
        (p4? (eql #.*addr-size-override* (prefixes->adr prefixes)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        ;; Cuong: Although this requirement is not specified in the
        ;; Intel manual, I got a segmentation fault when trying with

@@ -72,7 +72,8 @@
     `(define ,fn-name
        ((dst :type (unsigned-byte ,size))
         (src :type (unsigned-byte 6)
-             "We assume @('src') has been masked appropriately by the decoding part of the rotate instructions.")
+             "Note that @('src') is masked appropriately
+              by the caller of this function.")
         (input-rflags :type (unsigned-byte 32)))
 
        :guard-hints (("Goal" :in-theory (e/d* (rflag-RoWs-enables)
@@ -166,19 +167,19 @@
 
        (local (in-theory (e/d () (unsigned-byte-p))))
 
-       (defthm-usb ,(mk-name "N" str-nbits "-MV-NTH-0-" fn-name)
+       (defthm-unsigned-byte-p ,(mk-name "N" str-nbits "-MV-NTH-0-" fn-name)
          :bound ,size
          :concl (mv-nth 0 (,fn-name dst src input-rflags))
          :gen-type t
          :gen-linear t)
 
-       (defthm-usb ,(mk-name "MV-NTH-1-" fn-name)
+       (defthm-unsigned-byte-p ,(mk-name "MV-NTH-1-" fn-name)
          :bound 32
          :concl (mv-nth 1 (,fn-name dst src input-rflags))
          :gen-type t
          :gen-linear t)
 
-       (defthm-usb ,(mk-name "MV-NTH-2-" fn-name)
+       (defthm-unsigned-byte-p ,(mk-name "MV-NTH-2-" fn-name)
          :bound 32
          :concl (mv-nth 2 (,fn-name dst src input-rflags))
          :gen-type t
@@ -232,13 +233,13 @@ the most-significant bit of the result.</p>"
     (natp (mv-nth 0 (rcl-spec size dst src input-rflags)))
     :rule-classes :type-prescription)
 
-  (defthm-usb n32p-mv-nth-1-rcl-spec
+  (defthm-unsigned-byte-p n32p-mv-nth-1-rcl-spec
     :bound 32
     :concl (mv-nth 1 (rcl-spec size dst src input-rflags))
     :gen-type t
     :gen-linear t)
 
-  (defthm-usb n32p-mv-nth-2-rcl-spec
+  (defthm-unsigned-byte-p n32p-mv-nth-2-rcl-spec
     :bound 32
     :concl (mv-nth 2 (rcl-spec size dst src input-rflags))
     :gen-type t
@@ -256,7 +257,8 @@ the most-significant bit of the result.</p>"
     `(define ,fn-name
        ((dst    :type (unsigned-byte ,size))
         (src    :type (unsigned-byte 6)
-                "We assume @('src') has been masked appropriately by the decoding part of the rotate instructions.")
+                "Note that @('src') is masked appropriately
+                 by the caller of this function.")
         (input-rflags :type (unsigned-byte 32)))
 
        :guard-hints (("Goal" :in-theory (e/d* (rflag-RoWs-enables)
@@ -345,19 +347,19 @@ the most-significant bit of the result.</p>"
 
        (local (in-theory (e/d () (unsigned-byte-p))))
 
-       (defthm-usb ,(mk-name "N" str-nbits "-MV-NTH-0-" fn-name)
+       (defthm-unsigned-byte-p ,(mk-name "N" str-nbits "-MV-NTH-0-" fn-name)
          :bound ,size
          :concl (mv-nth 0 (,fn-name dst src input-rflags))
          :gen-type t
          :gen-linear t)
 
-       (defthm-usb ,(mk-name "MV-NTH-1-" fn-name)
+       (defthm-unsigned-byte-p ,(mk-name "MV-NTH-1-" fn-name)
          :bound 32
          :concl (mv-nth 1 (,fn-name dst src input-rflags))
          :gen-type t
          :gen-linear t)
 
-       (defthm-usb ,(mk-name "MV-NTH-2-" fn-name)
+       (defthm-unsigned-byte-p ,(mk-name "MV-NTH-2-" fn-name)
          :bound 32
          :concl (mv-nth 2 (,fn-name dst src input-rflags))
          :gen-type t
@@ -411,13 +413,13 @@ most-significant bit of the result.</p>"
     (natp (mv-nth 0 (rol-spec size dst src input-rflags)))
     :rule-classes :type-prescription)
 
-  (defthm-usb n32p-mv-nth-1-rol-spec
+  (defthm-unsigned-byte-p n32p-mv-nth-1-rol-spec
     :bound 32
     :concl (mv-nth 1 (rol-spec size dst src input-rflags))
     :gen-type t
     :gen-linear t)
 
-  (defthm-usb n32p-mv-nth-2-rol-spec
+  (defthm-unsigned-byte-p n32p-mv-nth-2-rol-spec
     :bound 32
     :concl (mv-nth 2 (rol-spec size dst src input-rflags))
     :gen-type t
@@ -438,7 +440,8 @@ most-significant bit of the result.</p>"
     `(define ,fn-name
        ((dst    :type (unsigned-byte ,size))
         (src    :type (unsigned-byte 6)
-                "We assume @('src') has been masked appropriately by the decoding part of the rotate instructions.")
+                "Note that @('src') is masked appropriately
+                 by the caller of this function.")
         (input-rflags :type (unsigned-byte 32)))
 
        :guard-hints (("Goal" :in-theory (e/d* (rflag-RoWs-enables)
@@ -540,19 +543,19 @@ most-significant bit of the result.</p>"
 
        (local (in-theory (e/d () (unsigned-byte-p))))
 
-       (defthm-usb ,(mk-name "N" str-nbits "-MV-NTH-0-" fn-name)
+       (defthm-unsigned-byte-p ,(mk-name "N" str-nbits "-MV-NTH-0-" fn-name)
          :bound ,size
          :concl (mv-nth 0 (,fn-name dst src output-rflags))
          :gen-type t
          :gen-linear t)
 
-       (defthm-usb ,(mk-name "MV-NTH-1-" fn-name)
+       (defthm-unsigned-byte-p ,(mk-name "MV-NTH-1-" fn-name)
          :bound 32
          :concl (mv-nth 1 (,fn-name dst src output-rflags))
          :gen-type t
          :gen-linear t)
 
-       (defthm-usb ,(mk-name "MV-NTH-2-" fn-name)
+       (defthm-unsigned-byte-p ,(mk-name "MV-NTH-2-" fn-name)
          :bound 32
          :concl (mv-nth 2 (,fn-name dst src output-rflags))
          :gen-type t
@@ -606,13 +609,13 @@ the result.</p>"
     (natp (mv-nth 0 (rcr-spec size dst src input-rflags)))
     :rule-classes :type-prescription)
 
-  (defthm-usb n32p-mv-nth-1-rcr-spec
+  (defthm-unsigned-byte-p n32p-mv-nth-1-rcr-spec
     :bound 32
     :concl (mv-nth 1 (rcr-spec size dst src input-rflags))
     :gen-type t
     :gen-linear t)
 
-  (defthm-usb n32p-mv-nth-2-rcr-spec
+  (defthm-unsigned-byte-p n32p-mv-nth-2-rcr-spec
     :bound 32
     :concl (mv-nth 2 (rcr-spec size dst src input-rflags))
     :gen-type t
@@ -632,7 +635,8 @@ the result.</p>"
     `(define ,fn-name
        ((dst    :type (unsigned-byte ,size))
         (src    :type (unsigned-byte 6)
-                "We assume @('src') has been masked appropriately by the decoding part of the rotate instructions.")
+                "Note that @('src') is masked appropriately
+                 by the caller of this function.")
         (input-rflags :type (unsigned-byte 32)))
 
        :guard-hints (("Goal" :in-theory (e/d* (rflag-RoWs-enables)
@@ -728,19 +732,19 @@ the result.</p>"
 
        (local (in-theory (e/d () (unsigned-byte-p))))
 
-       (defthm-usb ,(mk-name "N" str-nbits "-MV-NTH-0-" fn-name)
+       (defthm-unsigned-byte-p ,(mk-name "N" str-nbits "-MV-NTH-0-" fn-name)
          :bound ,size
          :concl (mv-nth 0 (,fn-name dst src input-rflags))
          :gen-type t
          :gen-linear t)
 
-       (defthm-usb ,(mk-name "MV-NTH-1-" fn-name)
+       (defthm-unsigned-byte-p ,(mk-name "MV-NTH-1-" fn-name)
          :bound 32
          :concl (mv-nth 1 (,fn-name dst src input-rflags))
          :gen-type t
          :gen-linear t)
 
-       (defthm-usb ,(mk-name "MV-NTH-2-" fn-name)
+       (defthm-unsigned-byte-p ,(mk-name "MV-NTH-2-" fn-name)
          :bound 32
          :concl (mv-nth 2 (,fn-name dst src input-rflags))
          :gen-type t
@@ -795,13 +799,13 @@ result.</p>"
     (natp (mv-nth 0 (ror-spec size dst src input-rflags)))
     :rule-classes :type-prescription)
 
-  (defthm-usb n32p-mv-nth-1-ror-spec
+  (defthm-unsigned-byte-p n32p-mv-nth-1-ror-spec
     :bound 32
     :concl (mv-nth 1 (ror-spec size dst src input-rflags))
     :gen-type t
     :gen-linear t)
 
-  (defthm-usb n32p-mv-nth-2-ror-spec
+  (defthm-unsigned-byte-p n32p-mv-nth-2-ror-spec
     :bound 32
     :concl (mv-nth 2 (ror-spec size dst src input-rflags))
     :gen-type t

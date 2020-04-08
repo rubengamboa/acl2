@@ -1,6 +1,6 @@
-; APT Tail Recursion Transformation -- Implementation
+; APT (Automated Program Transformations) Library
 ;
-; Copyright (C) 2018 Kestrel Institute (http://www.kestrel.edu)
+; Copyright (C) 2020 Kestrel Institute (http://www.kestrel.edu)
 ;
 ; License: A 3-clause BSD license. See the LICENSE file distributed with ACL2.
 ;
@@ -10,205 +10,164 @@
 
 (in-package "APT")
 
+(include-book "kestrel/event-macros/applicability-conditions" :dir :system)
+(include-book "kestrel/event-macros/input-processing" :dir :system)
+(include-book "kestrel/event-macros/intro-macros" :dir :system)
+(include-book "kestrel/event-macros/xdoc-constructors" :dir :system)
+(include-book "kestrel/std/system/fresh-logical-name-with-dollars-suffix" :dir :system)
+(include-book "kestrel/std/system/install-not-normalized-event" :dir :system)
 (include-book "kestrel/utilities/error-checking/top" :dir :system)
-(include-book "kestrel/utilities/install-not-norm-event" :dir :system)
 (include-book "kestrel/utilities/keyword-value-lists" :dir :system)
-(include-book "kestrel/utilities/named-formulas" :dir :system)
 (include-book "kestrel/utilities/orelse" :dir :system)
-(include-book "kestrel/utilities/paired-names" :dir :system)
+(include-book "kestrel/utilities/system/paired-names" :dir :system)
 (include-book "kestrel/utilities/user-interface" :dir :system)
-(include-book "kestrel/utilities/xdoc/defxdoc-plus" :dir :system)
-(include-book "utilities/print-specifiers")
+(include-book "xdoc/defxdoc-plus" :dir :system)
+
+(include-book "utilities/input-processing")
 (include-book "utilities/transformation-table")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defxdoc+ tailrec-implementation
-  :parents (implementation tailrec)
-  :short "Implementation of @(tsee tailrec)."
-  :long
-  "<p>
-   The implementation functions have formal parameters
-   consistently named as follows:
-   </p>
-   <ul>
-     <li>
-     @('state') is the ACL2 @(see state).
-     </li>
-     <li>
-     @('wrld') is the ACL2 @(see world).
-     </li>
-     <li>
-     @('ctx') is the context used for errors.
-     </li>
-     <li>
-     @('old'),
-     @('variant'),
-     @('domain'),
-     @('new-name'),
-     @('new-enable'),
-     @('wrapper-name'),
-     @('wrapper-enable'),
-     @('thm-name'),
-     @('thm-enable'),
-     @('non-executable'),
-     @('verify-guards'),
-     @('hints'),
-     @('print'), and
-     @('show-only')
-     are the homonymous inputs to @(tsee tailrec),
-     before being processed.
-     These formal parameters have no types because they may be any values.
-     </li>
-     <li>
-     @('call') is the call to @(tsee tailrec) supplied by the user.
-     </li>
-     <li>
-     @('old$'),
-     @('variant$'),
-     @('domain$'),
-     @('new-name$'),
-     @('new-enable$'),
-     @('wrapper-name$'),
-     @('wrapper-enable$'),
-     @('thm-name$'),
-     @('thm-enable$'),
-     @('non-executable$'),
-     @('verify-guards$'),
-     @('hints$'),
-     @('print$'), and
-     @('show-only$')
-     are the results of processing
-     the homonymous inputs (without the @('$')) to @(tsee tailrec).
-     Some are identical to the corresponding inputs,
-     but they have types implied by their successful validation,
-     performed when they are processed.
-     </li>
-     <li>
-     @('test') is the term @('test<x1,...,xn>') described in the documentation.
-     </li>
-     <li>
-     @('base') is the term @('base<x1,...,xn>') described in the documentation.
-     </li>
-     <li>
-     @('rec-branch') is the recursive branch of the target function,
-     namely the term @('combine<nonrec<x1,...,xn>,
-                                (old update-x1<x1,...,xn>
-                                     ...
-                                     update-xn<x1,...,xn>)>')
-     described in the documentation.
-     </li>
-     <li>
-     @('nonrec') is the term @('nonrec<x1,...,xn>')
-     described in the documentation.
-     </li>
-     <li>
-     @('updates') is the list of terms
-     @('update-x1<x1,...,xn>'), ..., @('update-xn<x1,...,xn>')
-     described in the documentation.
-     </li>
-     <li>
-     @('r') is the homonymous fresh variable described in the documentation.
-     </li>
-     <li>
-     @('q') is the homonymous fresh variable described in the documentation.
-     </li>
-     <li>
-     @('combine-nonrec') is the term @('combine<nonrec<x1,...,xn>,r>')
-     described in the documentation.
-     </li>
-     <li>
-     @('combine') is the term @('combine<q,r>') described in the documentation.
-     </li>
-     <li>
-     @('verbose') is a flag saying
-     whether to print certain informative messages or not.
-     </li>
-     <li>
-     @('app-cond-present-names') is the list of the names (keywords) of
-     the applicability conditions that are present.
-     </li>
-     <li>
-     @('app-cond-thm-names') is an alist
-     from the keywords that identify the applicability conditions
-     to the corresponding generated theorem names.
-     </li>
-     <li>
-     @('old-unnorm-name') is the name of the generated theorem
-     that installs the non-normalized definition of the target function.
-     </li>
-     <li>
-     @('new-unnorm-name') is the name of the generated theorem
-     that installs the non-normalized definition of the new function.
-     </li>
-     <li>
-     @('wrapper-unnorm-name') is the name of the generated theorem
-     that installs the non-normalized definition of the wrapper function.
-     </li>
-     <li>
-     @('new-formals') are the formal parameters of the new function.
-     </li>
-     <li>
-     @('domain-of-old-name') is the name of the theorem
-     generated by @(tsee tailrec-gen-new-to-old-thm).
-     </li>
-     <li>
-     @('alpha-name') is the name of the function
-     generated by @(tsee tailrec-gen-alpha-fn).
-     </li>
-     <li>
-     @('test-of-alpha-name') is the name of the theorem
-     generated by @(tsee tailrec-gen-test-of-alpha-thm).
-     </li>
-     <li>
-     @('old-guard-of-alpha-name') is the name of the theorem
-     generated by @(tsee tailrec-gen-old-guard-of-alpha-thm).
-     </li>
-     <li>
-     @('domain-of-ground-base-name') is the name of the theorem
-     generated by @(tsee tailrec-gen-domain-of-ground-base-thm).
-     </li>
-     <li>
-     @('combine-left-identity-ground-name') is the name of the theorem
-     generated by @(tsee tailrec-gen-combine-left-identity-ground-thm).
-     </li>
-     <li>
-     @('new-to-old-name') is the name of the theorem
-     generated by @(tsee tailrec-gen-new-to-old-thm).
-     </li>
-     <li>
-     @('base-guard-name') is the name of the theorem
-     generated by @(tsee tailrec-gen-base-guard-thm).
-     </li>
-     <li>
-     @('old-to-new-name') is the name of the theorem
-     generated by @(tsee tailrec-gen-old-to-new-thm).
-     </li>
-     <li>
-     @('names-to-avoid') is a cumulative list of names of generated events,
-     used to ensure the absence of name clashes in the generated events.
-     </li>
-   </ul>
-   <p>
-   The parameters of implementation functions that are not listed above
-   are described in, or clear from, those functions' documentation.
-   </p>"
-  :order-subtopics t)
+(xdoc::evmac-topic-implementation
+
+ tailrec
+
+ :item-state t
+
+ :item-wrld t
+
+ :item-ctx t
+
+ :items
+
+ ("@('old'),
+   @('variant'),
+   @('domain'),
+   @('new-name'),
+   @('new-enable'),
+   @('wrapper'),
+   @('wrapper-name'),
+   @('wrapper-enable'),
+   @('thm-name'),
+   @('thm-enable'),
+   @('non-executable'),
+   @('verify-guards'),
+   @('hints'),
+   @('print'), and
+   @('show-only')
+   are the homonymous inputs to @(tsee tailrec),
+   before being processed.
+   These formal parameters have no types because they may be any values."
+
+  "@('wrapper-name-present') and
+   @('wrapper-enable-present')
+   are boolean flags indicating whether the corresponding inputs
+   (whose name is obtained by removing @('-present') from these)
+   are present (i.e. supplied by the user) or not."
+
+  "@('call') is the call to @(tsee tailrec) supplied by the user."
+
+  "@('old$'),
+   @('variant$'),
+   @('domain$'),
+   @('new-name$'),
+   @('new-enable$'),
+   @('wrapper$'),
+   @('wrapper-name$'),
+   @('wrapper-enable$'),
+   @('thm-name$'),
+   @('thm-enable$'),
+   @('non-executable$'),
+   @('verify-guards$'),
+   @('hints$'),
+   @('print$'), and
+   @('show-only$')
+   are the results of processing
+   the homonymous inputs (without the @('$')) to @(tsee tailrec).
+   Some are identical to the corresponding inputs,
+   but they have types implied by their successful validation,
+   performed when they are processed."
+
+  "@('test') is the term @('test<x1,...,xn>') described in the documentation."
+
+  "@('base') is the term @('base<x1,...,xn>') described in the documentation."
+
+  "@('rec-branch') is the recursive branch of the target function,
+   namely the term @('combine<nonrec<x1,...,xn>,
+                     (old update-x1<x1,...,xn>
+                          ...
+                          update-xn<x1,...,xn>)>')
+   described in the documentation."
+
+  "@('nonrec') is the term @('nonrec<x1,...,xn>')
+   described in the documentation."
+
+  "@('updates') is the list of terms
+   @('update-x1<x1,...,xn>'), ..., @('update-xn<x1,...,xn>')
+   described in the documentation."
+
+  "@('r') is the homonymous fresh variable described in the documentation."
+
+  "@('q') is the homonymous fresh variable described in the documentation."
+
+  "@('combine-nonrec') is the term @('combine<nonrec<x1,...,xn>,r>')
+   described in the documentation."
+
+  "@('combine') is the term @('combine<q,r>') described in the documentation."
+
+  "@('verbose') is a flag saying
+   whether to print certain informative messages or not."
+
+  "@('appcond-thm-names') is an alist
+   from the keywords that identify the applicability conditions
+   to the corresponding generated theorem names."
+
+  "@('old-unnorm-name') is the name of the generated theorem
+   that installs the non-normalized definition of the target function."
+
+  "@('new-unnorm-name') is the name of the generated theorem
+   that installs the non-normalized definition of the new function."
+
+  "@('wrapper-unnorm-name') is the name of the generated theorem
+   that installs the non-normalized definition of the wrapper function."
+
+  "@('new-formals') are the formal parameters of the new function."
+
+  "@('domain-of-old-name') is the name of the theorem
+   generated by @(tsee tailrec-gen-new-to-old-thm)."
+
+  "@('alpha-name') is the name of the function
+   generated by @(tsee tailrec-gen-alpha-fn)."
+
+  "@('test-of-alpha-name') is the name of the theorem
+   generated by @(tsee tailrec-gen-test-of-alpha-thm)."
+
+  "@('old-guard-of-alpha-name') is the name of the theorem
+   generated by @(tsee tailrec-gen-old-guard-of-alpha-thm)."
+
+  "@('domain-of-ground-base-name') is the name of the theorem
+   generated by @(tsee tailrec-gen-domain-of-ground-base-thm)."
+
+  "@('combine-left-identity-ground-name') is the name of the theorem
+   generated by @(tsee tailrec-gen-combine-left-identity-ground-thm)."
+
+  "@('new-to-old-name') is the name of the theorem
+   generated by @(tsee tailrec-gen-new-to-old-thm)."
+
+  "@('base-guard-name') is the name of the theorem
+   generated by @(tsee tailrec-gen-base-guard-thm)."
+
+  "@('old-to-new-name') is the name of the theorem
+   generated by @(tsee tailrec-gen-old-to-new-thm)."
+
+  "@('names-to-avoid') is a cumulative list of names of generated events,
+   used to ensure the absence of name clashes in the generated events."))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defxdoc+ tailrec-input-processing
-  :parents (tailrec-implementation)
-  :short "Input processing performed by @(tsee tailrec)."
-  :long
-  "<p>
-   This involves validating the inputs.
-   When validation fails, <see topic='@(url er)'>soft errors</see> occur.
-   Thus, generally the input processing functions return
-   <see topic='@(url acl2::error-triple)'>error triples</see>.
-   </p>"
-  :order-subtopics t
-  :default-parent t)
+(xdoc::evmac-topic-input-processing tailrec)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define tailrec-check-nonrec-conditions
   ((combine-nonrec pseudo-termp)
@@ -238,6 +197,8 @@
       (if (set-equiv (all-vars combine) (list q r))
           (mv t combine)
         (mv nil nil)))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defines tailrec-find-nonrec-term-in-term/terms
   :short "Decompose @('combine<nonrec<x1,...,xn>,r>') into
@@ -311,6 +272,8 @@
                (tailrec-find-nonrec-terms
                 combine-nonrec (cdr terms-to-try) r q))))))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (define tailrec-decompose-recursive-branch ((old$ symbolp)
                                             (rec-branch pseudo-termp)
                                             ctx
@@ -368,6 +331,8 @@
                   "Unable to decompose the recursive branch ~x0 ~
                    of the target function ~x1." rec-branch old$)))
     (value (list nonrec updates combine q r))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define tailrec-process-old (old
                              variant
@@ -480,14 +445,20 @@
         (cw "- Fresh variable for recursive call: ~x0.~%" r)))
     (value (list old$ test base nonrec updates combine q r))))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (std::defenum tailrec-variantp (:assoc :monoid :monoid-alt)
   :short "Variants of the tail recursion transformation.")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (def-error-checker tailrec-process-variant
   (variant)
   "Process the @('variant') input."
   (((tailrec-variantp variant)
     "~@0 must be :MONOID, :MONOID-ALT, or :ASSOC." description)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define tailrec-infer-domain ((combine pseudo-termp)
                               (q symbolp)
@@ -526,6 +497,8 @@
         (cw "~%")
         (cw "Inferred domain for the applicability conditions: ~x0.~%" domain)))
     domain))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define tailrec-process-domain (domain
                                 (old$ symbolp)
@@ -635,82 +608,96 @@
                                              description t nil))))
     (value fn/lambda)))
 
-(define tailrec-process-new-name (new-name
-                                  (old$ symbolp)
-                                  ctx
-                                  state)
-  :returns (mv erp
-               (new-name$ "A @(tsee symbolp)
-                           to use as the name for the new function.")
-               state)
-  :mode :program
-  :short "Process the @(':new-name') input."
-  (b* (((er &) (ensure-symbol$ new-name "The :NEW-NAME input" t nil))
-       (name (if (eq new-name :auto)
-                 (next-numbered-name old$ (w state))
-               new-name))
-       (description (msg "The name ~x0 of the new function, ~@1,"
-                         name
-                         (if (eq new-name :auto)
-                             "automatically generated ~
-                              since the :NEW-NAME input ~
-                              is (perhaps by default) :AUTO"
-                           "supplied as the :NEW-NAME input")))
-       ((er &) (ensure-symbol-new-event-name$ name description t nil)))
-    (value name)))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define tailrec-process-wrapper-name (wrapper-name
+                                      (wrapper-name-present booleanp)
                                       (new-name$ symbolp)
+                                      (wrapper$ booleanp)
                                       ctx
                                       state)
   :returns (mv erp
                (wrapper-name$ "A @(tsee symbolp)
-                               to use as the name for the wrapper function.")
+                               to use as the name for the wrapper function,
+                               or @('nil') if no wrapper is generated.")
                state)
   :mode :program
   :short "Process the @(':wrapper-name') input."
-  (b* (((er &) (ensure-symbol$ wrapper-name "The :WRAPPER-NAME input" t nil))
-       (name (if (eq wrapper-name :auto)
-                 (add-suffix-to-fn new-name$ "-WRAPPER")
-               wrapper-name))
-       (description (msg "The name ~x0 of the wrapper function, ~@1,"
-                         name
-                         (if (eq wrapper-name :auto)
-                             "automatically generated ~
+  (if wrapper$
+      (b* (((er &) (ensure-symbol$ wrapper-name
+                                   "The :WRAPPER-NAME input" t nil))
+           (name (if (eq wrapper-name :auto)
+                     (add-suffix-to-fn new-name$ "-WRAPPER")
+                   wrapper-name))
+           (description (msg "The name ~x0 of the wrapper function, ~@1,"
+                             name
+                             (if (eq wrapper-name :auto)
+                                 "automatically generated ~
                               since the :WRAPPER-NAME input ~
                               is (perhaps by default) :AUTO"
-                           "supplied as the :WRAPPER-NAME input")))
-       ((er &) (ensure-symbol-new-event-name$ name description t nil))
-       ((er &) (ensure-symbol-different$
-                name new-name$
-                (msg "the name ~x0 of the new function ~
+                               "supplied as the :WRAPPER-NAME input")))
+           ((er &) (ensure-symbol-new-event-name$ name description t nil))
+           ((er &) (ensure-symbol-different$
+                    name new-name$
+                    (msg "the name ~x0 of the new function ~
                       (determined by the :NEW-NAME input)." new-name$)
-                description
-                t nil)))
-    (value name)))
+                    description
+                    t nil)))
+        (value name))
+    (if wrapper-name-present
+        (er-soft+ ctx t nil
+                  "Since the :WRAPPER input is NIL, ~
+                   no :WRAPPER-NAME input may be supplied.")
+      (value nil))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define tailrec-process-wrapper-enable (wrapper-enable
+                                        (wrapper-enable-present booleanp)
+                                        (wrapper$ booleanp)
+                                        ctx
+                                        state)
+  :returns (mv erp
+               (nothing "Always @('nil').")
+               state)
+  :short "Process the @(':wrapper-enable') input."
+  (if wrapper$
+      (ensure-boolean$ wrapper-enable "The :WRAPPER-ENABLE input" t nil)
+    (if wrapper-enable-present
+        (er-soft+ ctx t nil
+                  "Since the :WRAPPER input is NIL, ~
+                   no :WRAPPER-enable input may be supplied.")
+      (value nil))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define tailrec-process-thm-name (thm-name
                                   (old$ symbolp)
                                   (new-name$ symbolp)
+                                  (wrapper$ booleanp)
                                   (wrapper-name$ symbolp)
                                   ctx
                                   state)
   :returns (mv erp
                (thm-name$ "A @(tsee symbolp)
                            to use for the theorem that
-                           relates the old and new functions.")
+                           relates the old and new or wrapper functions.")
                state)
   :mode :program
   :short "Process the @(':thm-name') input."
-  (b* (((er &) (ensure-symbol$ thm-name "The :THM-NAME input" t nil))
+  (b* ((new/wrapper-name (if wrapper$ wrapper-name$ new-name$))
+       ((er &) (ensure-symbol$ thm-name "The :THM-NAME input" t nil))
        (name (if (eq thm-name :auto)
-                 (make-paired-name old$ wrapper-name$ 2 (w state))
+                 (make-paired-name old$ new/wrapper-name 2 (w state))
                thm-name))
        (description (msg "The name ~x0 of the theorem ~
                           that relates the target function ~x1 ~
-                          to the wrapper function ~x2 ~
-                          ~@3,"
-                         name old$ wrapper-name$
+                          to the ~s2 function ~x3, ~
+                          ~@4,"
+                         name
+                         old$
+                         (if wrapper$ "wrapper" "new")
+                         new/wrapper-name
                          (if (eq thm-name :auto)
                              "automatically generated ~
                               since the :THM-NAME input ~
@@ -723,6 +710,7 @@
                       (determined by the :NEW-NAME input)." new-name$)
                 description
                 t nil))
+       ((when (not wrapper$)) (value name))
        ((er &) (ensure-symbol-different$
                 name wrapper-name$
                 (msg "the name ~x0 of the wrapper function ~
@@ -731,125 +719,18 @@
                 t nil)))
     (value name)))
 
-(defval *tailrec-app-cond-names*
-  :short "Names of all the applicability conditions."
-  '(:domain-of-base
-    :domain-of-nonrec
-    :domain-of-combine
-    :domain-of-combine-uncond
-    :combine-associativity
-    :combine-associativity-uncond
-    :combine-left-identity
-    :combine-right-identity
-    :domain-guard
-    :combine-guard
-    :domain-of-nonrec-when-guard)
-  ///
-
-  (defruled symbol-listp-of-*tailrec-app-cond-names*
-    (symbol-listp *tailrec-app-cond-names*))
-
-  (defruled no-duplicatesp-eq-of-*tailrec-app-cond-names*
-    (no-duplicatesp-eq *tailrec-app-cond-names*)))
-
-(define tailrec-app-cond-namep (x)
-  :returns (yes/no booleanp)
-  :short "Recognize names of the applicability conditions."
-  (and (member-eq x *tailrec-app-cond-names*) t))
-
-(std::deflist tailrec-app-cond-name-listp (x)
-  (tailrec-app-cond-namep x)
-  :short "Recognize true lists of names of the applicability conditions."
-  :true-listp t
-  :elementp-of-nil nil)
-
-(define tailrec-app-cond-present-p ((name tailrec-app-cond-namep)
-                                    (variant$ tailrec-variantp)
-                                    (verify-guards$ booleanp))
-  :returns (yes/no booleanp :hyp (booleanp verify-guards$))
-  :short "Check if the named applicability condition is present."
-  (case name
-    (:domain-of-base t)
-    ((:domain-of-nonrec
-      :domain-of-combine
-      :combine-associativity) (if (member-eq variant$ '(:monoid :assoc)) t nil))
-    ((:domain-of-combine-uncond
-      :combine-associativity-uncond) (eq variant$ :monoid-alt))
-    ((:combine-left-identity
-      :combine-right-identity) (if (member-eq variant$ '(:monoid :monoid-alt))
-                                   t nil))
-    ((:domain-guard
-      :combine-guard) verify-guards$)
-    (:domain-of-nonrec-when-guard (and (eq variant$ :monoid-alt)
-                                       verify-guards$))
-    (t (impossible)))
-  :guard-hints (("Goal" :in-theory (enable tailrec-app-cond-namep))))
-
-(define tailrec-app-cond-present-names ((variant$ tailrec-variantp)
-                                        (verify-guards$ booleanp))
-  :returns (present-names tailrec-app-cond-name-listp)
-  :short "Names of the applicability conditions that are present."
-  (tailrec-app-cond-present-names-aux *tailrec-app-cond-names*
-                                      variant$
-                                      verify-guards$)
-
-  :prepwork
-  ((define tailrec-app-cond-present-names-aux
-     ((names tailrec-app-cond-name-listp)
-      (variant$ tailrec-variantp)
-      (verify-guards$ booleanp))
-     :returns (present-names tailrec-app-cond-name-listp
-                             :hyp (tailrec-app-cond-name-listp names))
-     :parents nil
-     (if (endp names)
-         nil
-       (if (tailrec-app-cond-present-p (car names)
-                                       variant$
-                                       verify-guards$)
-           (cons (car names)
-                 (tailrec-app-cond-present-names-aux (cdr names)
-                                                     variant$
-                                                     verify-guards$))
-         (tailrec-app-cond-present-names-aux (cdr names)
-                                             variant$
-                                             verify-guards$))))))
-
-(define tailrec-process-hints
-  (hints
-   (app-cond-present-names tailrec-app-cond-name-listp)
-   ctx
-   state)
-  :returns (mv erp
-               (hints$ "A @('symbol-alistp') that is the alist form of
-                        the keyword-value list @('hints').")
-               state)
-  :mode :program
-  :short "Process the @(':hints') input."
-  :long
-  "<p>
-   Here we only check that the input is a keyword-value list
-   whose keywords are unique and include only names of applicability conditions.
-   The values of the keyword-value list
-   are checked to be well-formed hints not here,
-   but implicitly when attempting to prove the applicability conditions.
-   </p>"
-  (b* (((er &) (ensure-keyword-value-list$ hints "The :HINTS input" t nil))
-       (alist (keyword-value-list-to-alist hints))
-       (keys (strip-cars alist))
-       (description
-        (msg "The list ~x0 of keywords of the :HINTS input" keys))
-       ((er &) (ensure-list-no-duplicates$ keys description t nil))
-       ((er &) (ensure-list-subset$ keys app-cond-present-names
-                                    description t nil)))
-    (value alist)))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define tailrec-process-inputs (old
                                 variant
                                 domain
                                 new-name
                                 new-enable
+                                wrapper
                                 wrapper-name
+                                (wrapper-name-present booleanp)
                                 wrapper-enable
+                                (wrapper-enable-present booleanp)
                                 thm-name
                                 thm-enable
                                 non-executable
@@ -875,8 +756,7 @@
                                     thm-name$
                                     non-executable$
                                     verify-guards$
-                                    hints$
-                                    app-cond-present-names)')
+                                    hints$)')
                         satisfying
                         @('(typed-tuplep symbolp
                                          pseudo-termp
@@ -894,14 +774,13 @@
                                          booleanp
                                          booleanp
                                          symbol-alistp
-                                         symbol-listp
                                          result)'),
                         where the first 8 components are
                         the results of @(tsee tailrec-process-old),
                         @('domain$') is
                         the result of @(tsee tailrec-process-domain),
                         @('new-name$') is
-                        the result of @(tsee tailrec-process-new-name),
+                        the result of @(tsee process-input-new-name),
                         @('new-enable$') indicates whether
                         the new function should be enabled or not,
                         @('wrapper-name$') is
@@ -913,11 +792,9 @@
                         non-executable or not, and
                         @('verify-guards$') indicates whether the guards of
                         the new and wrapper functions
-                        should be verified or not,
+                        should be verified or not, and
                         @('hints$') is
-                        the result of @(tsee tailrec-process-hints), and
-                        @('app-cond-present-names') is
-                        the result of @(tsee tailrec-app-cond-present-names).")
+                        the result of @(tsee evmac-process-input-hints).")
                state)
   :mode :program
   :short "Process all the inputs."
@@ -939,7 +816,7 @@
    (see @(tsee tailrec-process-old)).
    </p>"
   (b* ((wrld (w state))
-       ((er &) (ensure-is-print-specifier$ print "The :PRINT input" t nil))
+       ((er &) (evmac-process-input-print print ctx state))
        (verbose (and (member-eq print '(:info :all)) t))
        ((er (list old$
                   test
@@ -958,30 +835,29 @@
        ((er domain$) (tailrec-process-domain
                       domain old$ combine q r variant verify-guards$
                       verbose ctx state))
-       ((er new-name$) (tailrec-process-new-name
-                        new-name old$ ctx state))
+       ((er new-name$) (process-input-new-name new-name old$ ctx state))
        ((er new-enable$) (ensure-boolean-or-auto-and-return-boolean$
                           new-enable
                           (fundef-enabledp old state)
                           "The :NEW-ENABLE input" t nil))
+       ((er &) (ensure-boolean$ wrapper "The :WRAPPER input" t nil))
        ((er wrapper-name$) (tailrec-process-wrapper-name
-                            wrapper-name new-name$ ctx state))
-       ((er &) (ensure-boolean$ wrapper-enable
-                                "The :WRAPPER-ENABLE input" t nil))
+                            wrapper-name wrapper-name-present
+                            new-name$ wrapper ctx state))
+       ((er &) (tailrec-process-wrapper-enable
+                wrapper-enable wrapper-enable-present
+                wrapper ctx state))
        ((er thm-name$) (tailrec-process-thm-name
                         thm-name
-                        old$ new-name$ wrapper-name$
+                        old$ new-name$ wrapper wrapper-name$
                         ctx state))
        ((er &) (ensure-boolean$ thm-enable "The :THM-ENABLE input" t nil))
        ((er non-executable$) (ensure-boolean-or-auto-and-return-boolean$
                               non-executable
                               (non-executablep old wrld)
                               "The :NON-EXECUTABLE input" t nil))
-       (app-cond-present-names (tailrec-app-cond-present-names
-                                variant verify-guards$))
-       ((er hints$) (tailrec-process-hints
-                     hints app-cond-present-names ctx state))
-       ((er &) (ensure-boolean$ show-only "The :SHOW-ONLY input" t nil)))
+       ((er hints$) (evmac-process-input-hints hints ctx state))
+       ((er &) (evmac-process-input-show-only show-only ctx state)))
     (value (list old$
                  test
                  base
@@ -997,37 +873,15 @@
                  thm-name$
                  non-executable$
                  verify-guards$
-                 hints$
-                 app-cond-present-names))))
+                 hints$))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defxdoc+ tailrec-event-generation
-  :parents (tailrec-implementation)
-  :short "Event generation performed by @(tsee tailrec)."
-  :long
-  "<p>
-   Some events are generated in two slightly different forms:
-   a form that is local to the generated @(tsee encapsulate),
-   and a form that is exported from the @(tsee encapsulate).
-   Proof hints are in the former but not in the latter,
-   thus keeping the ACL2 history ``clean''.
-   </p>
-   <p>
-   Other events are generated only locally in the @(tsee encapsulate),
-   without any exported counterparts.
-   These have automatically generated fresh names:
-   the names used so far
-   are threaded through the event generation functions below.
-   </p>
-   <p>
-   Other events are only exported from the @(tsee encapsulate),
-   without any local counterparts.
-   </p>"
-  :order-subtopics t
-  :default-parent t)
+(xdoc::evmac-topic-event-generation tailrec
+                                    :some-local-nonlocal-p t
+                                    :some-local-p t)
 
-(local (xdoc::set-default-parents tailrec-event-generation))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define tailrec-gen-var-u ((old$ symbolp))
   :returns (u "A @(tsee symbolp).")
@@ -1040,6 +894,8 @@
           applicability conditions."
   (genvar old$ "U" nil nil))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (define tailrec-gen-var-v ((old$ symbolp))
   :returns (v "A @(tsee symbolp).")
   :mode :program
@@ -1051,6 +907,8 @@
           applicability conditions."
   (genvar old$ "V" nil nil))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (define tailrec-gen-var-w ((old$ symbolp))
   :returns (w "A @(tsee symbolp).")
   :mode :program
@@ -1059,6 +917,8 @@
           @(':combine-associativity-uncond')
           applicability conditions."
   (genvar old$ "W" nil nil))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define tailrec-gen-id-var-u ((old$ symbolp) (wrld plist-worldp))
   :returns (u "A @(tsee symbolp).")
@@ -1073,6 +933,8 @@
    </p>"
   (genvar old$ "U" nil (formals old$ wrld)))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (define tailrec-gen-combine-op ((combine pseudo-termp)
                                 (q symbolp)
                                 (r symbolp))
@@ -1086,96 +948,9 @@
    </p>"
   (make-lambda (list q r) combine))
 
-(define tailrec-gen-app-cond-formula ((name tailrec-app-cond-namep)
-                                      (old$ symbolp)
-                                      (test pseudo-termp)
-                                      (base pseudo-termp)
-                                      (nonrec pseudo-termp)
-                                      (combine pseudo-termp)
-                                      (q symbolp)
-                                      (r symbolp)
-                                      (domain$ pseudo-termfnp)
-                                      state)
-  :returns (formula "An untranslated term.")
-  :mode :program
-  :short "Generate the formula of the named applicability condition."
-  (b* ((wrld (w state))
-       (u (tailrec-gen-var-u old$))
-       (v (tailrec-gen-var-v old$))
-       (w (tailrec-gen-var-w old$))
-       (u1 (tailrec-gen-id-var-u old$ wrld))
-       (combine-op (tailrec-gen-combine-op combine q r)))
-    (case name
-      (:domain-of-base
-       (untranslate (implicate test
-                               (apply-term* domain$ base))
-                    t wrld))
-      (:domain-of-nonrec
-       (untranslate (implicate (dumb-negate-lit test)
-                               (apply-term* domain$ nonrec))
-                    t wrld))
-      (:domain-of-combine
-       (untranslate (implicate (conjoin2 (apply-term* domain$ u)
-                                         (apply-term* domain$ v))
-                               (apply-term* domain$
-                                            (apply-term* combine-op u v)))
-                    t wrld))
-      (:domain-of-combine-uncond
-       (untranslate (apply-term* domain$
-                                 (apply-term* combine-op u v))
-                    t wrld))
-      (:combine-associativity
-       (untranslate (implicate
-                     (conjoin (list (apply-term* domain$ u)
-                                    (apply-term* domain$ v)
-                                    (apply-term* domain$ w)))
-                     `(equal ,(apply-term* combine-op
-                                           u
-                                           (apply-term* combine-op v w))
-                             ,(apply-term* combine-op
-                                           (apply-term* combine-op u v)
-                                           w)))
-                    t wrld))
-      (:combine-associativity-uncond
-       (untranslate `(equal ,(apply-term* combine-op
-                                          u
-                                          (apply-term* combine-op v w))
-                            ,(apply-term* combine-op
-                                          (apply-term* combine-op u v)
-                                          w))
-                    t wrld))
-      (:combine-left-identity
-       (untranslate (implicate (conjoin2 test
-                                         (apply-term* domain$ u1))
-                               `(equal ,(apply-term* combine-op base u1)
-                                       ,u1))
-                    t wrld))
-      (:combine-right-identity
-       (untranslate (implicate (conjoin2 test
-                                         (apply-term* domain$ u1))
-                               `(equal ,(apply-term* combine-op u1 base)
-                                       ,u1))
-                    t wrld))
-      (:domain-guard
-       (if (symbolp domain$)
-           (untranslate (guard domain$ nil wrld)
-                        t wrld)
-         (untranslate (term-guard-obligation (lambda-body domain$) state)
-                      t wrld)))
-      (:combine-guard
-       (untranslate (implicate (conjoin2 (apply-term* domain$ q)
-                                         (apply-term* domain$ r))
-                               (term-guard-obligation combine state))
-                    t wrld))
-      (:domain-of-nonrec-when-guard
-       (untranslate (implicate (conjoin2 (guard old$ nil wrld)
-                                         (dumb-negate-lit test))
-                               (apply-term* domain$ nonrec))
-                    t wrld))
-      (t (impossible)))))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define tailrec-gen-app-cond ((name tailrec-app-cond-namep)
-                              (old$ symbolp)
+(define tailrec-gen-appconds ((old$ symbolp)
                               (test pseudo-termp)
                               (base pseudo-termp)
                               (nonrec pseudo-termp)
@@ -1183,167 +958,97 @@
                               (q symbolp)
                               (r symbolp)
                               (domain$ pseudo-termfnp)
-                              (hints$ symbol-alistp)
-                              (print$ print-specifier-p)
-                              (names-to-avoid symbol-listp)
-                              ctx
+                              (variant$ tailrec-variantp)
+                              (verify-guards$ booleanp)
                               state)
-  :returns (mv (event "A @(tsee pseudo-event-formp).")
-               (thm-name "A @(tsee symbolp) that is the name of the theorem."))
+  :returns (appconds "A @(tsee evmac-appcond-listp).")
+  :short "Generate the applicability conditions."
   :mode :program
-  :short "Generate a theorem for the named applicability condition."
-  :long
-  "<p>
-   The theorem has no rule classes, because it is used via @(':use') hints
-   in the generated proofs in other events.
-   </p>
-   <p>
-   This is a local event, because it is only used internally by @('tailrec').
-   The event is wrapped into a @(tsee try-event)
-   in order to provide a terse error message if the proof fails
-   (unless @(':print') is @(':all'), in which case everything is printed).
-   In addition,
-   if @(':print') is @(':info') or @(':all'),
-   the event is preceded and followed by events to print progress messages.
-   </p>
-   <p>
-   The name of the theorem is obtained by
-   putting the keyword that names the applicability condition
-   into the \"APT\" package
-   and adding @('$') as needed to avoid name clashes.
-   </p>"
   (b* ((wrld (w state))
-       (thm-name (fresh-name-in-world-with-$s (intern-in-package-of-symbol
-                                               (symbol-name name)
-                                               (pkg-witness "APT"))
-                                              names-to-avoid
-                                              wrld))
-       (formula (tailrec-gen-app-cond-formula name
-                                              old$
-                                              test
-                                              base
-                                              nonrec
-                                              combine
-                                              q
-                                              r
-                                              domain$
-                                              state))
-       (hints (cdr (assoc-eq name hints$)))
-       (defthm `(defthm ,thm-name ,formula :hints ,hints :rule-classes nil))
-       (error-msg (msg
-                   "The proof of the ~x0 applicability condition fails:~%~x1~|"
-                   name formula))
-       (try-defthm (try-event defthm ctx t nil error-msg))
-       (print-progress-p (member-eq print$ '(:info :all)))
-       (progress-start? (and print-progress-p
-                             `((cw-event
-                                "~%Attempting to prove the ~x0 ~
-                                 applicability condition:~%~x1~|"
-                                ',name ',formula))))
-       (progress-end? (and print-progress-p
-                           `((cw-event "Done.~%"))))
-       (event `(local (progn ,@progress-start?
-                             ,try-defthm
-                             ,@progress-end?))))
-    (mv event thm-name)))
+       (u (tailrec-gen-var-u old$))
+       (v (tailrec-gen-var-v old$))
+       (w (tailrec-gen-var-w old$))
+       (u1 (tailrec-gen-id-var-u old$ wrld))
+       (combine-op (tailrec-gen-combine-op combine q r)))
+    (append
+     (make-evmac-appcond?
+      :domain-of-base
+      (implicate test
+                 (apply-term* domain$ base)))
+     (make-evmac-appcond?
+      :domain-of-nonrec
+      (implicate (dumb-negate-lit test)
+                 (apply-term* domain$ nonrec))
+      :when (member-eq variant$ '(:monoid :assoc)))
+     (make-evmac-appcond?
+      :domain-of-combine
+      (implicate (conjoin2 (apply-term* domain$ u)
+                           (apply-term* domain$ v))
+                 (apply-term* domain$
+                              (apply-term* combine-op u v)))
+      :when (member-eq variant$ '(:monoid :assoc)))
+     (make-evmac-appcond?
+      :domain-of-combine-uncond
+      (apply-term* domain$
+                   (apply-term* combine-op u v))
+      :when (eq variant$ :monoid-alt))
+     (make-evmac-appcond?
+      :combine-associativity
+      (implicate
+       (conjoin (list (apply-term* domain$ u)
+                      (apply-term* domain$ v)
+                      (apply-term* domain$ w)))
+       `(equal ,(apply-term* combine-op
+                             u
+                             (apply-term* combine-op v w))
+               ,(apply-term* combine-op
+                             (apply-term* combine-op u v)
+                             w)))
+      :when (member-eq variant$ '(:monoid :assoc)))
+     (make-evmac-appcond?
+      :combine-associativity-uncond
+      `(equal ,(apply-term* combine-op
+                            u
+                            (apply-term* combine-op v w))
+              ,(apply-term* combine-op
+                            (apply-term* combine-op u v)
+                            w))
+      :when (eq variant$ :monoid-alt))
+     (make-evmac-appcond?
+      :combine-left-identity
+      (implicate (conjoin2 test
+                           (apply-term* domain$ u1))
+                 `(equal ,(apply-term* combine-op base u1)
+                         ,u1))
+      :when (member-eq variant$ '(:monoid :monoid-alt)))
+     (make-evmac-appcond?
+      :combine-right-identity
+      (implicate (conjoin2 test
+                           (apply-term* domain$ u1))
+                 `(equal ,(apply-term* combine-op u1 base)
+                         ,u1))
+      :when (member-eq variant$ '(:monoid :monoid-alt)))
+     (make-evmac-appcond?
+      :domain-guard
+      (if (symbolp domain$)
+          (guard domain$ nil wrld)
+        (term-guard-obligation (lambda-body domain$) state))
+      :when verify-guards$)
+     (make-evmac-appcond?
+      :combine-guard
+      (implicate (conjoin2 (apply-term* domain$ q)
+                           (apply-term* domain$ r))
+                 (term-guard-obligation combine state))
+      :when verify-guards$)
+     (make-evmac-appcond?
+      :domain-of-nonrec-when-guard
+      (implicate (conjoin2 (guard old$ nil wrld)
+                           (dumb-negate-lit test))
+                 (apply-term* domain$ nonrec))
+      :when (and (eq variant$ :monoid-alt)
+                 verify-guards$)))))
 
-(define tailrec-gen-app-conds
-  ((old$ symbolp)
-   (test pseudo-termp)
-   (base pseudo-termp)
-   (nonrec pseudo-termp)
-   (combine pseudo-termp)
-   (q symbolp)
-   (r symbolp)
-   (variant$ tailrec-variantp)
-   (domain$ pseudo-termfnp)
-   (verify-guards$ booleanp)
-   (hints$ symbol-alistp)
-   (print$ print-specifier-p)
-   (app-cond-present-names tailrec-app-cond-name-listp)
-   (names-to-avoid symbol-listp)
-   ctx
-   state)
-  :returns (mv (events "A @(tsee pseudo-event-form-listp).")
-               (thm-names "A @(tsee symbol-symbol-alistp)
-                           from names of applicability conditions
-                           to names of the corresponding theorems event."))
-  :mode :program
-  :short "Generate theorems for the applicability conditions that must hold."
-  (tailrec-gen-app-conds-aux app-cond-present-names
-                             old$
-                             test
-                             base
-                             nonrec
-                             combine
-                             q
-                             r
-                             variant$
-                             domain$
-                             verify-guards$
-                             hints$
-                             print$
-                             names-to-avoid
-                             ctx
-                             state)
-
-  :prepwork
-  ((define tailrec-gen-app-conds-aux
-     ((names tailrec-app-cond-name-listp)
-      (old$ symbolp)
-      (test pseudo-termp)
-      (base pseudo-termp)
-      (nonrec pseudo-termp)
-      (combine pseudo-termp)
-      (q symbolp)
-      (r symbolp)
-      (variant$ tailrec-variantp)
-      (domain$ pseudo-termfnp)
-      (verify-guards$ booleanp)
-      (hints$ symbol-alistp)
-      (print$ print-specifier-p)
-      (names-to-avoid symbol-listp)
-      ctx
-      state)
-     :returns (mv events ; PSEUDO-EVENT-FORM-LISTP
-                  thm-names) ; SYMBOL-SYMBOL-ALISTP
-     :mode :program
-     :parents nil
-     (b* (((when (endp names)) (mv nil nil))
-          (name (car names))
-          ((mv event thm-name) (tailrec-gen-app-cond name
-                                                     old$
-                                                     test
-                                                     base
-                                                     nonrec
-                                                     combine
-                                                     q
-                                                     r
-                                                     domain$
-                                                     hints$
-                                                     print$
-                                                     names-to-avoid
-                                                     ctx
-                                                     state))
-          (names-to-avoid (cons thm-name names-to-avoid))
-          ((mv events thm-names) (tailrec-gen-app-conds-aux (cdr names)
-                                                            old$
-                                                            test
-                                                            base
-                                                            nonrec
-                                                            combine
-                                                            q
-                                                            r
-                                                            variant$
-                                                            domain$
-                                                            verify-guards$
-                                                            hints$
-                                                            print$
-                                                            names-to-avoid
-                                                            ctx
-                                                            state)))
-       (mv (cons event events)
-           (acons name thm-name thm-names))))))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define tailrec-gen-domain-of-old-thm ((old$ symbolp)
                                        (test pseudo-termp)
@@ -1352,7 +1057,7 @@
                                        (variant$ tailrec-variantp)
                                        (domain$ pseudo-termfnp)
                                        (names-to-avoid symbol-listp)
-                                       (app-cond-thm-names symbol-symbol-alistp)
+                                       (appcond-thm-names symbol-symbol-alistp)
                                        (old-unnorm-name symbolp)
                                        (wrld plist-worldp))
   :returns (mv (event "A @(tsee pseudo-event-formp).")
@@ -1373,7 +1078,10 @@
    This theorem event is local,
    because it is a lemma used to prove the exported main theorem.
    </p>"
-  (b* ((name (fresh-name-in-world-with-$s 'domain-of-old names-to-avoid wrld))
+  (b* ((name (fresh-logical-name-with-$s-suffix 'domain-of-old
+                                                nil
+                                                names-to-avoid
+                                                wrld))
        (formula (untranslate (apply-term* domain$
                                           (apply-term old$
                                                       (formals old$
@@ -1383,11 +1091,11 @@
         (case variant$
           ((:monoid :assoc)
            (b* ((domain-of-base-thm
-                 (cdr (assoc-eq :domain-of-base app-cond-thm-names)))
+                 (cdr (assoc-eq :domain-of-base appcond-thm-names)))
                 (domain-of-nonrec-thm
-                 (cdr (assoc-eq :domain-of-nonrec app-cond-thm-names)))
+                 (cdr (assoc-eq :domain-of-nonrec appcond-thm-names)))
                 (domain-of-combine-thm
-                 (cdr (assoc-eq :domain-of-combine app-cond-thm-names)))
+                 (cdr (assoc-eq :domain-of-combine appcond-thm-names)))
                 (domain-of-combine-instance
                  `(:instance ,domain-of-combine-thm
                    :extra-bindings-ok
@@ -1404,9 +1112,9 @@
                        ,domain-of-combine-instance)))))
           (:monoid-alt
            (b* ((domain-of-base-thm
-                 (cdr (assoc-eq :domain-of-base app-cond-thm-names)))
+                 (cdr (assoc-eq :domain-of-base appcond-thm-names)))
                 (domain-of-combine-uncond-thm
-                 (cdr (assoc-eq :domain-of-combine-uncond app-cond-thm-names)))
+                 (cdr (assoc-eq :domain-of-combine-uncond appcond-thm-names)))
                 (domain-of-combine-uncond-instance
                  `(:instance ,domain-of-combine-uncond-thm
                    :extra-bindings-ok
@@ -1426,6 +1134,8 @@
                         :hints ,hints))))
     (mv event name)))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (define tailrec-gen-new-fn ((old$ symbolp)
                             (test pseudo-termp)
                             (base pseudo-termp)
@@ -1440,7 +1150,7 @@
                             (new-enable$ booleanp)
                             (non-executable$ booleanp)
                             (verify-guards$ booleanp)
-                            (app-cond-thm-names symbol-symbol-alistp)
+                            (appcond-thm-names symbol-symbol-alistp)
                             (wrld plist-worldp))
   :returns (mv (local-event "A @(tsee pseudo-event-formp).")
                (exported-event "A @(tsee pseudo-event-formp).")
@@ -1519,15 +1229,15 @@
                             (formals domain$ wrld)
                           (lambda-formals domain$))))
                 (domain-of-base-thm
-                 (cdr (assoc-eq :domain-of-base app-cond-thm-names)))
+                 (cdr (assoc-eq :domain-of-base appcond-thm-names)))
                 (domain-of-nonrec-thm
-                 (cdr (assoc-eq :domain-of-nonrec app-cond-thm-names)))
+                 (cdr (assoc-eq :domain-of-nonrec appcond-thm-names)))
                 (domain-of-combine-thm
-                 (cdr (assoc-eq :domain-of-combine app-cond-thm-names)))
+                 (cdr (assoc-eq :domain-of-combine appcond-thm-names)))
                 (domain-guard-thm
-                 (cdr (assoc-eq :domain-guard app-cond-thm-names)))
+                 (cdr (assoc-eq :domain-guard appcond-thm-names)))
                 (combine-guard-thm
-                 (cdr (assoc-eq :combine-guard app-cond-thm-names)))
+                 (cdr (assoc-eq :combine-guard appcond-thm-names)))
                 (domain-of-combine-instance
                  `(:instance ,domain-of-combine-thm
                    :extra-bindings-ok
@@ -1561,16 +1271,16 @@
                             (formals domain$ wrld)
                           (lambda-formals domain$))))
                 (domain-of-base-thm
-                 (cdr (assoc-eq :domain-of-base app-cond-thm-names)))
+                 (cdr (assoc-eq :domain-of-base appcond-thm-names)))
                 (domain-of-combine-uncond-thm
-                 (cdr (assoc-eq :domain-of-combine-uncond app-cond-thm-names)))
+                 (cdr (assoc-eq :domain-of-combine-uncond appcond-thm-names)))
                 (domain-guard-thm
-                 (cdr (assoc-eq :domain-guard app-cond-thm-names)))
+                 (cdr (assoc-eq :domain-guard appcond-thm-names)))
                 (combine-guard-thm
-                 (cdr (assoc-eq :combine-guard app-cond-thm-names)))
+                 (cdr (assoc-eq :combine-guard appcond-thm-names)))
                 (domain-of-nonrec-when-guard-thm
                  (cdr (assoc-eq :domain-of-nonrec-when-guard
-                        app-cond-thm-names)))
+                        appcond-thm-names)))
                 (domain-of-combine-uncond-instance
                  `(:instance ,domain-of-combine-uncond-thm
                    :extra-bindings-ok
@@ -1608,8 +1318,8 @@
                                   :hints ,termination-hints
                                   :guard ,guard
                                   :verify-guards ,verify-guards$
-                             ,@(and verify-guards$
-                                    (list :guard-hints guard-hints))))
+                                  ,@(and verify-guards$
+                                         (list :guard-hints guard-hints))))
                   ,body)))
        (exported-event
         `(,macro ,new-name$ (,@formals)
@@ -1619,6 +1329,8 @@
                                  :verify-guards ,verify-guards$))
                  ,body)))
     (mv local-event exported-event formals)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define tailrec-gen-new-to-old-thm ((old$ symbolp)
                                     (nonrec pseudo-termp)
@@ -1630,7 +1342,7 @@
                                     (domain$ pseudo-termfnp)
                                     (new-name$ symbolp)
                                     (names-to-avoid symbol-listp)
-                                    (app-cond-thm-names symbol-symbol-alistp)
+                                    (appcond-thm-names symbol-symbol-alistp)
                                     (old-unnorm-name symbolp)
                                     (domain-of-old-name symbolp)
                                     (new-formals symbol-listp)
@@ -1668,7 +1380,10 @@
    This theorem event is local,
    because it is a lemma used to prove the exported main theorem.
    </p>"
-  (b* ((name (fresh-name-in-world-with-$s 'new-to-old names-to-avoid wrld))
+  (b* ((name (fresh-logical-name-with-$s-suffix 'new-to-old
+                                                nil
+                                                names-to-avoid
+                                                wrld))
        (formula
         (untranslate (implicate
                       (apply-term* domain$ r)
@@ -1683,13 +1398,13 @@
         (case variant$
           ((:monoid :assoc)
            (b* ((domain-of-nonrec-thm
-                 (cdr (assoc-eq :domain-of-nonrec app-cond-thm-names)))
+                 (cdr (assoc-eq :domain-of-nonrec appcond-thm-names)))
                 (domain-of-combine-thm
-                 (cdr (assoc-eq :domain-of-combine app-cond-thm-names)))
+                 (cdr (assoc-eq :domain-of-combine appcond-thm-names)))
                 (combine-associativity-thm
-                 (cdr (assoc-eq :combine-associativity app-cond-thm-names)))
+                 (cdr (assoc-eq :combine-associativity appcond-thm-names)))
                 (combine-right-identity-thm?
-                 (cdr (assoc-eq :combine-right-identity app-cond-thm-names)))
+                 (cdr (assoc-eq :combine-right-identity appcond-thm-names)))
                 (domain-of-combine-instance
                  `(:instance ,domain-of-combine-thm
                    :extra-bindings-ok
@@ -1726,12 +1441,12 @@
                        ,combine-associativity-instance)))))
           (:monoid-alt
            (b* ((domain-of-combine-uncond-thm
-                 (cdr (assoc-eq :domain-of-combine-uncond app-cond-thm-names)))
+                 (cdr (assoc-eq :domain-of-combine-uncond appcond-thm-names)))
                 (combine-associativity-uncond-thm
                  (cdr (assoc-eq :combine-associativity-uncond
-                        app-cond-thm-names)))
+                        appcond-thm-names)))
                 (combine-right-identity-thm
-                 (cdr (assoc-eq :combine-right-identity app-cond-thm-names)))
+                 (cdr (assoc-eq :combine-right-identity appcond-thm-names)))
                 (domain-of-combine-uncond-instance
                  `(:instance ,domain-of-combine-uncond-thm
                    :extra-bindings-ok
@@ -1763,6 +1478,8 @@
                         :hints ,hints))))
     (mv event name)))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (define tailrec-gen-alpha-fn ((old$ symbolp)
                               (test pseudo-termp)
                               (updates pseudo-term-listp)
@@ -1787,7 +1504,10 @@
    <p>
    The name used for @($\\alpha$) is returned, along with the event.
    </p>"
-  (b* ((name (fresh-name-in-world-with-$s 'alpha names-to-avoid wrld))
+  (b* ((name (fresh-logical-name-with-$s-suffix 'alpha
+                                                'function
+                                                names-to-avoid
+                                                wrld))
        (formals (formals old$ wrld))
        (body `(if ,test (list ,@formals) (,name ,@updates)))
        (wfrel (well-founded-relation old$ wrld))
@@ -1804,6 +1524,8 @@
                                   :normalize nil))
                   ,body))))
     (mv event name)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define tailrec-gen-alpha-component-terms ((alpha-name symbolp)
                                            (old$ symbolp)
@@ -1840,6 +1562,8 @@
                                                 formals
                                                 (cons term terms)))))))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (define tailrec-gen-test-of-alpha-thm ((old$ symbolp)
                                        (test pseudo-termp)
                                        (alpha-name symbolp)
@@ -1867,7 +1591,10 @@
    This theorem is local,
    because it is just a lemma used to prove other theorems.
    </p>"
-  (b* ((name (fresh-name-in-world-with-$s 'test-of-alpha names-to-avoid wrld))
+  (b* ((name (fresh-logical-name-with-$s-suffix 'test-of-alpha
+                                                nil
+                                                names-to-avoid
+                                                wrld))
        (formals (formals old$ wrld))
        (alpha-component-terms (tailrec-gen-alpha-component-terms alpha-name
                                                                  old$
@@ -1881,6 +1608,8 @@
                         :rule-classes nil
                         :hints ,hints))))
     (mv event name)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define tailrec-gen-old-guard-of-alpha-thm ((old$ symbolp)
                                             (alpha-name symbolp)
@@ -1909,9 +1638,10 @@
    This theorem is local,
    because it is just a lemma used to prove other theorems.
    </p>"
-  (b* ((name (fresh-name-in-world-with-$s 'old-guard-of-alpha
-                                          names-to-avoid
-                                          wrld))
+  (b* ((name (fresh-logical-name-with-$s-suffix 'old-guard-of-alpha
+                                                nil
+                                                names-to-avoid
+                                                wrld))
        (formals (formals old$ wrld))
        (alpha-component-terms (tailrec-gen-alpha-component-terms alpha-name
                                                                  old$
@@ -1930,11 +1660,13 @@
                         :hints ,hints))))
     (mv event name)))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (define tailrec-gen-domain-of-ground-base-thm
   ((old$ symbolp)
    (base pseudo-termp)
    (domain$ pseudo-termfnp)
-   (app-cond-thm-names symbol-symbol-alistp)
+   (appcond-thm-names symbol-symbol-alistp)
    (alpha-name symbolp)
    (test-of-alpha-name symbolp)
    (names-to-avoid symbol-listp)
@@ -1953,12 +1685,13 @@
    This theorem event is local,
    because it is just a lemma used to prove other theorems.
    </p>"
-  (b* ((name (fresh-name-in-world-with-$s 'domain-of-ground-base
-                                          names-to-avoid
-                                          wrld))
+  (b* ((name (fresh-logical-name-with-$s-suffix 'domain-of-ground-base
+                                                nil
+                                                names-to-avoid
+                                                wrld))
        (formula (apply-term* domain$ base))
        (domain-of-base-thm
-        (cdr (assoc-eq :domain-of-base app-cond-thm-names)))
+        (cdr (assoc-eq :domain-of-base appcond-thm-names)))
        (formals (formals old$ wrld))
        (alpha-comps (tailrec-gen-alpha-component-terms alpha-name
                                                        old$
@@ -1976,6 +1709,8 @@
                         :hints ,hints))))
     (mv event name)))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (define tailrec-gen-combine-left-identity-ground-thm
   ((old$ symbolp)
    (base pseudo-termp)
@@ -1983,7 +1718,7 @@
    (q symbolp)
    (r symbolp)
    (domain$ pseudo-termfnp)
-   (app-cond-thm-names symbol-symbol-alistp)
+   (appcond-thm-names symbol-symbol-alistp)
    (alpha-name symbolp)
    (test-of-alpha-name symbolp)
    (names-to-avoid symbol-listp)
@@ -2003,16 +1738,17 @@
    This theorem is local,
    because it is just a lemma used to prove other theorems.
    </p>"
-  (b* ((name (fresh-name-in-world-with-$s 'combine-left-identity-ground
-                                          names-to-avoid
-                                          wrld))
+  (b* ((name (fresh-logical-name-with-$s-suffix 'combine-left-identity-ground
+                                                nil
+                                                names-to-avoid
+                                                wrld))
        (u (tailrec-gen-var-u old$))
        (combine-op (tailrec-gen-combine-op combine q r))
        (formula (implicate (apply-term* domain$ u)
                            `(equal ,(apply-term* combine-op base u)
                                    ,u)))
        (combine-left-identity-thm
-        (cdr (assoc-eq :combine-left-identity app-cond-thm-names)))
+        (cdr (assoc-eq :combine-left-identity appcond-thm-names)))
        (formals (formals old$ wrld))
        (alpha-comps (tailrec-gen-alpha-component-terms alpha-name
                                                        old$
@@ -2029,6 +1765,8 @@
                         :rule-classes nil
                         :hints ,hints))))
     (mv event name)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define tailrec-gen-base-guard-thm ((old$ symbolp)
                                     (base pseudo-termp)
@@ -2053,7 +1791,10 @@
    because it is just a lemma used to prove other theorems.
    </p>"
   (b* ((wrld (w state))
-       (name (fresh-name-in-world-with-$s 'base-guard names-to-avoid wrld))
+       (name (fresh-logical-name-with-$s-suffix 'base-guard
+                                                nil
+                                                names-to-avoid
+                                                wrld))
        (formula (implicate (guard old$ nil wrld)
                            (term-guard-obligation base state)))
        (formals (formals old$ wrld))
@@ -2073,6 +1814,8 @@
                         :rule-classes nil
                         :hints ,hints))))
     (mv event name)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define tailrec-gen-old-as-new-term ((old$ symbolp)
                                      (test pseudo-termp)
@@ -2114,6 +1857,8 @@
                  (t (impossible)))
                nil wrld))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (define tailrec-gen-old-to-new-thm ((old$ symbolp)
                                     (test pseudo-termp)
                                     (base pseudo-termp)
@@ -2122,15 +1867,18 @@
                                     (r symbolp)
                                     (variant$ tailrec-variantp)
                                     (new-name$ symbolp)
+                                    (wrapper$ booleanp)
+                                    (thm-name$ symbolp)
                                     (names-to-avoid symbol-listp)
-                                    (app-cond-thm-names symbol-symbol-alistp)
+                                    (appcond-thm-names symbol-symbol-alistp)
                                     (domain-of-old-name symbolp)
                                     (domain-of-ground-base-name symbolp)
                                     (combine-left-identity-ground-name symbolp)
                                     (new-formals symbol-listp)
                                     (new-to-old-name symbolp)
                                     (wrld plist-worldp))
-  :returns (mv (event "A @(tsee pseudo-event-formp).")
+  :returns (mv (local-event "A @(tsee pseudo-event-formp).")
+               (exported-event? "A @(tsee maybe-pseudo-event-formp).")
                (name "A @(tsee symbolp) that names the theorem."))
   :mode :program
   :short "Generate the theorem that relates
@@ -2157,8 +1905,19 @@
    since the old function is recursive,
    we use an explicit @(':expand') hint
    instead of just enabling the definition of old function.
+   </p>
+   <p>
+   We always generate a local event for this theorem.
+   If the @(':wrapper') input is @('nil'),
+   we also generate an exported event because in that case
+   there is no wrapper an no old-to-wrapper theorem.
    </p>"
-  (b* ((name (fresh-name-in-world-with-$s 'old-to-new names-to-avoid wrld))
+  (b* ((name (if wrapper$
+                 (fresh-logical-name-with-$s-suffix 'old-to-new
+                                                    nil
+                                                    names-to-avoid
+                                                    wrld)
+               thm-name$))
        (formula `(equal ,(apply-term old$ (formals old$ wrld))
                         ,(tailrec-gen-old-as-new-term
                           old$ test base nonrec updates r variant$
@@ -2185,7 +1944,7 @@
           (:assoc
            (b* ((formals (formals old$ wrld))
                 (domain-of-nonrec-thm
-                 (cdr (assoc-eq :domain-of-nonrec app-cond-thm-names)))
+                 (cdr (assoc-eq :domain-of-nonrec appcond-thm-names)))
                 (new-to-old-instance
                  `(:instance ,new-to-old-name
                    :extra-bindings-ok
@@ -2197,11 +1956,15 @@
                 :use (,domain-of-nonrec-thm
                       ,new-to-old-instance)))))
           (t (impossible))))
-       (event `(local (defthm ,name
-                        ,formula
-                        :rule-classes nil
-                        :hints ,hints))))
-    (mv event name)))
+       (local-event `(local (defthm ,name
+                              ,formula
+                              :hints ,hints)))
+       (exported-event? (and (not wrapper$)
+                             `(defthm ,name
+                                ,formula))))
+    (mv local-event exported-event? name)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define tailrec-gen-wrapper-fn ((old$ symbolp)
                                 (test pseudo-termp)
@@ -2215,7 +1978,7 @@
                                 (wrapper-enable$ booleanp)
                                 (non-executable$ booleanp)
                                 (verify-guards$ booleanp)
-                                (app-cond-thm-names symbol-symbol-alistp)
+                                (appcond-thm-names symbol-symbol-alistp)
                                 (domain-of-ground-base-name symbolp)
                                 (base-guard-name symbolp)
                                 (new-formals symbol-listp)
@@ -2246,6 +2009,9 @@
    the proof for the case in which left identity holds
    (i.e. when the variant is @(':monoid') or @(':monoid-alt'))
    follows the proof for the special case of a ground base term.
+   </p>
+   <p>
+   This function is called only if the @(':wrapper') input is @('t').
    </p>"
   (b* ((macro (function-intro-macro wrapper-enable$ non-executable$))
        (formals (formals old$ wrld))
@@ -2263,7 +2029,7 @@
                     ,base-guard-name))))
           (:assoc
            (b* ((domain-of-nonrec-thm
-                 (cdr (assoc-eq :domain-of-nonrec app-cond-thm-names))))
+                 (cdr (assoc-eq :domain-of-nonrec appcond-thm-names))))
              `(("Goal"
                 :in-theory nil
                 :use ((:guard-theorem ,old$)
@@ -2274,8 +2040,8 @@
           (,macro ,wrapper-name$ (,@formals)
                   (declare (xargs :guard ,guard
                                   :verify-guards ,verify-guards$
-                             ,@(and verify-guards$
-                                    (list :guard-hints guard-hints))))
+                                  ,@(and verify-guards$
+                                         (list :guard-hints guard-hints))))
                   ,body)))
        (exported-event
         `(,macro ,wrapper-name$ (,@formals)
@@ -2283,6 +2049,8 @@
                                  :verify-guards ,verify-guards$))
                  ,body)))
     (mv local-event exported-event)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define tailrec-gen-old-to-wrapper-thm ((old$ symbolp)
                                         (wrapper-name$ symbolp)
@@ -2310,6 +2078,9 @@
    The theorem is proved by
    expanding the (non-normalized) definition of the wrapper function
    and using the theorem that relates the old function to the new function.
+   </p>
+   <p>
+   This function is called only if the @(':wrapper') input is @('t').
    </p>"
   (b* ((macro (theorem-intro-macro thm-enable$))
        (formals (formals old$ wrld))
@@ -2326,6 +2097,8 @@
                                 ,formula)))
     (mv local-event exported-event)))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (define tailrec-gen-everything
   ((old$ symbolp)
    (test pseudo-termp)
@@ -2339,6 +2112,7 @@
    (domain$ pseudo-termfnp)
    (new-name$ symbolp)
    (new-enable$ booleanp)
+   (wrapper$ booleanp)
    (wrapper-name$ symbolp)
    (wrapper-enable$ booleanp)
    (thm-name$ symbolp)
@@ -2346,13 +2120,12 @@
    (non-executable$ booleanp)
    (verify-guards$ booleanp)
    (hints$ symbol-alistp)
-   (print$ print-specifier-p)
+   (print$ evmac-input-print-p)
    (show-only$ booleanp)
-   (app-cond-present-names tailrec-app-cond-name-listp)
    (call pseudo-event-formp)
    ctx
    state)
-  :returns (event "A @(tsee pseudo-event-formp).")
+  :returns (mv erp (event "A @(tsee pseudo-event-formp).") state)
   :mode :program
   :short "Generate the top-level event."
   :long
@@ -2376,7 +2149,7 @@
    <p>
    The @(tsee encapsulate) also includes events
    to locally install the non-normalized definitions
-   of the old, new, and wrapper functions,
+   of the old, new, and (if generated) wrapper functions,
    because the generated proofs are based on the unnormalized bodies.
    </p>
    <p>
@@ -2412,89 +2185,89 @@
    for visual separation.
    </p>"
   (b* ((wrld (w state))
-       (names-to-avoid (list new-name$
-                             wrapper-name$
-                             thm-name$))
-       ((mv app-cond-thm-events
-            app-cond-thm-names) (tailrec-gen-app-conds old$
-                                                       test
-                                                       base
-                                                       nonrec
-                                                       combine
-                                                       q
-                                                       r
-                                                       variant$
-                                                       domain$
-                                                       verify-guards$
-                                                       hints$
-                                                       print$
-                                                       app-cond-present-names
-                                                       names-to-avoid
-                                                       ctx
-                                                       state))
-       (names-to-avoid (append names-to-avoid
-                               (strip-cdrs app-cond-thm-names)))
+       (names-to-avoid (if wrapper$
+                           (list new-name$
+                                 wrapper-name$
+                                 thm-name$)
+                         (list new-name$
+                               thm-name$)))
+       (appconds (tailrec-gen-appconds old$
+                                       test
+                                       base
+                                       nonrec
+                                       combine
+                                       q
+                                       r
+                                       domain$
+                                       variant$
+                                       verify-guards$
+                                       state))
+       ((er (list appcond-thm-events
+                  appcond-thm-names
+                  names-to-avoid))
+        (evmac-appcond-theorems-no-extra-hints
+         appconds hints$ names-to-avoid print$ ctx state))
        ((mv old-unnorm-event
-            old-unnorm-name) (install-not-norm-event old$
-                                                     t
-                                                     names-to-avoid
-                                                     wrld))
+            old-unnorm-name) (install-not-normalized-event old$
+            t
+            names-to-avoid
+            wrld))
        (names-to-avoid (cons old-unnorm-name names-to-avoid))
        ((mv domain-of-old-event
             domain-of-old-name) (tailrec-gen-domain-of-old-thm
-                                 old$ test nonrec updates
-                                 variant$ domain$
-                                 names-to-avoid
-                                 app-cond-thm-names
-                                 old-unnorm-name
-                                 wrld))
+            old$ test nonrec updates
+            variant$ domain$
+            names-to-avoid
+            appcond-thm-names
+            old-unnorm-name
+            wrld))
        (names-to-avoid (cons domain-of-old-name names-to-avoid))
        ((mv new-fn-local-event
             new-fn-exported-event
             new-formals) (tailrec-gen-new-fn
-                          old$
-                          test base nonrec updates combine q r
-                          variant$ domain$
-                          new-name$ new-enable$
-                          non-executable$ verify-guards$
-                          app-cond-thm-names
-                          wrld))
+            old$
+            test base nonrec updates combine q r
+            variant$ domain$
+            new-name$ new-enable$
+            non-executable$ verify-guards$
+            appcond-thm-names
+            wrld))
        ((mv new-unnorm-event
-            new-unnorm-name) (install-not-norm-event new-name$
-                                                     t
-                                                     names-to-avoid
-                                                     wrld))
+            new-unnorm-name) (install-not-normalized-event new-name$
+            t
+            names-to-avoid
+            wrld))
        (names-to-avoid (cons new-unnorm-name names-to-avoid))
        ((mv new-to-old-event
             new-to-old-name) (tailrec-gen-new-to-old-thm
-                              old$ nonrec updates combine q r
-                              variant$ domain$
-                              new-name$
-                              names-to-avoid
-                              app-cond-thm-names
-                              old-unnorm-name
-                              domain-of-old-name
-                              new-formals
-                              new-unnorm-name
-                              wrld))
+            old$ nonrec updates combine q r
+            variant$ domain$
+            new-name$
+            names-to-avoid
+            appcond-thm-names
+            old-unnorm-name
+            domain-of-old-name
+            new-formals
+            new-unnorm-name
+            wrld))
        (names-to-avoid (cons new-to-old-name names-to-avoid))
        (gen-alpha (member-eq variant$ '(:monoid :monoid-alt)))
        ((mv alpha-event?
             alpha-name?) (if gen-alpha
-                             (tailrec-gen-alpha-fn
-                              old$ test updates
-                              names-to-avoid wrld)
-                           (mv nil nil)))
+            (tailrec-gen-alpha-fn
+             old$ test updates
+             names-to-avoid wrld)
+            (mv nil nil)))
        (names-to-avoid (if gen-alpha
                            (cons alpha-name? names-to-avoid)
                          names-to-avoid))
        ((mv test-of-alpha-event?
             test-of-alpha-name?) (if gen-alpha
-                                     (tailrec-gen-test-of-alpha-thm
-                                      old$ test
-                                      alpha-name?
-                                      names-to-avoid wrld)
-                                   (mv nil nil)))
+            (tailrec-gen-test-of-alpha-thm
+             old$ test
+             alpha-name?
+             names-to-avoid wrld)
+            (mv nil nil)))
        (names-to-avoid (if gen-alpha
                            (cons test-of-alpha-name? names-to-avoid)
                          names-to-avoid))
@@ -2513,7 +2286,7 @@
             domain-of-ground-base-name?)
         (if gen-alpha
             (tailrec-gen-domain-of-ground-base-thm
-             old$ base domain$ app-cond-thm-names
+             old$ base domain$ appcond-thm-names
              alpha-name? test-of-alpha-name?
              names-to-avoid wrld)
           (mv nil nil)))
@@ -2525,7 +2298,7 @@
             combine-left-identity-ground-name?)
         (if gen-alpha
             (tailrec-gen-combine-left-identity-ground-thm
-             old$ base combine q r domain$ app-cond-thm-names
+             old$ base combine q r domain$ appcond-thm-names
              alpha-name? test-of-alpha-name?
              names-to-avoid wrld)
           (mv nil nil)))
@@ -2536,67 +2309,78 @@
        ((mv base-guard-event?
             base-guard-name?) (if (and gen-alpha
                                        verify-guards$)
-                                  (tailrec-gen-base-guard-thm
-                                   old$ base
-                                   alpha-name? test-of-alpha-name?
-                                   old-guard-of-alpha-name?
-                                   names-to-avoid state)
-                                (mv nil nil)))
+            (tailrec-gen-base-guard-thm
+             old$ base
+             alpha-name? test-of-alpha-name?
+             old-guard-of-alpha-name?
+             names-to-avoid state)
+            (mv nil nil)))
        (names-to-avoid (if (and gen-alpha
                                 verify-guards$)
                            (cons base-guard-name? names-to-avoid)
                          names-to-avoid))
-       ((mv old-to-new-event
+       ((mv old-to-new-thm-local-event
+            old-to-new-thm-exported-event?
             old-to-new-name) (tailrec-gen-old-to-new-thm
-                              old$ test base nonrec updates r
-                              variant$
-                              new-name$
-                              names-to-avoid
-                              app-cond-thm-names
-                              domain-of-old-name
-                              domain-of-ground-base-name?
-                              combine-left-identity-ground-name?
-                              new-formals
-                              new-to-old-name
-                              wrld))
+            old$ test base nonrec updates r
+            variant$
+            new-name$
+            wrapper$
+            thm-name$
+            names-to-avoid
+            appcond-thm-names
+            domain-of-old-name
+            domain-of-ground-base-name?
+            combine-left-identity-ground-name?
+            new-formals
+            new-to-old-name
+            wrld))
        (names-to-avoid (cons old-to-new-name names-to-avoid))
-       ((mv wrapper-fn-local-event
-            wrapper-fn-exported-event) (tailrec-gen-wrapper-fn
-                                        old$
-                                        test base nonrec updates r
-                                        variant$
-                                        new-name$
-                                        wrapper-name$ wrapper-enable$
-                                        non-executable$ verify-guards$
-                                        app-cond-thm-names
-                                        domain-of-ground-base-name?
-                                        base-guard-name?
-                                        new-formals
-                                        wrld))
-       ((mv wrapper-unnorm-event
-            wrapper-unnorm-name) (install-not-norm-event wrapper-name$
-                                                         t
-                                                         names-to-avoid
-                                                         wrld))
+       ((mv wrapper-fn-local-event?
+            wrapper-fn-exported-event?) (if wrapper$
+            (tailrec-gen-wrapper-fn
+             old$
+             test base nonrec updates r
+             variant$
+             new-name$
+             wrapper-name$ wrapper-enable$
+             non-executable$ verify-guards$
+             appcond-thm-names
+             domain-of-ground-base-name?
+             base-guard-name?
+             new-formals
+             wrld)
+            (mv nil nil)))
+       ((mv wrapper-unnorm-event?
+            wrapper-unnorm-name?) (if wrapper$
+            (install-not-normalized-event wrapper-name$
+                                          t
+                                          names-to-avoid
+                                          wrld)
+            (mv nil nil)))
        ((mv
-         old-to-wrapper-thm-local-event
-         old-to-wrapper-thm-exported-event) (tailrec-gen-old-to-wrapper-thm
-                                             old$
-                                             wrapper-name$
-                                             thm-name$
-                                             thm-enable$
-                                             old-to-new-name
-                                             wrapper-unnorm-name
-                                             wrld))
+         old-to-wrapper-thm-local-event?
+         old-to-wrapper-thm-exported-event?) (if wrapper$
+         (tailrec-gen-old-to-wrapper-thm
+          old$
+          wrapper-name$
+          thm-name$
+          thm-enable$
+          old-to-new-name
+          wrapper-unnorm-name?
+          wrld)
+         (mv nil nil)))
        (new-fn-numbered-name-event `(add-numbered-name-in-use
                                      ,new-name$))
-       (wrapper-fn-numbered-name-event `(add-numbered-name-in-use
-                                         ,wrapper-name$))
+       (wrapper-fn-numbered-name-event? (if wrapper$
+                                            `(add-numbered-name-in-use
+                                              ,wrapper-name$)
+                                          nil))
        (encapsulate-events
         `((logic)
           (set-ignore-ok t)
           (set-irrelevant-formals-ok t)
-          ,@app-cond-thm-events
+          ,@appcond-thm-events
           (set-default-hints nil)
           (set-override-hints nil)
           ,old-unnorm-event
@@ -2618,21 +2402,23 @@
           ,@(and gen-alpha
                  verify-guards$
                  (list base-guard-event?))
-          ,old-to-new-event
-          ,wrapper-fn-local-event
-          ,wrapper-unnorm-event
-          ,old-to-wrapper-thm-local-event
+          ,old-to-new-thm-local-event
+          ,@(and wrapper$ (list wrapper-fn-local-event?))
+          ,@(and wrapper$ (list wrapper-unnorm-event?))
+          ,@(and wrapper$ (list old-to-wrapper-thm-local-event?))
           ,new-fn-exported-event
-          ,wrapper-fn-exported-event
-          ,old-to-wrapper-thm-exported-event
+          ,@(and wrapper$ (list wrapper-fn-exported-event?))
+          ,(if wrapper$
+               old-to-wrapper-thm-exported-event?
+             old-to-new-thm-exported-event?)
           ,new-fn-numbered-name-event
-          ,wrapper-fn-numbered-name-event))
+          ,@(and wrapper$ (list wrapper-fn-numbered-name-event?))))
        (encapsulate `(encapsulate () ,@encapsulate-events))
        ((when show-only$)
         (if (member-eq print$ '(:info :all))
             (cw "~%~x0~|" encapsulate)
           (cw "~x0~|" encapsulate))
-        '(value-triple :invisible))
+        (value '(value-triple :invisible)))
        (encapsulate+ (restore-output? (eq print$ :all) encapsulate))
        (transformation-table-event (record-transformation-call-event
                                     call encapsulate wrld))
@@ -2641,14 +2427,20 @@
                       `(,@(and (member-eq print$ '(:info :all))
                                '((cw-event "~%")))
                         (cw-event "~x0~|" ',new-fn-exported-event)
-                        (cw-event "~x0~|" ',wrapper-fn-exported-event)
-                        (cw-event "~x0~|"
-                                  ',old-to-wrapper-thm-exported-event)))))
-    `(progn
-       ,encapsulate+
-       ,transformation-table-event
-       ,@print-result
-       (value-triple :invisible))))
+                        ,@(and wrapper$
+                               (list `(cw-event "~x0~|"
+                                                ',wrapper-fn-exported-event?)))
+                        ,(if wrapper$
+                             `(cw-event "~x0~|"
+                                        ',old-to-wrapper-thm-exported-event?)
+                           `(cw-event "~x0~|"
+                                      ',old-to-new-thm-exported-event?))))))
+    (value
+     `(progn
+        ,encapsulate+
+        ,transformation-table-event
+        ,@print-result
+        (value-triple :invisible)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -2657,8 +2449,11 @@
                     domain
                     new-name
                     new-enable
+                    wrapper
                     wrapper-name
+                    (wrapper-name-present booleanp)
                     wrapper-enable
+                    (wrapper-enable-present booleanp)
                     thm-name
                     thm-enable
                     non-executable
@@ -2704,49 +2499,54 @@
                   thm-name$
                   non-executable$
                   verify-guards$
-                  hints$
-                  app-cond-present-names)) (tailrec-process-inputs
-                                            old
-                                            variant
-                                            domain
-                                            new-name
-                                            new-enable
-                                            wrapper-name
-                                            wrapper-enable
-                                            thm-name
-                                            thm-enable
-                                            non-executable
-                                            verify-guards
-                                            hints
-                                            print
-                                            show-only
-                                            ctx state))
-       (event (tailrec-gen-everything old$
-                                      test
-                                      base
-                                      nonrec
-                                      updates
-                                      combine
-                                      q
-                                      r
-                                      variant
-                                      domain$
-                                      new-name$
-                                      new-enable$
-                                      wrapper-name$
-                                      wrapper-enable
-                                      thm-name$
-                                      thm-enable
-                                      non-executable$
-                                      verify-guards$
-                                      hints$
-                                      print
-                                      show-only
-                                      app-cond-present-names
-                                      call
-                                      ctx
-                                      state)))
+                  hints$))
+        (tailrec-process-inputs old
+                                variant
+                                domain
+                                new-name
+                                new-enable
+                                wrapper
+                                wrapper-name
+                                wrapper-name-present
+                                wrapper-enable
+                                wrapper-enable-present
+                                thm-name
+                                thm-enable
+                                non-executable
+                                verify-guards
+                                hints
+                                print
+                                show-only
+                                ctx
+                                state))
+       ((er event) (tailrec-gen-everything old$
+                                           test
+                                           base
+                                           nonrec
+                                           updates
+                                           combine
+                                           q
+                                           r
+                                           variant
+                                           domain$
+                                           new-name$
+                                           new-enable$
+                                           wrapper
+                                           wrapper-name$
+                                           wrapper-enable
+                                           thm-name$
+                                           thm-enable
+                                           non-executable$
+                                           verify-guards$
+                                           hints$
+                                           print
+                                           show-only
+                                           call
+                                           ctx
+                                           state)))
     (value event)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defsection tailrec-macro-definition
   :parents (tailrec-implementation)
@@ -2766,8 +2566,9 @@
                      (domain ':auto)
                      (new-name ':auto)
                      (new-enable ':auto)
-                     (wrapper-name ':auto)
-                     (wrapper-enable 't)
+                     (wrapper 't)
+                     (wrapper-name ':auto wrapper-name-present)
+                     (wrapper-enable 't wrapper-enable-present)
                      (thm-name ':auto)
                      (thm-enable 't)
                      (non-executable ':auto)
@@ -2780,8 +2581,11 @@
                                    ',domain
                                    ',new-name
                                    ',new-enable
+                                   ',wrapper
                                    ',wrapper-name
+                                   ',wrapper-name-present
                                    ',wrapper-enable
+                                   ',wrapper-enable-present
                                    ',thm-name
                                    ',thm-enable
                                    ',non-executable

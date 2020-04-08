@@ -1,10 +1,13 @@
 ;; Copyright (C) 2017, Regents of the University of Texas
-;; Written by Cuong Chau
+;; Written by Cuong Chau (derived from the FM9001 work of Brock and Hunt)
 ;; License: A 3-clause BSD license.  See the LICENSE file distributed with
 ;; ACL2.
 
+;; The ACL2 source code for the FM9001 work is available at
+;; https://github.com/acl2/acl2/tree/master/books/projects/fm9001.
+
 ;; Cuong Chau <ckcuong@cs.utexas.edu>
-;; November 2018
+;; January 2019
 
 ;; Automatic definition and proofs for simple linear vector modules of
 ;; primitives or other modules.  VECTOR-MODULE is defined in
@@ -109,11 +112,11 @@
   (implies (and (v-wire& netlist n)
                 (true-listp a)
                 (equal (len a) n))
-           (equal (se (si 'v-wire n) a sts netlist)
+           (equal (se (si 'v-wire n) a st netlist)
                   a))
   :hints (("Goal"
            :expand (:free (n)
-                          (se (si 'v-wire n) a sts netlist))
+                          (se (si 'v-wire n) a st netlist))
            :in-theory (enable de-rules v-wire& v-wire*$destructure))))
 
 ;; V-IF
@@ -173,9 +176,9 @@
   (implies (and (v-if& netlist n)
                 (true-listp a) (equal (len a) n)
                 (true-listp b) (equal (len b) n))
-           (equal (se (si 'v-if n) (cons c (append a b)) sts netlist)
+           (equal (se (si 'v-if n) (cons c (append a b)) st netlist)
                   (fv-if c a b)))
   :hints (("Goal"
            :expand (:free (inputs n)
-                          (se (si 'v-if n) inputs sts netlist))
+                          (se (si 'v-if n) inputs st netlist))
            :in-theory (enable de-rules v-if& v-if*$destructure))))

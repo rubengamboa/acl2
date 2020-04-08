@@ -42,7 +42,7 @@
          ((smtlink-hint h) smtlink-hint)
          (G (disjoin cl))
          ((mv type-decl-list G/type)
-          (SMT-extract G h.fty-info))
+          (SMT-extract G h.fty-info h.abs))
          ((mv err type-decl-list-translated)
           (acl2::translate-cmp `(list ,@type-decl-list) t t nil
                                'type-extract-cp->type-extract-helper
@@ -60,9 +60,8 @@
     :returns (subgoal-lst pseudo-term-list-listp)
     (b* (((unless (pseudo-term-listp cl)) nil)
          ((unless (smtlink-hint-p smtlink-hint))
-          (list (remove-hint-please cl)))
+          (list cl))
          ((smtlink-hint h) smtlink-hint)
-         (cl (remove-hint-please cl))
          (G (disjoin cl))
          (type-decl-list h.type-decl-list)
          (G/type h.expanded-G/type)
@@ -73,10 +72,7 @@
          (cl0 `((hint-please ',the-hint)
                 (not (type-hyp (hide ,type-decl-list) ':type))
                 ,G/type))
-         (cl1 `((hint-please '(;; :in-theory (union-theories '(hint-please type-hyp)
-                               ;;                            (theory
-                               ;;                            'minimal-theory))
-                               :in-theory (enable hint-please type-hyp)
+         (cl1 `((hint-please '(:in-theory (enable type-hyp)
                                :expand ((:free (x) (hide x)))))
                 (not (implies (type-hyp (hide ,type-decl-list) ':type)
                               ,G/type))
@@ -85,18 +81,10 @@
 
   (defmacro type-extract-cp (clause hint)
     `(type-extract-fn clause
-                      (type-extract-helper (remove-hint-please ,clause) ,hint state)))
+                      (type-extract-helper ,clause ,hint state)))
 
   ;; proving correctness of the type-extract clause processor
   (local (in-theory (enable type-extract-fn type-hyp hint-please hide)))
-
-  (defthm correctness-of-remove-hint-please-with-ev-extract
-    (implies (and (pseudo-term-listp cl)
-                  (alistp b))
-             (iff (ev-extract (disjoin (remove-hint-please cl)) b)
-                  (ev-extract (disjoin cl) b)))
-    :hints (("Goal"
-             :in-theory (enable hint-please remove-hint-please) )))
 
   (defthm correctness-of-type-extract-cp
     (implies (and (pseudo-term-listp cl)

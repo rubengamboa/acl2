@@ -1,6 +1,6 @@
-; Bitcoin Library -- Base58Check Encoding
+; Bitcoin Library
 ;
-; Copyright (C) 2018 Kestrel Institute (http://www.kestrel.edu)
+; Copyright (C) 2019 Kestrel Institute (http://www.kestrel.edu)
 ;
 ; License: A 3-clause BSD license. See the LICENSE file distributed with ACL2.
 ;
@@ -13,15 +13,13 @@
 (include-book "base58")
 (include-book "crypto")
 
-(local (include-book "library-extensions"))
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defxdoc+ base58check
   :parents (bitcoin)
   :short "Base58Check encoding."
   :long
-  (xdoc::topapp
+  (xdoc::topstring
    (xdoc::p
     "Base58Check encoding is described in
      <a href=\"https://en.bitcoin.it/wiki/Base58Check_encoding\"
@@ -36,14 +34,14 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define base58check-encode ((version ubyte8-listp) (payload ubyte8-listp))
+(define base58check-encode ((version byte-listp) (payload byte-listp))
   :guard (and (consp version)
               (< (+ (len version) (len payload))
                  (expt 2 61)))
   :returns (chars base58-character-listp)
   :short "Encode a payload, with a version prefix, in Base58Check."
   :long
-  (xdoc::topapp
+  (xdoc::topstring
    (xdoc::p
     "This is described in
      <a href=\"https://en.bitcoin.it/wiki/Base58Check_encoding#Creating_a_Base58Check_string\"
@@ -68,7 +66,9 @@
    (xdoc::p
     "The combined length of version prefix and payload
      must not exceed the (large) limit for SHA-256.
-     See the guard of @(tsee sha-256).")
+     See the guard of "
+    (xdoc::seetopic "crypto::sha-256-interface" "@('sha-256')")
+    ".")
    (xdoc::p
     "We require the version to be non-empty.
      A version that is the empty list of bytes does not seem to make sense.
@@ -77,7 +77,7 @@
   (b* ((version (mbe :logic (if (consp version) version (list 0))
                      :exec version))
        (version+payload (append version payload))
-       (hash (sha-256 (sha-256 version+payload)))
+       (hash (sha-256-bytes (sha-256-bytes version+payload)))
        (checksum (take 4 hash))
        (version+payload+checksum (append version+payload checksum)))
     (base58-encode version+payload+checksum))

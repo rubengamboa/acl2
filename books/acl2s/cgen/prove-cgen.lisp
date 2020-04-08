@@ -90,7 +90,9 @@
        
        ((mv ?er res state) 
         (acl2::state-global-let*
-         ((acl2::guard-checking-on :none))
+;         ((acl2::guard-checking-on :none))
+;; PETE: now controlled by the global cgen::cgen-guard-checking
+         ((acl2::guard-checking-on (@ cgen-guard-checking)))
          (trans-eval
           `(let* ,A
              (declare (ignorable ,@(strip-cars A)))
@@ -152,16 +154,14 @@
          (cw? (normal-output-flag vl)
               "~| -- ~x0~%"  top-A)
          (cw? (normal-output-flag vl)
-"~|WARNING: The above counterexample is not consistent with top-level form. ~
- This is most likely due to the application of an elim rule that generalized ~
- its parent goal. If that is not what happened, then please report this ~
- example to ACL2s authors.~%")
+"~|Note: The above counterexample is not consistent with the top-level form. ~
+ Counterexamples are only guaranteed to be consistent with subgoals.~%")
          (value nil))
       (progn$
        (cw? (normal-output-flag vl)
             "~| -- ~x0~%"  top-A)
        (cw? (normal-output-flag vl)
-"~|NOTE: The above witness is not consistent with the top-level form. ~
+"~|Note: The above witness is not consistent with the top-level form. ~
  Witnesses are only guaranteed to be consistent with subgoals.~%")
        (value nil))
        )))
@@ -582,7 +582,7 @@ history s-hist.")
 
 ;; (defun keywordify (sym)
 ;;   (declare (xargs :guard (symbolp sym)))
-;;   (intern-in-package-of-symbol (symbol-name sym) :key))
+;;   (acl2s::fix-intern-in-pkg-of-sym (symbol-name sym) :key))
 
 ;; (defun keywordify-lst (syms)
 ;;   (declare (xargs :guard (symbol-listp syms)))
@@ -640,7 +640,7 @@ history s-hist.")
   (declare (xargs :mode :program :stobjs (state)))
   (acl2::state-global-let*
    ((acl2::inhibit-output-lst acl2::*valid-output-names*))
-   (acl2::translate form T logicp T "test? check" (w state) state)))
+   (acl2::translate-ignore-ok form T logicp T "test? check" (w state) state)))
 
 ;; TODO: remove code duplication between this function and prove/cgen
 (defun test/cgen (form hints cgen-state state)
@@ -835,7 +835,10 @@ history s-hist.")
              (acl2::state-global-let*
               ((acl2::inhibit-output-lst 
                 (cond ((debug-flag vl) '(summary))
-                      (t #!acl2(set-difference-eq *valid-output-names* '(error prove))))))
+                      (t #!acl2(set-difference-eq *valid-output-names* '(error))))))
+; Pete: replaced the line below to get rid of annoying "Q.E.D."
+; messages when testing.              
+;                     (t #!acl2(set-difference-eq *valid-output-names* '(error prove))))))
 ; Q: Why is here a wrapper call to trans-eval?
 ; A: To catch some hard errors! (see the email to Matt dated 3/20/2013)
               (trans-eval

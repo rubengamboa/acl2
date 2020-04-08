@@ -522,13 +522,14 @@ encapsulate), and is mainly meant as a tool for macro developers.</dd>
         (caar retspec-hints)
       (find-first-string-hint (cdr retspec-hints)))))
 
-(defun returnspecs-flag-entries (retspecs flag fnname binds body-subst hint-subst world)
+(defun returnspecs-flag-entries (retspecs flag fnname fnname-fn binds body-subst hint-subst world)
   (b* (((when (atom retspecs)) nil)
-       (formula (returnspec-thm-body fnname binds (car retspecs) world))
+       (formula (returnspec-thm-body fnname-fn binds (car retspecs) world))
        ((when (eq formula t))
-        (returnspecs-flag-entries (cdr retspecs) flag fnname binds body-subst hint-subst world))
+        (returnspecs-flag-entries (cdr retspecs) flag fnname fnname-fn binds body-subst hint-subst world))
        ((returnspec x) (car retspecs))
        (subgoal (find-first-string-hint x.hints))
+       (strsubst (returnspec-strsubst fnname fnname-fn))
        (- (and subgoal
                (er hard? 'defines
                    "Error in returnspec theorems: unless using ~x0,~
@@ -540,11 +541,11 @@ encapsulate), and is mainly meant as a tool for macro developers.</dd>
                      (concatenate 'string "RETURN-TYPE-OF-" (symbol-name fnname)
                                   "." (symbol-name x.name))
                      fnname)
-             ,(returnspec-sublis body-subst formula)
-             :hints ,(returnspec-sublis hint-subst x.hints)
-             :rule-classes ,(returnspec-sublis hint-subst x.rule-classes)
+             ,(returnspec-sublis body-subst nil formula)
+             :hints ,(returnspec-sublis hint-subst strsubst x.hints)
+             :rule-classes ,(returnspec-sublis hint-subst nil x.rule-classes)
              :flag ,flag)
-          (returnspecs-flag-entries (cdr retspecs) flag fnname binds body-subst hint-subst world))))
+          (returnspecs-flag-entries (cdr retspecs) flag fnname fnname-fn binds body-subst hint-subst world))))
 
 (defun fn-returnspec-flag-entries (guts world)
   (b* (((defguts guts) guts)
@@ -559,7 +560,7 @@ encapsulate), and is mainly meant as a tool for macro developers.</dd>
        ((mv body-subst hint-subst)
         (returnspec-return-value-subst
          guts.name guts.name-fn formals (returnspeclist->names guts.returnspecs))))
-    (returnspecs-flag-entries guts.returnspecs flag guts.name-fn binds body-subst hint-subst world)))
+    (returnspecs-flag-entries guts.returnspecs flag guts.name guts.name-fn binds body-subst hint-subst world)))
 
 (defun collect-returnspec-flag-thms (gutslist world)
   (if (atom gutslist)
@@ -980,7 +981,9 @@ lemma for the overall mutually recursive proof, and doesn't export it.</p>
        (fn (cdr (assoc :fn kwd-alist)))
        ((unless fn)
         (raise "~x0: The function name must be specified (with :fn)." ctx))
-       (flag (cdr (assoc fn guts.flag-mapping)))
+       (fnguts (defgutslist-find fn guts.gutslist))
+       ((defguts fnguts))
+       (flag (cdr (assoc fnguts.name-fn guts.flag-mapping)))
        ((unless flag)
         (raise "~x0: Invalid function name ~x1 (no flag mapping)." ctx fn))
        (fnguts (defgutslist-find fn guts.gutslist))

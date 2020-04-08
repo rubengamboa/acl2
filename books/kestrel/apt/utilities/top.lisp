@@ -1,6 +1,6 @@
-; APT Utilities
+; APT (Automated Program Transformations) Library
 ;
-; Copyright (C) 2017 Kestrel Institute (http://www.kestrel.edu)
+; Copyright (C) 2020 Kestrel Institute (http://www.kestrel.edu)
 ;
 ; License: A 3-clause BSD license. See the LICENSE file distributed with ACL2.
 ;
@@ -10,15 +10,16 @@
 
 (in-package "APT")
 
-(include-book "print-specifiers")
-(include-book "untranslate-specifiers")
-(include-book "transformation-table")
+(include-book "input-processing")
 (include-book "pattern-matching")
 (include-book "pattern-matching-ext")
+(include-book "print-specifiers")
+(include-book "transformation-table")
+(include-book "untranslate-specifiers")
 (include-book "xdoc-constructors")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defxdoc utilities
-  :parents (implementation)
+  :parents (apt)
   :short "Utilities shared by the implementations of the APT tools.")

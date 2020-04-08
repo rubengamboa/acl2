@@ -38,6 +38,9 @@
 (local (in-theory (disable acl2::resize-list-when-atom resize-list)))
 
 (defstobj-clone aignet-tmp aignet :suffix "TMP")
+(defstobj-clone copy2 copy :suffix "2")
+(defstobj-clone strash2 strash :suffix "2")
+
 
 (define count-xors-rec ((start natp) aignet (acc natp))
   :guard (<= start (num-fanins aignet))
@@ -178,6 +181,14 @@
                              :reg (aignet-add-reg aignet2)
                              :const aignet2)))
                (aignet-raw-copy-fanins (+ 1 (lnfix n)) aignet aignet2))))
+
+(define aignet-raw-copy-fanins-top (aignet aignet2)
+  :enabled t
+  (mbe :logic (non-exec (aignet-fanins aignet))
+       :exec (b* ((aignet2 (aignet-init 0 (num-regs aignet) (num-ins aignet)
+                                        (num-fanins aignet)
+                                        aignet2)))
+               (aignet-raw-copy-fanins 1 aignet aignet2))))
 
 (local (defthm fanin-count-of-append
          (equal (fanin-count (append a b))

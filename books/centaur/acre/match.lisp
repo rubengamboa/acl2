@@ -68,12 +68,12 @@
   :enabled t
   :returns (new-x true-listp)
   (if (atom x)
-      (rev-keys acc nil)
+      (rev-keys (fast-alist-free acc) nil)
     (undup-exec (cdr x)
-                          (b* ((x1 (car x)))
-                            (if (hons-get x1 acc)
-                                acc
-                              (hons-acons x1 nil acc))))))
+                (b* ((x1 (car x)))
+                  (if (hons-get x1 acc)
+                      acc
+                    (hons-acons x1 nil acc))))))
 
 
 
@@ -229,10 +229,9 @@
     :hints(("Goal" :in-theory (enable undup))))
 
   (defrefinement undup-equiv set-equiv
-    :hints (("goal" :use ((:instance undup-under-set-equiv
-                           (x acl2::x))
+    :hints (("goal" :use ((:instance undup-under-set-equiv)
                           (:instance undup-under-set-equiv
-                           (x acl2::y)))
+                           (x y)))
              :in-theory (disable undup-under-set-equiv))))
 
   (defcong undup-equiv undup-equiv (append a b) 1
@@ -241,7 +240,7 @@
                           (:instance append-of-undup-under-undup-equiv-1
                            (x a-equiv) (y b)))
              :in-theory (disable append-of-undup-under-undup-equiv-1))))
-             
+
   (defcong undup-equiv undup-equiv (append a b) 2)
   (defcong undup-equiv undup-equiv (append a b) 2)
 
@@ -427,7 +426,7 @@
     (iff (matchstatelist-indices-gte n (matches-add-backref name start x))
          (matchstatelist-indices-gte n x))
     :hints(("Goal" :in-theory (enable matchstatelist-indices-gte))))
-  
+
   (defthm matchstatelist-indices-lte-of-add-backref
     (iff (matchstatelist-indices-lte n (matches-add-backref name start x))
          (matchstatelist-indices-lte n x))
@@ -469,7 +468,7 @@
     (implies (<= (nfix idx) (matchstatelist-min-index x))
              (matchstatelist-indices-gte idx x))
     :hints(("Goal" :in-theory (enable matchstatelist-indices-gte)))))
-      
+
 
 
 (define matchstate-measure ((x stringp)
@@ -540,7 +539,7 @@
   ;;            (equal (matchstatelist-measure x (remove k y))
   ;;                   (matchstatelist-measure x y))))
 
-  
+
   (local (defthm undup-of-remove-rev
            (equal (undup (remove k x))
                   (remove k (undup x)))))
@@ -556,7 +555,7 @@
                 '(:cases ((< (matchstate-measure x (car sts)) (matchstatelist-measure x (cdr sts)))
                           (< (matchstatelist-measure x (cdr sts)) (matchstate-measure x (car sts))))))))
 
-  
+
 
   (defcong undup-equiv equal (matchstatelist-measure x sts) 2
     :hints (("goal" :use ((:instance matchstatelist-measure-of-undup)
@@ -680,7 +679,7 @@
     (implies (and (backref-alist-in-bounds x str)
                   (cdr (assoc name x)))
              (backref-in-bounds (cdr (assoc name x)) str))))
-                  
+
 (define matchstate-in-bounds ((st matchstate-p) (str stringp))
   (b* (((matchstate st)))
     (and (<= (matchstate->index st) (strlen str))
@@ -794,7 +793,7 @@
                       ((unless (< st.index (strlen x))) nil))
                    (and (xor (match-charset pat.chars 0 (char x st.index) mode) pat.negp)
                         (list (change-matchstate st :index (+ 1 st.index)))))
-                     
+
 
         :start (and (eql st.index 0)
                     (list st))
@@ -804,7 +803,7 @@
 
         :group (b* ((rec-matches (match-regex-rec pat.pat x st mode)))
                  (matches-add-backref pat.index st.index rec-matches))
-        
+
         :backref (b* ((backref (cdr (assoc-equal pat.index st.backrefs)))
                       ((unless backref) nil)
                       ((backref backref))
@@ -818,7 +817,7 @@
 
         :reverse-pref (b* ((rec-matches (match-regex-rec pat.pat x st mode)))
                         (rev rec-matches))
-        
+
         :no-backtrack (b* ((rec-matches (match-regex-rec pat.pat x st mode)))
                         (and (consp rec-matches)
                              (list (car rec-matches))))
@@ -897,8 +896,8 @@
         nil
       (append (match-regex-rec pat x (car sts) mode)
               (match-regex-sts-rec pat x (cdr sts) mode))))
-  
-  
+
+
   (define match-repeat-sts-minimum-rec ((min natp)
                                         (pat regex-p)
                                         (x stringp)
@@ -994,7 +993,7 @@
          ;; allow a single zero-length match for the last one
          (last-matches (match-regex-sts-rec pat x matches mode)))
       (undup (append last-matches matches)))
-         
+
     ;; (b* ((max (maybe-natp-fix max))
     ;;      (min (lnfix min))
     ;;      (base-matches (and (eql min 0) (list (matchstate-fix st))))
@@ -1019,7 +1018,7 @@
           `(defconst *match-regex-fns*
              ',(remove 'match-repeat-sts-rec-exec
                        (acl2::getpropc 'match-regex-rec 'acl2::recursivep nil (w state))))))
-  
+
   (local (make-event `(in-theory (disable . ,*match-regex-fns*))))
 
   (local (defun match-regex-mr-fns (name body-when-takes-st body-when-takes-sts hints rule-classes fns wrld)
@@ -1235,7 +1234,7 @@
       :fn match-repeat-rec)
     :hints (("goal" :do-not-induct t))
     :skip-others t)
-  
+
 
 
 
@@ -1387,7 +1386,7 @@
                       (match-regex-sts-nonzero-rec pat x nil mode)
                       (:free (a b)
                        (match-regex-sts-nonzero-rec pat x (cons a b) mode)))))))
-                    
+
   (local (defthm match-regex-sts-nonzero-rec-of-remove
            (EQUAL
             (SET-DIFFERENCE-EQUAL
@@ -1471,7 +1470,7 @@
     :fn match-repeat-sts-rec)
     :skip-others t)
 
-  
+
   (defcong undup-equiv undup-equiv (match-repeat-sts-rec max pat x sts mode) 4
     :hints (("goal" :use ((:instance match-repeat-sts-rec-of-undup)
                           (:instance match-repeat-sts-rec-of-undup
@@ -1526,13 +1525,6 @@
 
 (fty::defoption maybe-backref backref)
 
-(define backref-extract-substr ((x backref-p) (str stringp))
-  :guard (backref-in-bounds x str)
-  :guard-hints (("goal" :in-theory (enable backref-in-bounds)))
-  :returns (substr stringp :rule-classes :type-prescription)
-  (b* (((backref x)))
-    (subseq (lstrfix str) x.loc (+ x.loc x.len))))
-  
 (define maybe-backref-in-bounds ((x maybe-backref-p) (str stringp))
   (or (not x) (backref-in-bounds x str))
   ///
@@ -1712,7 +1704,7 @@
        (cons `(,var (,fn ,name ,matchresult))
               (captures-bindings (cdr args) (+ 1 index) matchresult !)))
       (& (er hard? 'captures-bindings "Bad capture element: ~x0" arg)))))
-                  
+
 (acl2::def-b*-binder captures
   :body
   (b* ((args acl2::args)
@@ -1744,8 +1736,8 @@
        (cons `(,var (,fn ,name ,matchresult))
               (named-captures-bindings (cdr args) matchresult !)))
       (& (er hard? 'named-captures-bindings "Bad capture element: ~x0" arg)))))
-                  
-    
+
+
 
 (acl2::def-b*-binder named-captures
   :body
@@ -1795,7 +1787,7 @@
                 (and (<= (len a) (len c))
                      (equal (take (len a) c) (list-fix a))
                      (equal (nthcdr (len a) c) b)))
-           :hints(("Goal" :in-theory (enable append acl2::take-redefinition nthcdr len list-fix
+           :hints(("Goal" :in-theory (enable append acl2::take nthcdr len list-fix
                                              equal-cons-strong)
                    :induct (eoa-ind a c)))))
 
@@ -1808,7 +1800,7 @@
                 (and (<= (len a) (len c))
                      (str::icharlisteqv (take (len a) c) (list-fix a))
                      (str::icharlisteqv (nthcdr (len a) c) b)))
-           :hints(("Goal" :in-theory (enable append acl2::take-redefinition nthcdr len list-fix
+           :hints(("Goal" :in-theory (enable append acl2::take nthcdr len list-fix
                                              icharlisteqv-cons-strong)
                    :induct (eoa-ind a c)))))
 
@@ -1834,7 +1826,8 @@
   (local (defthm character-listp-of-take
            (implies (and (character-listp x)
                          (<= (nfix n) (len x)))
-                    (character-listp (take n x)))))
+                    (character-listp (take n x)))
+           :hints (("Goal" :in-theory (enable take)))))
 
   (local (defthm character-listp-of-nthcdr
            (implies (character-listp x)
@@ -1856,7 +1849,7 @@
                   (and (<= (nfix n) (nfix m))
                        (take (- (nfix m) (nfix n))
                              (nthcdr n x))))
-           :hints(("Goal" :in-theory (enable nthcdr)
+           :hints(("Goal" :in-theory (enable nthcdr take)
                    :induct (nthcdr-of-take-ind n m x))
                   (and stable-under-simplificationp
                        '(:in-theory (enable nfix))))))
@@ -1864,7 +1857,7 @@
   (local (defthm nthcdr-of-nthcdr
            (equal (nthcdr n (nthcdr m x))
                   (nthcdr (+ (nfix n) (nfix m)) x))))
-  
+
   (defthm match-exact-of-cat
     (Equal (match-exact (concatenate 'string x y) str index mode)
            (let ((x-index (match-exact x str index mode)))
@@ -1892,7 +1885,7 @@
 
    ;; (defmacro def-regex-simp (fn pat)
    ;;   `(make-event (def-regex-simp-fn ',fn ',pat state)))
-     
+
 
    ;; (def-regex-simp match-regex-rec (regex-exact str))
    ;; (def-regex-simp match-regex-rec (regex-concat lst))
@@ -1946,7 +1939,7 @@
     '(acl2::defopen match-concat-sts-rec-of-nil (match-concat-sts-rec x str nil mode)
        :hint (:expand ((match-concat-sts-rec x str nil mode)))))
 
-   
+
    (make-event
     '(acl2::defopen match-regex-sts-rec-of-nil (match-regex-sts-rec x str nil mode)
        :hint (:expand ((match-regex-sts-rec x str nil mode)))))

@@ -1,6 +1,6 @@
-; Ethereum Library -- Cryptographic Interface
+; Ethereum Library
 ;
-; Copyright (C) 2018 Kestrel Institute (http://www.kestrel.edu)
+; Copyright (C) 2019 Kestrel Institute (http://www.kestrel.edu)
 ;
 ; License: A 3-clause BSD license. See the LICENSE file distributed with ACL2.
 ;
@@ -10,79 +10,50 @@
 
 (in-package "ETHEREUM")
 
-(include-book "kestrel/ethereum/bytes" :dir :system)
-(include-book "kestrel/utilities/xdoc/defxdoc-plus" :dir :system)
+(include-book "xdoc/constructors" :dir :system)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defxdoc+ crypto
+(defxdoc cryptography
   :parents (ethereum)
-  :short "Cryptographic interface for Ethereum."
+  :short "Cryptography in Ethereum."
   :long
-  (xdoc::topapp
+  (xdoc::topstring
    (xdoc::p
     "Ethereum uses a number of cryptographic functions
      that are described in external standards.
-     These cryptographic functions are largely black boxes,
-     in the sense that most of their details
-     are not needed in order to describe the behavior of Ethereum.
-     In other words, the formal model of Ethereum
-     can be parameterized over most of those details.")
+     Our Ethereum model uses cryptographic functions from "
+    (xdoc::seetopic "crypto::cryptography" "these cryptographic libraries")
+    ".")
    (xdoc::p
-    "We introduce (weakly) constrained ACL2 functions
-     to represent these cryptographic functions.
-     The collection of these functions forms
-     a cryptographic interface for (i.e. used by) Ethereum.")
-   (xdoc::p
-    "Of course,
-     complete specifications and/or implementations of those functions
-     are needed to obtain
-     a complete specification and/or implementation of Ethereum.
-     Such complete specifications/implementations can replace,
-     or be <see topic='@(url defattach)'>attached</see> to,
-     the constrained functions introduced here.")
-   (xdoc::p
-    "We start with just a function for Keccak-256.
-     We will add the others as needed."))
-  :order-subtopics t
-  :default-parent t)
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defsection keccak-256
-  :short "Keccak-256 interface."
-  :long
-  (xdoc::topapp
-   (xdoc::p
-    "This corresponds to @($\\mathtt{KEC}$) [YP:3].
-     It is not defined in [YP], but in
-     <a href=\"https://keccak.team/keccak.html\">the Keccak web site</a>.")
-   (xdoc::p
-    "This function takes as input an arbitrarily long sequence of bytes
-     and returns as output a sequence of 32 bytes (i.e. 256 bits).
-     These properties are expressed by the guard and theorems.")
-   (xdoc::p
-    "We also assume that
-     this function fixes its argument to be a true list of bytes.")
-   (xdoc::def "keccak-256"))
-
-  (encapsulate
-
-    (((keccak-256 *) => * :formals (bytes) :guard (byte-listp bytes)))
-
-    (local (defun keccak-256 (bytes) (declare (ignore bytes)) (repeat 32 0)))
-
-    (defrule byte-listp-of-keccak-256
-      (byte-listp (keccak-256 bytes)))
-
-    (defrule len-of-keccak-256
-      (equal (len (keccak-256 bytes))
-             32))
-
-    (defrule keccak-256-fixes-input
-      (equal (keccak-256 (byte-list-fix bytes))
-             (keccak-256 bytes))))
-
-  (defrule true-listp-of-keccak-256
-    (true-listp (keccak-256 bytes))
-    :rule-classes :type-prescription))
+    "Our current Ethereum model uses the following cryptographic functions.
+     Most of these links go to the interface documentation first, and most of the
+     interface documents have links to executable specifications."
+    )
+   (xdoc::ul
+    (xdoc::li
+     (xdoc::seetopic "crypto::keccak-256-interface" "@('keccak-256-bytes')")
+     ", which corresponds to @($\\mathtt{KEC}$) [YP:3].")
+    (xdoc::li
+     (xdoc::seetopic "crypto::sha-256-interface" "@('sha-256-bytes')"))
+    (xdoc::li
+     (xdoc::seetopic "crypto::sha-512-interface" "@('sha-512-bytes')"))
+    (xdoc::li
+     "RIPEMD-160 (link coming)")
+    (xdoc::li
+     (xdoc::seetopic "crypto::hmac-sha-512-interface" "@('hmac-sha-512')"))
+    (xdoc::li
+     (xdoc::seetopic "crypto::pbkdf2-hmac-sha-512-interface"
+		     "@('pbkdf2-hmac-sha-512')"))
+    (xdoc::li
+     "@(tsee secp256k1-priv-to-pub),
+      which corresponds to @($\\mathtt{ECDSAPUBKEY}$) [YP:F]
+      (modulo a different but isomorphic data representation,
+      namely byte arrays for the former,
+      and @(tsee ecurve::secp256k1-priv-key)
+      and @(tsee ecurve::secp256k1-pub-key) values for the latter).")
+    (xdoc::li
+     "@(tsee secp256k1-sign-det-rec),
+      which corresponds to @($\\mathtt{ECDSASIGN}$) [YP:F]
+      in essence, but see @(tsee make-signed-transaction) for details.")
+    )))

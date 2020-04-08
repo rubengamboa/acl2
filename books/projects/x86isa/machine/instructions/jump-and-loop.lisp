@@ -96,22 +96,10 @@
 
   :body
 
-  (b* ((ctx 'x86-near-jmp-Op/En-D)
-
-       (p3? (equal #.*operand-size-override* (prefixes->opr prefixes)))
-
+  (b* ((byte-operand? (eql opcode #xEB)) ; T if jump short
        ((the (integer 0 4) offset-size)
-        (if (eql opcode #xEB) ; jump short
-            1 ; always 8 bits (rel8)
-          ;; opcode = #xE9 -- jump near relative:
-          (if (equal proc-mode #.*64-bit-mode*)
-              4 ; always 32 bits (rel32) -- 16 bits (rel16) not supported
-            (b* (((the (unsigned-byte 16) cs-attr)
-                  (xr :seg-hidden-attr #.*cs* x86))
-                 (cs.d (code-segment-descriptor-attributesBits->d cs-attr)))
-              (if (= cs.d 1)
-                  (if p3? 2 4) ; 16 or 32 bits (rel16 or rel32)
-                (if p3? 4 2))))))
+        (select-operand-size
+         proc-mode byte-operand? rex-byte nil prefixes nil t t x86))
 
        ((mv ?flg (the (signed-byte 32) offset) x86)
         (rime-size proc-mode offset-size temp-rip #.*cs* :x nil x86))
@@ -147,34 +135,26 @@
   ;; Op/En: M
 
   :parents (one-byte-opcodes)
+
   :guard-hints (("Goal" :in-theory (e/d (riml08 riml32) ())))
 
   :returns (x86 x86p :hyp (x86p x86))
 
+  :modr/m t
+
   :body
 
-  (b* ((ctx 'x86-near-jmp-Op/En-M)
-
-       (r/m (modr/m->r/m modr/m))
-       ;; Note that the reg field serves as an opcode extension for
+  (b* (;; Note that the reg field serves as an opcode extension for
        ;; this instruction.  The reg field will always be 4 when this
        ;; function is called.
-       (mod (modr/m->mod modr/m))
 
        (p2 (prefixes->seg prefixes))
-       (p3? (equal #.*operand-size-override* (prefixes->opr prefixes)))
        (p4? (equal #.*addr-size-override* (prefixes->adr prefixes)))
 
        ((the (integer 2 8) operand-size)
-        (if (equal proc-mode #.*64-bit-mode*)
-            8 ; Intel manual, Mar'17, Volume 1, Section 6.3.7
-          (b* ((cs-attr (the (unsigned-byte 16) (xr :seg-hidden-attr #.*cs* x86)))
-               (cs.d (code-segment-descriptor-attributesBits->d cs-attr)))
-            (if (= cs.d 1)
-                (if p3? 2 4)
-              (if p3? 4 2)))))
+        (select-operand-size proc-mode nil rex-byte nil prefixes t t t x86))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        (inst-ac? t)
        ((mv flg
@@ -302,7 +282,9 @@
 (def-inst x86-far-jmp-Op/En-D
 
   :parents (one-byte-opcodes)
+
   :short "Absolute Indirect Jump: Far"
+
   :long "<p>Op/En: D</p>
 <p><tt>FF/5: JMP m16:16 or m16:32 or m16:64</tt></p>
 
@@ -337,7 +319,7 @@ instruction at the offset specified in the call gate. No stack switch
 occurs. The target operand specifies the far address of the call gate
 indirectly with a memory location \(m16:16 or m16:32 or m16:64\).</p>"
 
-  :returns (x86 x86p :hyp (x86p x86)                
+  :returns (x86 x86p :hyp (x86p x86)
                 :hints (("Goal" :in-theory (e/d* () (select-operand-size)))))
 
   :prepwork
@@ -360,14 +342,11 @@ indirectly with a memory location \(m16:16 or m16:32 or m16:64\).</p>"
                                     gdtr/idtrbits->limit
                                     )))
 
+  :modr/m t
+
   :body
 
-  (b* ((ctx 'x86-far-jmp-Op/En-M)
-
-       (r/m (modr/m->r/m modr/m))
-       (mod (modr/m->mod modr/m))
-
-       ;; Note that this exception was not mentioned in the Intel
+  (b* (;; Note that this exception was not mentioned in the Intel
        ;; Manuals, but I think that the reason for this omission was
        ;; that the JMP instruction reference sheet mentioned direct
        ;; addressing opcodes too (which are unavailable in the 64-bit
@@ -380,9 +359,10 @@ indirectly with a memory location \(m16:16 or m16:32 or m16:64\).</p>"
        (p4? (equal #.*addr-size-override* (prefixes->adr prefixes)))
 
        ((the (integer 2 8) offset-size)
-        (select-operand-size proc-mode nil rex-byte nil prefixes x86))
+        (select-operand-size
+         proc-mode nil rex-byte nil prefixes nil nil nil x86))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        (inst-ac? t)
        ((mv flg
@@ -849,6 +829,7 @@ indirectly with a memory location \(m16:16 or m16:32 or m16:64\).</p>"
   ;; bits)."
 
   :parents (one-byte-opcodes)
+
   :guard-hints (("Goal" :in-theory (e/d (riml08
                                          riml32
                                          rime-size
@@ -865,6 +846,7 @@ indirectly with a memory location \(m16:16 or m16:32 or m16:64\).</p>"
                                 not
                                 rml-size
                                 select-operand-size)))))
+
   :prepwork
   ((local (in-theory (e/d* (far-jump-guard-helpers)
                            (unsigned-byte-p
@@ -874,9 +856,7 @@ indirectly with a memory location \(m16:16 or m16:32 or m16:64\).</p>"
 
   :body
 
-  (b* ((ctx 'x86-loop)
-
-       ;; temp-rip right now points to the rel8 byte.  Add 1 to
+  (b* (;; temp-rip right now points to the rel8 byte.  Add 1 to
        ;; temp-rip to account for rel8 when computing the length
        ;; of this instruction.
        (badlength? (check-instruction-length start-rip temp-rip 1))

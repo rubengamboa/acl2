@@ -171,8 +171,12 @@
       (b* ((base (loghead 64 (xr :seg-hidden-base seg-reg x86)))
 	   (limit (loghead 32 (xr :seg-hidden-limit seg-reg x86)))
 	   (attr (loghead 16 (xr :seg-hidden-attr seg-reg x86)))
-	   (d/b (data-segment-descriptor-attributesBits->d/b attr))
-	   (e (data-segment-descriptor-attributesBits->e attr))
+	   (d/b (if (= seg-reg #.*cs*)
+                    (code-segment-descriptor-attributesBits->d attr)
+                  (data-segment-descriptor-attributesBits->d/b attr)))
+	   (e (if (= seg-reg #.*cs*)
+                  0
+                (data-segment-descriptor-attributesBits->e attr)))
 	   (lower (if (= e 1) (1+ limit) 0))
 	   (upper (if (= e 1) (if (= d/b 1) #xffffffff #xffff) limit)))
 	(mv (n32 base) lower upper))
@@ -187,8 +191,12 @@
 	    (bitsets::bignum-extract base 0))
 	   ((the (unsigned-byte 32) limit) (xr :seg-hidden-limit seg-reg x86))
 	   ((the (unsigned-byte 16) attr) (xr :seg-hidden-attr seg-reg x86))
-	   (d/b (data-segment-descriptor-attributesBits->d/b attr))
-	   (e (data-segment-descriptor-attributesBits->e attr))
+	   (d/b (if (= seg-reg #.*cs*)
+                    (code-segment-descriptor-attributesBits->d attr)
+                  (data-segment-descriptor-attributesBits->d/b attr)))
+	   (e (if (= seg-reg #.*cs*)
+                  0
+                (data-segment-descriptor-attributesBits->e attr)))
 	   (lower (if (= e 1) (1+ limit) 0))
 	   (upper (if (= e 1) (if (= d/b 1) #xffffffff #xffff) limit)))
 	(mv base lower upper))))
@@ -201,20 +209,20 @@
   :no-function t
   ///
 
-  (defthm-usb segment-base-is-n64p
+  (defthm-unsigned-byte-p segment-base-is-n64p
     :hyp (x86p x86)
     :bound 64
     :concl (mv-nth 0 (segment-base-and-bounds proc-mode seg-reg x86))
     :gen-type t
     :gen-linear t)
 
-  (defthm-usb segment-lower-bound-is-n33p
+  (defthm-unsigned-byte-p segment-lower-bound-is-n33p
     :bound 33
     :concl (mv-nth 1 (segment-base-and-bounds proc-mode seg-reg x86))
     :gen-type t
     :gen-linear t)
 
-  (defthm-usb segment-upper-bound-is-n32p
+  (defthm-unsigned-byte-p segment-upper-bound-is-n32p
     :bound 32
     :concl (mv-nth 2 (segment-base-and-bounds proc-mode seg-reg x86))
     :gen-type t
@@ -347,6 +355,25 @@
    including the check that the linear address is canonical,
    a non-@('nil') error flag is returned,
    which provides some information about the failure.
+   </p>
+   <p>
+   As explained in Intel manual, May'18, Volume 3, Sections 3.4.2 and 5.4.1,
+   a null segment selector can be loaded into DS, ES, FS, and GS,
+   but then a memory access through these segment registers causes a #GP.
+   According to AMD manual, Dec'17, Volume 2, Section 4.5.1,
+   a null segment selector has SI = TI = 0,
+   but no explicit constraint is stated on RPL;
+   Intel manual, May'18, Volume 2, POP specification says that
+   a null segment selector has a value from 0 to 3,
+   from which we infer that a null segment selector may have a non-zero RPL.
+   In this function,
+   we return an error if the visible portion of the segment register is 0-3,
+   and the segment register is not CS or SS.
+   Loading a null segment selector into CS and SS is not allowed,
+   so it is a state invariant that
+   CS and SS do not contain null segment selectors.
+   The null segment selector check is skipped in 64-bit mode
+   (see Intel manual, May'18, Volume 3, Section 5.4.1.1).
    </p>"
 
   :guard-hints (("Goal" :in-theory (e/d (segment-base-and-bounds) ())))
@@ -367,7 +394,11 @@
        (mv nil lin-addr)))
 
     (#.*compatibility-mode* ;; Maybe also *protected-mode*?
-     (b* (((mv (the (unsigned-byte 32) base)
+     (b* (((when (and (not (= seg-reg *cs*))
+                      (not (= seg-reg *ss*))
+                      (< (seg-visiblei seg-reg x86) 4)))
+           (mv (list :null-segment-selector seg-reg) 0))
+          ((mv (the (unsigned-byte 32) base)
 	       (the (unsigned-byte 33) lower-bound)
 	       (the (unsigned-byte 32) upper-bound))
 	   (segment-base-and-bounds proc-mode seg-reg x86))
@@ -391,14 +422,14 @@
   :no-function t
   ///
 
-  (defthm-sb ea-to-la-is-i64p
+  (defthm-signed-byte-p ea-to-la-is-i64p
     :hyp (i64p eff-addr)
     :bound 64
     :concl (mv-nth 1 (ea-to-la proc-mode eff-addr seg-reg nbytes x86))
     :gen-type t
     :gen-linear t)
 
-  (defthm-sb ea-to-la-is-i48p-when-no-error
+  (defthm-signed-byte-p ea-to-la-is-i48p-when-no-error
     :hyp (not (mv-nth 0 (ea-to-la proc-mode eff-addr seg-reg nbytes x86)))
     :bound 48
     :concl (mv-nth 1 (ea-to-la proc-mode eff-addr seg-reg nbytes x86))
@@ -410,7 +441,8 @@
      (and (not (equal fld :msr))
 	  (not (equal fld :seg-hidden-base))
 	  (not (equal fld :seg-hidden-limit))
-	  (not (equal fld :seg-hidden-attr)))
+	  (not (equal fld :seg-hidden-attr))
+          (not (equal fld :seg-visible)))
      (equal (ea-to-la proc-mode eff-addr seg-reg nbytes (xw fld index value x86))
 	    (ea-to-la proc-mode eff-addr seg-reg nbytes x86))))
 
@@ -432,7 +464,7 @@
 	       (lin-addrs "A @('nil')-terminated list of @(tsee i64p)s."))
   :parents (segmentation)
   :short "Translate a sequence of contiguous effective addresses
-	  to linear addresses."
+          to linear addresses."
   :long
   "<p>
    The contiguous effective addresses are
@@ -736,7 +768,7 @@
 
   ///
 
-  (defthm-usb n16p-make-code-segment-attr
+  (defthm-unsigned-byte-p n16p-make-code-segment-attr
     :hyp (unsigned-byte-p 64 descriptor)
     :bound 16
     :concl (make-code-segment-attr-field descriptor)
@@ -791,7 +823,7 @@
 
   ///
 
-  (defthm-usb n16p-make-data-segment-attr
+  (defthm-unsigned-byte-p n16p-make-data-segment-attr
     :hyp (unsigned-byte-p 64 descriptor)
     :bound 16
     :concl (make-data-segment-attr-field descriptor)
@@ -832,7 +864,7 @@
 
   ///
 
-  (defthm-usb n16p-make-system-segment-attr
+  (defthm-unsigned-byte-p n16p-make-system-segment-attr
     :hyp (unsigned-byte-p 128 descriptor)
     :bound 16
     :concl (make-system-segment-attr-field descriptor)

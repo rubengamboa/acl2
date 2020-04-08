@@ -18,6 +18,10 @@ fi
 # exclusion.
 actual_sources=`echo $ACL2_SOURCES | sed 's/doc.lisp//'`
 
+if [ "$DEBUG" != "" ] ; then
+    echo "actual_sources = $actual_sources"
+fi
+
 echo 'Computing code size statistics.'
 
 if [ "$ACL2" = "" ] ; then
@@ -37,15 +41,30 @@ echo '; Code lines (whitespace followed by non-whitespace other than ; ):' >> do
 # we haven't done so.  For now, one can do something like the
 # following, manually:
 
-#  ~/acl2/devel$ grep '^[^;]*#|' *.lisp
-#  other-events.lisp:  multi-line comments (~c[#|..|#]).  These will be ignored if preceded by a
-#  ~/acl2/devel$ 
+#  % grep -a '^[^;]*#|' *.lisp
+#  doc.lisp:      including books, for example in multi-line comments (#|..|#).
+#  %
 
-(cat ${actual_sources} | grep '^[ ]*[^ ;]' | wc -lc)       >> doc/acl2-wc.txt
+# Similarly we can check for tabs as follows; never mind the ones in doc.lisp.
+
+#  % grep -aP "^[^;]*\t" *.lisp
+#  doc.lisp:    Declaration	|  Type-Spec	|
+#  doc.lisp:    (type string x y z)	|  string	|
+#  doc.lisp:    (type (integer 0 7) x)	|  (integer 0 7)	|
+#  doc.lisp:    (type rational x)	|  rational	|
+#  doc.lisp:    (type (rational 1 *) x)	|  (rational 1 *)	|
+#  %
+
+# Note the use of the -a option.  Without it, the results can be
+# way off, at least on Linux, because of the line
+# ;   Francisco J. Martín Mateos
+# under "PRINTING and READING" in axioms.lisp -- the accented "i" is the culprit.
+
+(cat ${actual_sources} | grep -a '^[ ]*[^ ;]' | wc -lc)       >> doc/acl2-wc.txt
 echo '; Comment lines ( ; preceded only by whitespace):' >> doc/acl2-wc.txt
-(cat ${actual_sources} | grep '^[ ]*;'      | wc -lc)      >> doc/acl2-wc.txt
+(cat ${actual_sources} | grep -a '^[ ]*;'      | wc -lc)      >> doc/acl2-wc.txt
 echo '; Blank lines (only whitespace):'                  >> doc/acl2-wc.txt
-(cat ${actual_sources} | grep '^[ ]*$'      | wc -lc)      >> doc/acl2-wc.txt
+(cat ${actual_sources} | grep -a '^[ ]*$'      | wc -lc)      >> doc/acl2-wc.txt
 echo '; TOTAL:'                                          >> doc/acl2-wc.txt
 (cat ${actual_sources}                       | wc -lc)     >> doc/acl2-wc.txt
 wc -lc books/system/doc/acl2-doc.lisp                    >> doc/acl2-wc.txt

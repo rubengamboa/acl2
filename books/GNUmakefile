@@ -58,10 +58,6 @@
 #   almost-everything
 #                 An alias for "all"
 #
-#   certify-books Includes a substantial collection of books that may
-#                 suffice for many purposes, omitting some specialized
-#                 directories including all workshops/ directories.
-#
 #   everything    A very full build, including very slow books.  Most users
 #                 will not want to use this target.  It is useful for, e.g.,
 #                 regression testing before releases.  Note that
@@ -176,6 +172,7 @@ SHELL := $(shell which bash)
 endif # ifdef ACL2_SHELL_OVERRIDE
 
 STARTJOB ?= $(SHELL)
+export STARTJOB
 
 # We avoid ?= below because we want to be sure that the check below is
 # done only after ACL2 has been assigned, and because we want to treat
@@ -183,13 +180,16 @@ STARTJOB ?= $(SHELL)
 ifeq ($(ACL2),)
 ACL2 := acl2
 endif # ifeq ($(ACL2),)
+export ACL2
 
 .SUFFIXES:
 .SUFFIXES: .cert .lisp
 
-.PHONY: basic all
+.PHONY: default basic all
 
-# Keep this before any other target so that basic will be the default target
+# Keep this before any other target so that default will be the default target
+default: basic
+
 basic:
 
 # Ensure that the following variable is simply expanded.
@@ -210,71 +210,11 @@ ACL2_CUSTOM_TARGETS :=
 ### invoked with INFO=warning; otherwise, same as $(info just a test).
 ## $(eval $$($(INFO) just a test))
 
-
-$(info Determining ACL2 features (for ACL2 = $(ACL2)))
-ACL2_FEATURES := $(shell \
-  rm -f $(BUILD_DIR)/Makefile-features ; \
-  cd $(BUILD_DIR); ACL2_CUSTOMIZATION=NONE $(STARTJOB) -c \
-     "$(ACL2) < cert_features.lsp &> Makefile-features.out" ;\
-  ls -l $(BUILD_DIR)/Makefile-features)
-
-
-$(info Determining whether Glucose is installed)
-# If glucose doesn't exist, then the error message saying it can't be
-# found is redirected to /dev/null, resulting in an empty value for
-# GLUCOSE_EXISTS
-GLUCOSE_EXISTS := $(shell glucose --help 2>/dev/null)
-ifdef GLUCOSE_EXISTS
-  export OS_HAS_GLUCOSE ?= 1
-  EXPORTED_VARS += OS_HAS_GLUCOSE
-endif # ifdef GLUCOSE_EXISTS
-
-$(info Determining whether an ipasir shared library is installed)
-ifdef IPASIR_SHARED_LIBRARY
-  IPASIR_LIB_EXISTS := $(wildcard $(IPASIR_SHARED_LIBRARY))
-  ifdef IPASIR_LIB_EXISTS
-    export OS_HAS_IPASIR ?= 1
-    EXPORTED_VARS += OS_HAS_IPASIR
-    $(info Ipasir library supposedly exists)
-  else # ifdef IPASIR_LIB_EXISTS
-    $(info !!!WARNING: IPASIR_SHARED_LIBRARY was set to \
-      "$(IPASIR_SHARED_LIBRARY)", but this file does not exist)
-  endif # ifdef IPASIR_LIB_EXISTS
-endif # ifdef IPASIR_SHARED_LIBRARY
-
-$(info Determining whether ABC is installed)
-# If abc doesn't exist, then the error message saying it can't be
-# found is redirected to /dev/null, resulting in an empty value for
-# ABC_EXISTS
-ABC_EXISTS := $(shell abc -h 2>&1 | fgrep 'UC Berkeley, ABC' 2>/dev/null)
-ifdef ABC_EXISTS
-  export OS_HAS_ABC ?= 1
-  EXPORTED_VARS += OS_HAS_ABC
-endif # ifdef ABC_EXISTS
-
-
-$(info Determining whether Z3 is installed, for use by SMTLink)
-SMTLINK_EXISTS := $(shell z3 --version 2>/dev/null)
-ifdef SMTLINK_EXISTS
-  export OS_HAS_SMTLINK ?= 1
-  EXPORTED_VARS += OS_HAS_SMTLINK
-endif # ifdef SMTLINK_EXISTS
-
-# The default for USE_QUICKLISP is now 1 for all ACL2 host Lisps
-# except for GCL, which we believe does not support quicklisp.
-# (Probably we could avoid the ifndef and just use ?= instead of :=;
-# but that seems potentially unsafe if ?= can assign like = instead of
-# like :=.
-ifndef USE_QUICKLISP
-  ifneq ($(ACL2_HOST_LISP), GCL)
-    export USE_QUICKLISP := 1
-    EXPORTED_VARS += USE_QUICKLISP
-  endif
-endif
-
+RUN_ACL2_FEATURES := $(shell cd $(BUILD_DIR); ACL2=$(ACL2) STARTJOB=$(STARTJOB) ./features.sh > features.out)
 # Only conditionally include Makefile-features, so that make clean works even
 # if ACL2 isn't built.
 -include $(BUILD_DIR)/Makefile-features
+
 $(info ACL2_HAS_HONS     := $(ACL2_HAS_HONS))
 $(info ACL2_HAS_ANSI     := $(ACL2_HAS_ANSI))
 $(info ACL2_HAS_PARALLEL := $(ACL2_HAS_PARALLEL))
@@ -287,7 +227,6 @@ $(info OS_HAS_IPASIR     := $(OS_HAS_IPASIR))
 $(info OS_HAS_SMTLINK    := $(OS_HAS_SMTLINK))
 $(info USE_QUICKLISP     := $(USE_QUICKLISP))
 $(info Done with features.)
-
 
 ifdef ACL2_FEATURES_DETECTED
 # This sanity check tries to make sure that the copy of ACL2 you are using
@@ -309,16 +248,6 @@ endif
 
 endif # ACL2_FEATURES_DETECTED
 
-# $(info EXPORTED_VARS = $(EXPORTED_VARS))
-EXPORT_SHELL_ENV := $(foreach v,$(EXPORTED_VARS),$(v)='$($(v))')
-
-EXPORT_EXPORT_SHELL_ENV := $(foreach v,$(EXPORTED_VARS),export $(v)='$($(v))';)
-
-BUILD_MAKEFILE_FEATURES_SH := $(shell \
-  echo "$(EXPORT_EXPORT_SHELL_ENV)" > $(BUILD_DIR)/Makefile-features.sh)
-
-# $(info EXPORT_SHELL_ENV = $(EXPORT_SHELL_ENV))
-
 ifndef NO_RESCAN
 
 # We skip the scan for excluded prefixes.  This change was implemented
@@ -339,11 +268,17 @@ $(info Scanning for books...)
 REBUILD_MAKEFILE_BOOKS := $(shell \
   rm -f $(BUILD_DIR)/Makefile-books; \
   time find . -name "*.lisp" \
-    | egrep -v '^(\./)?(interface|centaur/satlink/solvers|projects/milawa/ACL2|clause-processors/SULFA|workshops/2003/kaufmann/support$(EGREP_EXTRA_EXCLUDE_STRING))' \
+    | egrep -v '^(\./)?(interface|centaur/satlink/solvers|projects/milawa/ACL2|clause-processors/SULFA|workshops/2003/kaufmann/support|build/test-ifdef-define$(EGREP_EXTRA_EXCLUDE_STRING))' \
     | fgrep -v '.\#' \
   > $(BUILD_DIR)/Makefile-books; \
   ls -l $(BUILD_DIR)/Makefile-books)
 #$(info $(REBUILD_MAKEFILE_BOOKS))
+
+ifdef ACL2_PCERT
+	PCERT_OPT := "--pcert-all"	
+else
+	PCERT_OPT := 
+endif
 
 $(info Scanning for dependencies...)
 REBUILD_MAKEFILE_DEPS := $(shell \
@@ -351,6 +286,8 @@ REBUILD_MAKEFILE_DEPS := $(shell \
     time ($(EXPORT_SHELL_ENV) \
           $(BUILD_DIR)/cert.pl \
           --quiet \
+          --print-relocs \
+          $(PCERT_OPT) \
           --static-makefile $(BUILD_DIR)/Makefile-deps \
           --cache $(BUILD_DIR)/Makefile-cache \
           --acl2-books `pwd` \
@@ -549,10 +486,25 @@ manual:
 
 else
 
+ifneq ($(filter-out CCL SBCL, $(ACL2_HOST_LISP)),)
+# As of this writing (late 2019), ACL2 built on Allegro CL, Lispworks,
+# or (as is well known) GCL fails to certify all books necessary to
+# build the manual, probably because of problems involving quicklisp.
+# Ideally someone will fix those problems, but for now we will simply
+# cause an immediate error on an attempt to build the manual with this
+# target.
+manual:
+	@echo "Error: The manual may be built only using ACL2 built on CCL or SBCL,"
+	@echo "       not $(ACL2_HOST_LISP)."
+	@exit 1
+
+else
+
 quicklisp: $(QUICKLISP_DIR)/top.cert
 
 manual: doc/top.cert system/doc/acl2-manual.cert
 
+endif # ifneq ($(filter-out CCL SBCL, $(ACL2_HOST_LISP)),)
 endif # REALLY_USE_QUICKLISP
 
 
@@ -595,9 +547,21 @@ ADDED_BOOKS := \
   workshops/2009/sumners/support/examples.cert \
   workshops/2011/krug-et-al/support/MinVisor/va-to-pa-thm.cert \
   workshops/2011/krug-et-al/support/MinVisor/setup-nested-page-tables.cert \
-  workshops/2013/hardin-hardin/support/APSP.cert
+  workshops/2013/hardin-hardin/support/APSP.cert \
+  doc/top-slow.cert
+
+# The following could well be considered as slow books, too.
+# doc/top.cert
+# doc/top-fast.cert
+# projects/include-doc.cert
+# projects/doc.cert
+# projects/top-doc.cert
+# ALSO, directory projects/async/gcd/ (perhaps even projects/async/)
+# AND   directory projects/arm/
+# could be added as x86isa is below.
 
 ADDED_BOOKS += $(filter projects/x86isa/%, $(OK_CERTS))
+ADDED_BOOKS += $(filter projects/filesystems/%, $(OK_CERTS))
 
 ADDED_BOOK_TARGETS :=
 
@@ -687,7 +651,11 @@ CLEAN_FILES_EXPLICIT := \
    projects/apply-model/ex1/evaluation-apply.lisp \
    projects/apply-model/ex1/evaluation-user-defs.lisp \
    projects/apply-model/ex2/evaluation-apply.lisp \
-   projects/apply-model/ex2/evaluation-user-defs.lisp
+   projects/apply-model/ex2/evaluation-user-defs.lisp \
+   projects/apply-model-2/ex1/evaluation-apply.lisp \
+   projects/apply-model-2/ex1/evaluation-user-defs.lisp \
+   projects/apply-model-2/ex2/evaluation-apply.lisp \
+   projects/apply-model-2/ex2/evaluation-user-defs.lisp
 
 MORECLEAN_FILES_EXPLICIT := \
    doc/manual \
@@ -802,9 +770,11 @@ ACL2_CUSTOM_TARGETS := \
   workshops/2003/kaufmann/support/input/defs-in.cert \
   workshops/2004/sumners-ray/support/success.txt
 
-# Currently, apply-model doesn't work for ACL2(r).
+# Currently, apply-model and (probably) apply-model-2 don't work for
+# ACL2(r).
 ifeq ($(ACL2_HAS_REALS), )
 ACL2_CUSTOM_TARGETS += projects/apply-model/phony
+ACL2_CUSTOM_TARGETS += projects/apply-model-2/phony
 endif
 
 # Warning!  For each target below, if there is a cert_pl_exclude file
@@ -839,7 +809,7 @@ clause-processors/SULFA/target.cert: \
 	then \
 	(cd $(@D) ; $(MAKE)) ; \
 	else \
-	echo "*NOTE*: Skipping SULFA subdirectory (need SAT solver installed as per books/clause-processors/SULFA/README)." ; \
+	echo "NOTE: Skipping SULFA subdirectory (need SAT solver installed as per books/clause-processors/SULFA/README)." ; \
 	fi
 
 projects/translators/l3-to-acl2/target.cert: \
@@ -867,6 +837,10 @@ workshops/2004/sumners-ray/support/success.txt:
 
 .PHONY: projects/apply-model/phony
 projects/apply-model/phony: projects/apply-model-deps.cert
+	cd $(@D) ; $(STARTJOB) -c "$(MAKE)"
+
+.PHONY: projects/apply-model-2/phony
+projects/apply-model-2/phony: projects/apply-model-2-deps.cert
 	cd $(@D) ; $(STARTJOB) -c "$(MAKE)"
 
 endif # ifeq ($(ACL2_HAS_REALS), )
@@ -932,7 +906,10 @@ ifdef ACL2_COMP
 # since some Lisps have trouble certifying those, we play it safe and
 # skip them.  Books under build/test/ present a problem because of
 # dollar signs ($) in filenames, which doesn't seem worth solving.
-$(info For building compiled (.$(ACL2_COMP_EXT)) files, excluding centaur books)
+# -- Hmmm, this filtering doesn't actually eliminate all centaur
+# books.  That's OK provided the resulting targets all build
+# successfully.
+$(info For building compiled (.$(ACL2_COMP_EXT)) files, excluding some books (e.g., some centaur books))
 OK_CERTS := $(filter-out centaur/%, \
               $(filter-out models/y86%, \
                 $(filter-out build/test%, \
@@ -1222,13 +1199,16 @@ critpath.txt: $(OK_CERTS)
 
 # basic is the default set of books to build:
 .PHONY: basic
-basic: arithmetic arithmetic-3 arithmetic-5 ihs std xdoc tools misc data-structures
+basic: arithmetic arithmetic-3 arithmetic-5 ihs std xdoc tools misc data-structures apply
 
 .PHONY: acl2s
 acl2s: $(filter acl2s/%, $(OK_CERTS))
 
 .PHONY: add-ons
 add-ons: $(filter add-ons/%, $(OK_CERTS))
+
+.PHONY: apply
+apply: projects/apply/top.cert
 
 .PHONY: arithmetic
 arithmetic: $(filter arithmetic/%, $(OK_CERTS))
@@ -1440,19 +1420,6 @@ milawa-clean:
 	fi
 
 clean: milawa-clean
-
-# Warning: ACL2's GNUmakefile uses the following "certify-books"
-# target to implement its own target, "certify-books", which some
-# might use to build all "appropriate" books when installing ACL2.  So
-# please be careful about making major changes to "certify-books" in
-# this Makefile.
-# We might only want to filter out centaur/vl and centaur/vl2014,
-# since those seem relatively expensive -- but we then need to filter
-# out others that depend on those two.
-.PHONY: certify-books
-certify-books: $(filter-out centaur/vl/% centaur/vl2014/% doc/% \
-		xdoc/% centaur/4v-sexpr/% centaur/regression/% \
-		centaur/esim/% \ workshops/%, $(OK_CERTS))
 
 # The following dummy target does nothing, e.g., so that you can test
 # the dependency scanning stuff without actually building anything.
@@ -1679,8 +1646,9 @@ git_status:
                       --cache $(BUILD_DIR)/Makefile-cache \
                       --acl2-books `pwd` \
                       --write-sources $(BUILD_DIR)/git_source_deps \
+                      --write-otherdeps $(BUILD_DIR)/git_other_deps \
                       --targets $(BUILD_DIR)/git_lisp_sources
-	xargs --delimiter='\n' git status -- < $(BUILD_DIR)/git_source_deps
+	cat $(BUILD_DIR)/git_source_deps $(BUILD_DIR)/git_other_deps | xargs --delimiter='\n' git status -u --
 
 
 ##############################

@@ -1,5 +1,5 @@
-; ACL2 Version 8.1 -- A Computational Logic for Applicative Common Lisp
-; Copyright (C) 2018, Regents of the University of Texas
+; ACL2 Version 8.2 -- A Computational Logic for Applicative Common Lisp
+; Copyright (C) 2019, Regents of the University of Texas
 
 ; This version of ACL2 is a descendent of ACL2 Version 1.9, Copyright
 ; (C) 1997 Computational Logic, Inc.  See the documentation topic NOTE-2-0.
@@ -19,6 +19,235 @@
 ; Austin, TX 78712 U.S.A.
 
 (in-package "ACL2")
+
+; We introduce ev-fncall+ early in this file to support its use in the
+; definition of scons-term.
+
+; Essay on Evaluation of Apply$ and Loop$ Calls During Proofs
+
+; (Note: This essay also applies similarly to badge, even though we do not
+; discuss badge in it.)
+
+; A goal from the earliest days of ACL2 has been efficient evaluation, not only
+; for forms submitted at the top-level loop, but also during proofs.  The
+; earliest implementations of apply$, badge, and loop$ limited their evaluation
+; during proofs, essentially disallowing apply$ or badge for user-defined
+; functions.  This is not particularly unreasonable since attachments are
+; disallowed during proofs, which is completely appropriate.
+
+; This situation has been remedied starting in March, 2019, by expanding the
+; use in the rewriter of doppelganger-apply$-userfn and
+; doppelganger-badge-userfn, for calls of apply$-userfn and badge-userfn on
+; concrete arguments, where the first argument has a warrant.  If the warrant
+; is not known to be true in the current context, then it is forced (unless it
+; is known to be false).  See community book
+; books/system/tests/apply-in-proofs.lisp for examples.
+
+; The key idea is that the truth of the warrant for fn justifies replacement of
+; (apply$ 'fn '(arg1 ... argk)) by (fn arg1 ... argk); let's call this a
+; "warranted replacement".  A version of ev-fncall, ev-fncall+, records the
+; warrants that are required to be true in order to make those warranted
+; replacements during evaluation.  Ev-fncall+ is actually a small wrapper for
+; ev-fncall+-w, which in turn has a raw Lisp implementation that relies on a
+; Lisp global, *warrant-reqs*.  The definition of *warrant-reqs* has a comment
+; explaining its legal values, and a search of the sources for *warrant-reqs*
+; should make reasonably clear how this variable is used; but here is a
+; summary.  When *warrant-reqs* has its global value of nil, no special
+; behavior occurs: ev-fncall+[-w] essentially reduces to ev-fncall[-w].
+; Otherwise, *warrant-reqs* can be initialized to t to represent the empty
+; list, and this "list" is extended by maybe-extend-warrant-reqs each time a
+; new function requires a true warrant because of a warranted replacement (as
+; described above).  Upon completion of a ground evaluation using ev-fncall+,
+; this list of functions is returned as the third value of ev-fncall+.  The
+; function push-warrants then processes this list of functions as follows: for
+; the warrant of each function in that list, either the warrant is known to be
+; true or it is forced (except that if it the warrant is known to be false, the
+; evaluation is considered to have failed).
+
+; Note that *aokp* must be true for the apply$-lambda and loop$ shortcuts.  So
+; for the rewriter as described above, where *aokp* is nil but *warrant-reqs*
+; is non-nil, evaluation involving apply$ or loop$ always reduces to evaluation
+; of apply$-userfn, which is handled with warranted replacements as described
+; above.  At one time we considered allowing these shortcuts for lambdas and
+; loop$ forms, and we could reconsider if we want more efficiency.  But the
+; current implementation seems to provide sufficient efficiency (until someone
+; complains, at least), and has the following advantage: the function symbols
+; stored in *warrant-reqs* are exactly those for which warranted replacement is
+; used; but if we allow shortcuts for lambdas and loop$ forms, then we will
+; need to include all user-defined functions occurring in the lambda body or
+; loop$ body even when lying on an IF branch that was not taken during a given
+; evaluation.
+
+; We considered handling evaluation in expand-abbreviations as described above
+; for the rewriter.  However, there is no type-alist readily available in
+; expand-abbreviations for determining which warrants are known to be true.
+; Moreover, the rules justifying warranted replacements (with names like
+; apply$-fn) are conditional rewrite rules, which we traditionally ignore
+; during preprocess-clause (and hence during expand-abbreviations) in favor of
+; considering only "simple" rules.  However, we do use ev-fncall+ in
+; expand-abbreviations, so that we can avoid wrapping HIDE around the ground
+; function application when the evaluation aborted rather than doing a
+; warranted replacement.  This case is represented by the case that the third
+; value of ev-fncall+[-w] is a function symbol.  Special handling is important
+; for this case, to avoid wrapping the call in HIDE, since that would prevent
+; the rewriter from later performing a successful evaluation using warranted
+; replacements.  Note that we initialize *warrant-reqs* to :nil! in this case
+; instead of t, which causes evaluation to abort immediately the first time
+; that a warranted replacement is called for.  For very long loops this
+; obviously can be important for efficiency!
+
+; We considered also using ev-fncall+ for eval-ground-subexpressions, but that
+; seemed to introduce more complexity than it's worth; this could change based
+; on user demand.  Since eval-ground-subexpressions does not introduce HIDE, we
+; don't have the need for ev-fncall+ that is described above for
+; expand-abbreviations.
+
+; Note that our scheme works nicely with the executable-counterpart of apply$
+; disabled.  Specifically, all warranted replacements are justified by warrants
+; -- actually by rules with names like apply$-fn -- rather than by the
+; execution of apply$ calls.
+
+; Next we develop the logical and raw Lisp definitions of ev-fncall+.
+
+(defun badged-fns-of-world (wrld)
+
+; We return the list of badged functions in wrld, but in a way that can be
+; guard-verified and can be proved to return a list of function symbols.
+
+  (declare (xargs :mode :logic :guard (plist-worldp wrld)))
+  (and (alistp (table-alist 'badge-table wrld))
+       (let ((badge-alist
+              (cdr (assoc-eq :badge-userfn-structure
+                             (table-alist 'badge-table wrld)))))
+         (and (alistp badge-alist)
+              (let ((syms (strip-cars badge-alist)))
+                (and (all-function-symbolps syms wrld)
+                     syms))))))
+
+(partial-encapsulate
+
+; See the Essay on Evaluation of Apply$ and Loop$ Calls During Proofs.
+
+; We think of (ev-fncall+-fns fn args wrld big-n safe-mode gc-off nil) as the
+; list of badged functions supplied to apply$-userfn or badge-userfn during
+; evaluation of the call of fn on args in wrld using the given
+; user-stobj-alist, big-n, safe-mode, and gc-off.  But if the last argument,
+; strictp, is non-nil, then we think of the result as the first function symbol
+; encountered during evaluation, if any, for which a true warrant was required
+; to complete that call of fn.
+
+; The constraint below can almost surely be explicitly strengthened, but we see
+; no need at this point.
+
+; Also see ev-fncall+-w.
+
+ (((ev-fncall+-fns * * * * * * *) => *))
+ nil
+ (logic)
+ (local (defun ev-fncall+-fns (fn args wrld big-n safe-mode gc-off strictp)
+          (declare (ignore fn args big-n safe-mode gc-off))
+          (and (not strictp)
+               (badged-fns-of-world wrld))))
+ (defthm all-function-symbolps-ev-fncall+-fns
+   (let ((fns (ev-fncall+-fns fn args wrld big-n safe-mode gc-off nil)))
+     (all-function-symbolps fns wrld)))
+ (defthm ev-fncall+-fns-is-subset-of-badged-fns-of-world
+   (subsetp (ev-fncall+-fns fn args wrld big-n safe-mode gc-off nil)
+            (badged-fns-of-world wrld)))
+ (defthm function-symbolp-ev-fncall+-fns-strictp
+   (let ((fn (ev-fncall+-fns fn args wrld big-n safe-mode gc-off t)))
+     (and (symbolp fn)
+          (or (null fn)
+              (function-symbolp fn wrld))))))
+
+#+acl2-loop-only
+(defun ev-fncall+-w (fn args w safe-mode gc-off strictp)
+
+; See the Essay on Evaluation of Apply$ and Loop$ Calls During Proofs.
+
+; This function allows apply$-userfn and badge-userfn to execute on warranted
+; functions even when *aokp* is nil.  It returns an error triple whose
+; non-erroneous value is a list of the functions that need warrants in order to
+; trust the result.  However, in the case of an error when strictp is true, the
+; value is a function symbol responsible for the error when a warrant is
+; required so that evaluation is aborted, else nil.  Its implementation is in
+; the #-acl2-loop-only definition of this function; the present logical
+; definition is incomplete in the sense that ev-fncall+-fns is partially
+; constrained.
+
+; This logical definition actually permits a list, computed by constrained
+; function ev-fncall+-fns, that properly includes the intended list as a
+; subset.  But the under-the-hood implementation of ev-fncall+-w produces
+; exactly the set of functions given to apply$-userfn or badge-userfn.
+
+  (let* ((big-n (big-n))
+         (fns (ev-fncall+-fns fn args w big-n safe-mode gc-off strictp)))
+    (mv-let (erp val latches)
+      (ev-fncall-rec-logical fn args
+                             nil ; irrelevant arg-exprs (as latches is nil)
+                             w
+                             nil ; user-stobj-alist
+                             big-n safe-mode gc-off
+                             nil ; latches
+                             t   ; hard-error-returns-nilp
+                             nil ; aokp
+                             (and (not strictp) fns))
+      (declare (ignore latches))
+      (mv erp val fns))))
+
+#-acl2-loop-only
+(defvar *warrant-reqs*
+
+; See the Essay on Evaluation of Apply$ and Loop$ Calls During Proofs.
+
+; Legal values of this variable are as follows.
+
+; nil -   Always the global value, and always the value when *aokp* is non-nil
+; t   -   Represents the empty list, enabling accumulation of function symbols
+;         whose (true) warrants support evaluation
+; lst   - A non-empty, duplicate-free list, which represents a set of function
+;         symbols whose (true) warrants support evaluation
+; :nil! - Like nil, but causes evaluation to stop if a warrant is ever required
+; fn  -   A function symbol for which evaluation is aborted because its warrant
+;         is required (because *warrant-reqs* is :nil!)
+
+  nil)
+
+#-acl2-loop-only
+(defun ev-fncall+-w (fn args w safe-mode gc-off strictp)
+
+; See comments in the logic definition of this function.
+
+  (let ((*warrant-reqs*
+
+; See comments in the definition of *warrant-reqs* for a discussion of the
+; :nil! and t values of this global.
+
+         (if strictp :nil! t)))
+    (declare (special *warrant-reqs*)) ; just to be safe
+    (mv-let (erp val latches)
+      (ev-fncall-w fn args w
+                   nil ; user-stobj-alist
+                   safe-mode gc-off
+                   t    ; hard-error-returns-nilp
+                   nil) ; aok
+      (declare (ignore latches))
+      (mv erp
+          val
+          (if (member-eq *warrant-reqs* '(t nil :nil!))
+              nil
+            *warrant-reqs*)))))
+
+(defun ev-fncall+ (fn args strictp state)
+
+; See the Essay on Evaluation of Apply$ and Loop$ Calls During Proofs.
+; Also see comments in the logic definition of ev-fncall+-w.
+
+  (ev-fncall+-w fn args
+                (w state)
+                (f-get-global 'safe-mode state)
+                (gc-off state)
+                strictp))
 
 ; We start our development of the rewriter by coding one-way-unify and the
 ; substitution fns.
@@ -1067,12 +1296,13 @@
 
 (defun scons-term (fn args ens wrld state ttree)
 
-; This function is (cons-term fn args) except that we evaluate any enabled
-; fn on quoted arguments and may do any other replacements that preserve
-; equality (e.g., (equal x x) = t).  In addition, we report the executable
-; counterparts we use by adding them to ttree.  We return (mv hitp term
-; ttree'), hitp is t iff term is something different than (fn . args), term is
-; equal to (fn .  args) and ttree' is an extension of ttree.
+; This function is (cons-term fn args) except that we evaluate any enabled fn
+; on quoted arguments and may do any other replacements that preserve equality
+; (e.g., (equal x x) = t).  In addition, we report the executable counterparts
+; we use by adding them to ttree.  We return (mv hitp term ttree'), where: hitp
+; is t iff term is something different than (cons-term fn args); term is
+; provably equal to (cons-term fn args); and ttree' is an extension of ttree
+; this equality.
 
   (cond
    ((and (all-quoteps args)
@@ -1104,28 +1334,47 @@
                    (cadr args)
                    (caddr args))
                ttree))
-          ((programp fn wrld) ; this test is needed; see the comment in rewrite
-           (mv t (cons-term fn args) ttree))
+          ((programp fn wrld)
+
+; It is March, 2019, and we ask: Is this test needed?  At one time we said "see
+; the comment in rewrite", but there seems to be no such comment in rewrite.
+; Perhaps it is no longer needed, but we keep this programp case just to be
+; safe.  Also, we formerly returned t as the first value in this case, but that
+; seems wrong so we return nil now.
+
+           (mv nil (cons-term fn args) ttree))
           (t
            (mv-let
-            (erp val latches)
+            (erp val bad-fn)
             (pstk
-             (ev-fncall fn (strip-cadrs args) state nil t nil))
-            (declare (ignore latches))
+             (ev-fncall+ fn (strip-cadrs args) t state))
             (cond
              (erp
+              (cond
+               (bad-fn
+
+; Since bad-fn is non-nil, the evaluation failure was caused by aborting when a
+; warrant was needed.  This case is handled in rewrite, so we do not want to
+; hide the term.  See the Essay on Evaluation of Apply$ and Loop$ Calls During
+; Proofs.
+
+                (mv nil (cons-term fn args) ttree))
+               (t
 
 ; There is a guard violation, probably -- or perhaps there's some other kind of
 ; error.  We'll just hide this term so we don't see it again.
 
-              (mv t (fcons-term* 'hide (cons-term fn args)) ttree))
+                (mv t
+                    (fcons-term* 'hide (cons-term fn args))
+                    (push-lemma (fn-rune-nume 'hide nil nil wrld)
+                                ttree)))))
              (t (mv t
                     (kwote val)
                     (push-lemma (fn-rune-nume fn nil t wrld)
                                 ttree))))))))
    ((and (eq fn 'equal)
          (equal (car args) (cadr args)))
-    (mv t *t* ttree))
+    (mv t *t* (puffert ttree)))
    (t (mv nil (cons-term fn args) ttree))))
 
 (mutual-recursion
@@ -3032,15 +3281,26 @@
 
 (defun simplifiable-mv-nth1 (n cons-term alist)
 
-; N is a natural number.  If cons-term/alist is of the form
-; (cons v0 ... (cons vn ...)), we return (mv vn alist'), where alist' is the
-; alist under which to interpret vi.  Cons-term may, of course, be
-; a variable or may contain variables, bound in alist.  We return
-; (mv nil nil) if we do not like what we see.
+; N is a natural number.  If cons-term/alist is of the form (cons v0 ... (cons
+; vn ...)), we return (mv vn rewritep), where rewritep is a flag indicating
+; whether vn is an already-rewritten term extracted from the alist (nil), or a
+; term that still needs to be rewritten with respect to the alist (t).  We
+; return (mv nil nil) if we do not like what we see.
 
   (cond ((variablep cons-term)
          (let ((temp (assoc-eq cons-term alist)))
-           (cond (temp (simplifiable-mv-nth1 n (cdr temp) nil))
+           (cond (temp (mv-let (term1 rewritep)
+                         (simplifiable-mv-nth1 n (cdr temp) nil)
+                         (declare (ignore rewritep))
+
+; The rewritep returned by this call is t if a term was returned, because alist
+; = nil.  But since (cdr temp) has already been rewritten, so has term1 (if
+; non-nil); so we return rewritep = nil.  The use of rewritep in the definition
+; of rewrite, where simplifiable-mv-nth is called, is a change after
+; Version_8.2.  At one time we always rewrote the new term (called term1 here),
+; but Sol Swords noticed that such double rewriting can be very expensive.
+
+                         (mv term1 nil)))
                  (t (mv nil nil)))))
         ((fquotep cons-term)
 
@@ -3051,24 +3311,32 @@
 
          (cond ((and (true-listp (cadr cons-term))
                      (> (length (cadr cons-term)) n))
-                (mv (kwote (nth n (cadr cons-term))) nil))
+                (mv (kwote (nth n (cadr cons-term)))
+
+; We could perhaps return nil here, but instead we return t so that this quotep
+; result is handled in the usual way by rewrite -- at this writing, it is
+; returned unchanged -- rather than passing it to rewrite-solidify-plus.
+
+                    t))
                (t (mv nil nil))))
         ((eq (ffn-symb cons-term) 'cons)
          (if (= n 0)
-             (mv (fargn cons-term 1) alist)
+             (mv (fargn cons-term 1) t)
            (simplifiable-mv-nth1 (1- n) (fargn cons-term 2) alist)))
         (t (mv nil nil))))
 
 (defun simplifiable-mv-nth (term alist)
 
-; Term/alist must be a term of the form (mv-nth & &), i.e., the
-; ffn-symb of term is known to be 'mv-nth.  We determine whether we
-; can simplify this and is so return (mv term' alist') as the
-; simplification.  If we cannot, we return (mv nil nil).  We look for
-; (mv-nth 'i (cons v1 ... (cons vi ...))), but we allow the two
-; arguments of term to be variable symbols that are looked up.  That
-; is, we allow (MV-NTH I V) where I is bound in alist to a quoted
-; constant and V is bound to a CONS term.
+; Term must be of the form (mv-nth & &), i.e., the ffn-symb of term is known to
+; be 'mv-nth.  We determine whether we can simplify this and if so we return
+; (mv term' rewritep) as the simplification.  If we cannot, we return (mv nil
+; nil).  We look for (mv-nth 'i (cons v1 ... (cons vi ...))), but we allow the
+; two arguments of term to be variable symbols that are looked up.  That is, we
+; allow (MV-NTH I V) where I is bound in alist to a quoted constant and V is
+; bound to a CONS term.  The second value, rewritep, is T unless the second
+; argument to the mv-nth was a variable, in which case it is NIL to indicate
+; that the resulting term has already been rewritten and should not be
+; rewritten again.
 
   (let ((arg1 (cond ((variablep (fargn term 1))
                      (let ((temp (assoc-eq (fargn term 1) alist)))
@@ -3078,22 +3346,8 @@
     (cond ((and (quotep arg1)
                 (integerp (cadr arg1))
                 (>= (cadr arg1) 0))
-           (mv-let (term1 alist1)
-                   (simplifiable-mv-nth1 (cadr arg1) (fargn term 2) alist)
-                   (cond
-                    (term1
-                     (mv term1 alist1))
-                    (t (mv nil nil)))))
+           (simplifiable-mv-nth1 (cadr arg1) (fargn term 2) alist))
           (t (mv nil nil)))))
-
-(defun simplifiable-mv-nthp (term alist)
-
-; Here is a predicate version of the above.
-
-  (mv-let (term alist)
-          (simplifiable-mv-nth term alist)
-          (declare (ignore alist))
-          (if term t nil)))
 
 (defun call-stack (fn lst stack assumptions ac)
   (declare (xargs :guard (and (true-listp lst)
@@ -3200,15 +3454,10 @@
 ; ttree).
 
                  (let ((term (fcons-term fn ac)))
-                   (if (simplifiable-mv-nthp term nil)
-
-; Alist1 below must be nil since we used nil above.
-
-                       (mv-let (term1 alist1)
-                               (simplifiable-mv-nth term nil)
-                               (declare (ignore alist1))
-                               term1)
-                     term)))
+                   (mv-let (term1 rewritep)
+                     (simplifiable-mv-nth term nil)
+                     (declare (ignore rewritep))
+                     (or term1 term))))
                 (t (cons-term fn ac)))
                stack))
         (t (call-stack fn (cdr lst) (cdr stack)
@@ -3777,6 +4026,30 @@
                                     (cons (car l) without-lst)))))
 
 (defun disc-tree (x)
+
+; A disc-tree, or ``discrimination tree'' is a data structure that organizes a
+; set of clauses.  The basic shape is
+
+; disc-tree := (TIP clauses) | (NODE lit disc-tree_1 disc-tree_2),
+
+; The ``clauses in a disc-tree'' is just the set of all the clauses occurring
+; in some tip.  This is computed by sweep-clauses.
+
+; But the important invariant of a disc-tree NODE is that all the clauses in
+; disc-tree_1 contain a (positive or negative) occurrence of lit, and none of
+; the clauses in disc-tree_2 contain such an occurrence.
+
+; We test this invariant below by collecting all the clauses in disc-tree_i
+; and confirming that either every clause or no clause contains the lit.  We
+; use filter-with-and-without to partition the clauses in a list according to
+; whether they contain an occurrence of lit.  If we partition the clauses in
+; disc-tree_i into ``with lit'' and ``without lit'' buckets, the ``with lit''
+; bucket is set equal to the entire set of disc-tree_1 and the ``without lit''
+; bucket is set equal to the entire set for disc-tree_2.  But rather than test
+; set equality we exploit the fact that we know filter-with-and-without really
+; partitions and just test that the ``without lit'' bucket is empty for
+; disc-tree_1 and the ``with lit'' bucket is empty for disc-tree_2.
+
   (and (or (consp x) (equal x nil))
        (cond ((equal (car x) 'node)
               (and (true-listp x)
@@ -3785,19 +4058,17 @@
                    (disc-tree (caddr x))
                    (disc-tree (cadddr x))
                    (mv-let (with-lst without-lst)
-                           (filter-with-and-without (cadr x)
-                                                    (sweep-clauses (caddr x))
-                                                    nil nil)
-                           (declare (ignore without-lst))
-                           (equal (sweep-clauses (caddr x))
-                                  with-lst))
+                     (filter-with-and-without (cadr x)
+                                              (sweep-clauses (caddr x))
+                                              nil nil)
+                     (declare (ignore with-lst))
+                     (null without-lst))
                    (mv-let (with-lst without-lst)
-                           (filter-with-and-without (cadr x)
-                                                    (sweep-clauses (cadddr x))
-                                                    nil nil)
-                           (declare (ignore with-lst))
-                           (equal (sweep-clauses (cadddr x))
-                                  without-lst))))
+                     (filter-with-and-without (cadr x)
+                                              (sweep-clauses (cadddr x))
+                                              nil nil)
+                     (declare (ignore without-lst))
+                     (null with-lst))))
              (t (pseudo-term-list-listp (cdr x))))))
 
 (defun find-clauses1 (clause tree ac)
@@ -4374,9 +4645,9 @@
 ; ; However, in the interest of performance we have decided to avoid a full-blown
 ; ; call of type-set here.  You get what you pay for, perhaps.
 ;
-; However, then Rich Cohen observed that if we are trying to relieve a hypothesis
-; in a lemma and the hyp rewrites to an explicit cons expression we fail to
-; recognize that it is non-nil!  Here is a thm that fails for that reason:
+; However, then Rich Cohen observed that when trying to relieve a hypothesis in
+; a lemma, if the hyp rewrote to an explicit cons expression then we failed to
+; recognize that it is non-nil!  Here is a thm that failed for that reason:
 ;
 ;  (defstub foo (x a) t)
 ;  (defaxiom lemma
@@ -4387,7 +4658,18 @@
 ; only when we have an objective of t or nil.  Under this condition we use
 ; force-flg nil and dwp t.  We tried the div proofs with force-flg t here
 ; and found premature forcing killed us.
-;
+
+; On 1/17/2019, after Version_8.1, we tried modifying rewrite-solidify-rec to
+; call type-set unconditionally, not merely when (not (eq obj '?)).  There were
+; 46 failures in the "everything" regression, which we killed before it
+; completed since there were three very-long running certifications still in
+; progress (about 3 hours each).  Among those, we noticed
+; books/nonstd/workshops/2017/cayley/cayley1c.lisp, whose certification went
+; far enough for us to see the the proof of 8-COMPOSITION-LAW completed but
+; took 7560.97 seconds, far exceeding the 6.49 seconds taken in a recent run.
+; It thus seemed obvious that such a change would likely cause massive changes
+; to be necessary not only in the community books, but also in proprietary
+; books elsewhere.
 
 (defun rewrite-if11 (term type-alist geneqv wrld ttree)
   (mv-let (ts ts-ttree)
@@ -5087,7 +5369,7 @@
 ; use of equalities on the type-alist.  Suppose that (foo x) is defined to be
 ; (bar (foo (cdr x))) in a certain case.  But imagine that on the type-alist we
 ; have (foo (cdr x)) = (foo x).  Then rewritten-body, here, is (bar (foo x)).
-; Because it contains a rewriteable call we rewrite it again.  If we do so with
+; Because it contains a rewritable call we rewrite it again.  If we do so with
 ; the old fnstack, we will open (foo x) to (bar (foo x)) again and infinitely
 ; regress.
 
@@ -5625,15 +5907,44 @@
 (defun cons-count-bounded-ac (x i max)
 
 ; We accumulate into i the number of conses in x, bounding our result by max,
-; which should not be less than i.
+; which is generally not less than i at the top level.
 
-  (declare (type (signed-byte 30) i max))
+; With the xargs declarations shown below, we can verify termination and guards
+; as follows.
+
+;   (verify-termination (cons-count-bounded-ac
+;                        (declare (xargs :verify-guards nil))))
+;
+;   (defthm lemma-1
+;     (implies (integerp i)
+;              (integerp (cons-count-bounded-ac x i max)))
+;     :rule-classes (:rewrite :type-prescription))
+;
+;   (defthm lemma-2
+;     (implies (integerp i)
+;              (>= (cons-count-bounded-ac x i max) i))
+;     :rule-classes :linear)
+;
+;   (defthm lemma-3
+;     (implies (and (integerp i)
+;                   (integerp max)
+;                   (<= i max))
+;              (<= (cons-count-bounded-ac x i max)
+;                  max))
+;     :rule-classes :linear)
+;
+;   (verify-guards cons-count-bounded-ac)
+
+  (declare (type (signed-byte 30) i max)
+           (xargs :guard (<= i max)
+                  :measure (acl2-count x)
+                  :ruler-extenders :lambdas))
   (the (signed-byte 30)
-       (cond ((atom x) i)
-             (t (let ((i (cons-count-bounded-ac (cdr x) i max)))
-                  (declare (type (signed-byte 30) i))
-                  (cond ((>= i max) max)
-                        (t (cons-count-bounded-ac (car x) (1+f i) max))))))))
+    (cond ((or (atom x) (>= i max))
+           i)
+          (t (let ((i (cons-count-bounded-ac (car x) (1+f i) max)))
+               (declare (type (signed-byte 30) i))
+               (cons-count-bounded-ac (cdr x) i max))))))
 
 (defun cons-count-bounded (x)
 
@@ -5907,8 +6218,8 @@
 
 (mutual-recursion
 
-(defun contains-rewriteable-callp
-  (fn term cliquep terms-to-be-ignored-by-rewrite)
+(defun contains-rewritable-callp (fn term cliquep
+                                     terms-to-be-ignored-by-rewrite)
 
 ; This function scans the non-quote part of term and determines
 ; whether it contains a call, t, of any fn in the mutually recursive
@@ -5925,25 +6236,25 @@
 ; calls of fns in the clique, as described in the comment on the subject
 ; in rewrite-fncallp above.
 
-         (contains-rewriteable-callp-lst fn (fargs term)
-                                         cliquep
-                                         terms-to-be-ignored-by-rewrite))
+         (contains-rewritable-callp-lst fn (fargs term)
+                                        cliquep
+                                        terms-to-be-ignored-by-rewrite))
         ((and (if cliquep
                   (member-eq (ffn-symb term) cliquep)
                 (eq (ffn-symb term) fn))
               (not (member-equal term terms-to-be-ignored-by-rewrite)))
          t)
-        (t (contains-rewriteable-callp-lst fn (fargs term)
-                                           cliquep
-                                           terms-to-be-ignored-by-rewrite))))
+        (t (contains-rewritable-callp-lst fn (fargs term)
+                                          cliquep
+                                          terms-to-be-ignored-by-rewrite))))
 
-(defun contains-rewriteable-callp-lst
-  (fn lst cliquep terms-to-be-ignored-by-rewrite)
+(defun contains-rewritable-callp-lst (fn lst cliquep
+                                         terms-to-be-ignored-by-rewrite)
   (cond ((null lst) nil)
-        (t (or (contains-rewriteable-callp fn (car lst)
-                                           cliquep
-                                           terms-to-be-ignored-by-rewrite)
-               (contains-rewriteable-callp-lst
+        (t (or (contains-rewritable-callp fn (car lst)
+                                          cliquep
+                                          terms-to-be-ignored-by-rewrite)
+               (contains-rewritable-callp-lst
                 fn (cdr lst)
                 cliquep
                 terms-to-be-ignored-by-rewrite)))))
@@ -6146,6 +6457,9 @@
   t)
 
 (defun ok-to-force (rcnst)
+
+; Warning: In function push-warrants, we rely on the return value of
+; ok-to-force being t or nil.
 
 ; We normally use the rewrite constant to determine whether forcing is enabled.
 ; At one time we experimented with a heuristic that allows the "force-flg" to
@@ -7464,11 +7778,6 @@
          wrld)
         (t (scan-to-include-book full-book-name (cdr wrld)))))
 
-(defun assoc-equal-cadr (x alist)
-  (cond ((null alist) nil)
-        ((equal x (cadr (car alist))) (car alist))
-        (t (assoc-equal-cadr x (cdr alist)))))
-
 (defun multiple-assoc-terminal-substringp1 (x i alist)
   (cond ((null alist) nil)
         ((terminal-substringp x (caar alist) i (1- (length (caar alist))))
@@ -7872,10 +8181,6 @@
                  (collect-x-rules-of-rune 'type-set-inverter-rule rune
                                           val ans)
                  ans))
-            (recognizer-alist
-             (if (eq token :compound-recognizer)
-                 (collect-x-rules-of-rune 'recognizer-tuple rune val ans)
-                 ans))
             (generalize-rules
              (if (eq token :generalize)
                  (collect-x-rules-of-rune 'generalize-rule rune val ans)
@@ -7936,6 +8241,10 @@
              (if (eq token :induction)
                  (collect-x-rules-of-rune 'induction-rule rune val ans)
                  ans))
+            (recognizer-alist
+             (if (eq token :compound-recognizer)
+                 (collect-x-rules-of-rune 'recognizer-tuple rune val ans)
+               ans))
             (otherwise ans))))))
 
 (defun find-rules-of-rune1 (rune props ans)
@@ -8260,8 +8569,9 @@
                  (declare (ignore failures-remaining))
                  (cond
                   ((eq (caddr failure-reason) 'hyp-vars)
-                   (msg ":HYP ~x0 contains free variables ~&1, for which no ~
-                           suitable bindings were found."
+                   (msg ":HYP ~x0 contains free variable~#1~[~/s~] ~&1, for ~
+                         which no suitable ~#1~[binding was~/bindings were~] ~
+                         found."
                         n
                         (set-difference-equal (cdddr failure-reason)
                                               (strip-cars unify-subst))))
@@ -8391,18 +8701,6 @@
                                        nil
                                      '(brr-evisc-tuple state))))
                      (value :invisible))))
-         (final-ttree-fn ()
-                         '(lambda nil
-                            (let ((lemma (get-brr-local 'lemma state)))
-                              (cond
-                               ((eq (record-type lemma) 'linear-lemma)
-                                (er soft :FINAL-TTREE
-                                    ":FINAL-TTREE is not legal for a :LINEAR ~
-                                     rule."))
-                               (t (prog2$
-                                   (cw "~F0 has not yet been :EVALed.~%"
-                                       (get-rule-field lemma :rune))
-                                   (value :invisible)))))))
          (frame-fn (plusp)
                    `(lambda (n)
                       (let ((rgstack
@@ -9178,7 +9476,12 @@
 (defrec expand-hint
   ((equiv
     .
-    alist) ; :none, or a partial unify-subst for matching term against actual
+    alist) ; :none, a unify-subst or (:constants . unify-subst)
+           ; where unify-subst is a partial substitution that must be
+           ; extended by the match of pattern against the term being
+           ; considered for expansion.  :None means an exact match
+           ; is required. :Constants means the successful match must
+           ; bind variables to themselves or to quoted evgs.
    .
    (pattern
     .
@@ -9390,7 +9693,7 @@
     (one-way-unify pat term))
    (t (one-way-unify-restrictions1 pat term restrictions))))
 
-(defun ev-fncall! (fn args state latches aok)
+(defun ev-fncall! (fn args state aok)
 
 ; This function is logically equivalent to ev-fncall.  However, it is
 ; much faster because it can only be used for certain fn and args: fn
@@ -9411,28 +9714,27 @@
                          (eq (symbol-class fn wrld)
                              :common-lisp-compliant)
                          (mv-let
-                          (erp val latches)
-                          (ev (guard fn nil wrld)
-                              (pairlis$ (formals fn wrld)
-                                        args)
-                              state
-                              nil
-                              t
-                              aok)
-
-; Formerly, here we had (declare (ignore latches)).  But CCL complained
-; about unused lexical variable LATCHES when defining/compiling the *1*
-; function.  So instead we use LATCHES in a trivial way.
-
-                          (prog2$ latches ; fool CCL; see comment above
-                                  (and (null erp)
-                                       val)))))))
+                           (erp val latches)
+                           (ev (guard fn nil wrld)
+                               (pairlis$ (formals fn wrld)
+                                         args)
+                               state
+                               nil
+                               t
+                               aok)
+                           (assert$
+                            (null latches)
+                            (and (null erp)
+                                 val)))))))
   #+(and (not acl2-loop-only) lucid)
   (declare (ignore state))
   #-acl2-loop-only
   (return-from ev-fncall!
-               (mv nil (apply fn args) latches))
-  (ev-fncall fn args state latches
+               (mv nil (apply fn args) nil))
+  (ev-fncall fn args
+             nil ; irrelevant arg-exprs (as latches is nil)
+             state
+             nil ; latches
 
 ; Since ev-fncall-meta calls ev-fncall!, the comment about sys-call under
 ; ev-fncall-meta explains why the following argument of nil is important.
@@ -9470,8 +9772,11 @@
 ; evaluators in rules of class :meta or :clause-processor, so that we can use
 ; aok = t in the calls of ev-fncall! and ev-fncall just below.
 
-           (ev-fncall! fn args state nil t))
-          (t (ev-fncall fn args state nil
+           (ev-fncall! fn args state t))
+          (t (ev-fncall fn args
+                        nil ; irrelevant arg-exprs (as latches is nil)
+                        state
+                        nil ; latches
 
 ; The next argument, hard-error-returns-nilp, is nil.  Think hard before
 ; changing it!  For example, it guarantees that if a metafunction invokes
@@ -9631,13 +9936,18 @@
 ; asserting the validity of *mfc*, as based on its type-alist.  For example, if
 ; *mfc* has only one entry in its type-alist, and that entry binds (foo x) to
 ; (ts-complement *ts-integer*), then {*mfc*} is (not (integerp (foo x))).  For
-; notational convenience, we write "ev" below for a function symbol that is
-; definitely not the predefined ACL2 ev function!
+; notational convenience, we write "ev" below for an evaluator function symbol
+; (which thus is definitely not the predefined ACL2 ev function)!
+
+; Recall the ancestor relation: the transitive-reflexive closure of the
+; relation "g is an immediate ancestor of f" generated by pairs <f,g> where g
+; occurs in the axiom that introduces f.  Note that attachments are not
+; considered for this relation.
 
 ; Theorem.  Suppose that the following is a theorem, where the only axioms for
-; ev are evaluator axioms, where term, a, mfc, and state are variables with
+; ev are evaluator axioms; where term, a, mfc, and state are variables with
 ; those exact names (clearly this theorem then generalizes to more arbitrary
-; variables) and META-EXTRACT-HYPS is explained below.
+; variables); and where META-EXTRACT-HYPS is explained below.
 
 ;   (implies (and (pseudo-termp term)
 ;                 (alistp a)
@@ -9659,12 +9969,14 @@
 
 ; Let EXTRA-FNS be a set of 0, 1, or 2 symbols consisting of
 ; meta-extract-contextual-fact, meta-extract-global-fact+, or both, according
-; to which have top-level calls among meta-extract-hyps.
+; to which have top-level calls among META-EXTRACT-HYPS.
 
-; Finally, assume the following: ev is not ancestral in any defaxiom, in
-; meta-fn, in hyp-fn, or in EXTRA-FNS; no ancestor of ev or EXTRA-FNS with an
-; attachment is ancestral in meta-fn or hyp-fn; and no ancestor of any defaxiom
-; has an attachment.  (See chk-evaluator-use-in-rule for enforcement.)
+; Finally, assume the following: ev is not ancestral in any defaxiom or in
+; EXTRA-FNS; no ancestor of ev or EXTRA-FNS with an attachment is ancestral in
+; meta-fn or hyp-fn; and no ancestor of any defaxiom has an attachment.  (See
+; chk-evaluator-use-in-rule for enforcement.  Also see the Appendix below for a
+; remark about allowing an attachment to ev even if it is ancestral in meta-fn
+; or hyp-fn.)
 
 ; Then the following is a theorem of (mfc-world *mfc*), or equivalently (since
 ; the worlds have the same logical theory), (w *the-live-state*):
@@ -9714,7 +10026,7 @@
 ;   (implies (ev 'HYP A0)
 ;            (equal (ev 'LHS A0) (ev 'RHS A0)))
 
-; By functional instantiation, we may replace ev in the hypotheses of the
+; By functional instantiation, we may replace ev in the hypotheses of this
 ; theorem by an "extended" evaluator for a set of function symbols including
 ; all those that occur in hyp, lhs, or rhs.  (A long comment in
 ; defaxiom-supporters justifies this use of functional instantiation.)  Then by
@@ -9743,53 +10055,128 @@
 
 ; We instantiate as before, to obtain:
 
-;   (implies
-;    (and (pseudo-termp 'LHS)
-;         (alistp A0)
-;         (forall (obj1)
-;          (ev (meta-extract-contextual-fact obj1 *mfc* *the-live-state*)
-;              A0))
-;         (forall (obj2 st2 aa)
-;          (ev (meta-extract-global-fact+ obj2 st2 *the-live-state*) aa))
-;         (ev (hyp-fn 'LHS *mfc* *the-live-state*) A0))
-;    (equal (ev 'LHS A0)
-;           (ev (meta-fn 'LHS *mfc* *the-live-state*) A0)))
+; (1)  (implies
+;       (and (pseudo-termp 'LHS)
+;            (alistp A0)
+;            (forall (obj1)
+;             (ev (meta-extract-contextual-fact obj1 *mfc* *the-live-state*)
+;                 A0))
+;            (forall (obj2 st2 aa)
+;             (ev (meta-extract-global-fact+ obj2 st2 *the-live-state*) aa))
+;            (ev (hyp-fn 'LHS *mfc* *the-live-state*) A0))
+;       (equal (ev 'LHS A0)
+;              (ev (meta-fn 'LHS *mfc* *the-live-state*) A0)))
 
-; As before, this reduces by computation to the following theorem.
+; As before, this reduces by computation to the following formula.
 
-;   (implies
-;    (and (forall (obj1)
-;          (ev (meta-extract-contextual-fact obj1 *mfc* *the-live-state*)
-;              A0))
-;         (forall (obj2 st2 aa)
-;          (ev (meta-extract-global-fact+ obj2 st2 *the-live-state*) aa))
-;         (ev 'hyp A0))
-;    (equal (ev 'LHS A0) (ev 'RHS A0)))
+; (2)  (implies
+;       (and (forall (obj1)
+;             (ev (meta-extract-contextual-fact obj1 *mfc* *the-live-state*)
+;                 A0))
+;            (forall (obj2 st2 aa)
+;             (ev (meta-extract-global-fact+ obj2 st2 *the-live-state*) aa))
+;            (ev 'hyp A0))
+;       (equal (ev 'LHS A0) (ev 'RHS A0)))
 
-; We now deal with attachments; feel free to skip this paragraph on a first
-; read.  If attachments are used, then the formula displayed just above is
-; actually a theorem in the current evaluation theory, because of the use of
-; computation; we now argue that it is also a theorem of the current logical
-; world.  Consider the evaluation history h_e obtained from the current logical
-; world by considering only attachment pairs <f,g> for which f is ancestral in
-; hyp-fn or meta-fn.  The Attachment Restriction Lemma in the Essay on
-; Defattach justifies that h_e is indeed an evaluation history.  The
-; computations above use only attachments in h_e, because it is closed under
-; ancestors (also see the comment about mbe in constraint-info).  So the
-; formula displayed just above is a theorem of h_e.  But by hypothesis, no
-; ancestor of ev or EXTRA-FNS with an attachment occurs in h_e.  So for the
-; history h1 obtained by closing ev and EXTRA-FNS under ancestors in h_e
-; (including defaxioms, which never have ancestors with attachments, by the
-; Defaxiom Restriction for Defattach; see the Essay on Defattach), h1 contains
-; no attachments.  But h_e is conservative over h1 (a standard property of
-; histories), so by definition of conservativity, the formula displayed above
-; is a theorem of h1.  Since h1 is contained in the current logical world, that
-; formula is also a theorem of the current logical world.  So we justifiably
-; ignore attachments for the remainder of this discussion.
+; However, attachments may have been used in evaluating these calls of hyp-fn
+; and meta-fn.  So at this point, we know only that (2) is a theorem of the
+; evaluation theory.  Our intuition, however, is that the attachments can
+; somehow be renamed in an extension of the world so that they don't interfere
+; with ev or EXTRA-FNS, which can allow us to conclude by a conservativity
+; argument that (2) is a theorem of the current world.  We use that intuition
+; to prove the following claim.  We thank Sol Swords for a key observation
+; leading to the specific notion of "green" just below, which enabled us to
+; complete this proof.
 
-; Now we functionally instantiate as before, this time after introducing an
-; evaluator ev' that includes all currently known function symbols, thus
-; obtaining a world w' extending the current logical world, w.
+; Claim: (2) is a theorem of the current world.
+
+; Proof of Claim.  We replicate the current world by renaming each function
+; symbol for which some ancestor has an attachment.  For convenience, we view
+; each function symbol f in the original world, W0, as "red"; and if f is
+; renamed to a function symbol f', then f' is "green", the "green version of"
+; f.
+
+; Let W1 be the world isomorphic to W0 that results from applying this renaming
+; to the existing world, W0.  For a function symbol f in W0, we refer to its
+; "W1 version" as the corresponding green function symbol in W1 if such exists
+; (that is, if f has an ancestor in W0 with an attachment), else as f itself.
+; The notion of "green" in W1 is clearly "closed upward": if g' is green and
+; its corresponding red function in W0 is an ancestor of function f in W0, then
+; f is renamed to a green version in W1.  Note that every defaxiom event
+; consists entirely of red functions since, by hypothesis, no ancestor of any
+; defaxiom has an attachment.
+
+; Let W0- be the result of removing defattach events from W0.  Now imagine
+; including books for both worlds W0- and W1 to obtain a world W.  Thus, W
+; incorporates both W0 without defattach events and W1 with defattach events,
+; where every function with an attachment is green.  These worlds are
+; compatible because if the axiom in W1 introducing a function symbol f has any
+; call of a green function symbol, then f is green by the "closed upward"
+; property mentioned above; thus every axiom in W1 introducing a red function
+; symbol is redundant with (indeed, identical to) its axiom in W0.
+
+; Let (1') be the result of replacing hyp-fn and meta-fn in W0 with their W1
+; versions, hyp-fn' and meta-fn'.  Let fs be the functional substitution that
+; contains, for every green ancestor f' of hyp-fn' or meta-fn', the pair <f,f'>
+; where f is the red version of f'.  Note that ev is not in the domain of fs,
+; since otherwise it would have an ancestor f with an attachment that is also
+; an ancestor of hyp-fn or meta-fn, a contradiction.  Thus (1') is the result
+; of applying fs to (1), perhaps after replacing green pseudo-termp and/or
+; alistp by the provably equal corresponding red function; so we need only show
+; that fs is a valid functional substitution for (1) in W.  Recall this comment
+; in relevant-constraints, specifying which formulas need to remain theorems
+; when fs is applied to them.
+
+; The relevant theorems are the set of all terms, term, such that
+;   (a) term mentions some function symbol in the domain of alist,
+;   AND
+;   (b) either
+;      (i) term arises from a definition of or constraint on a function symbol
+;          ancestral either in thm or in some defaxiom,
+;       OR
+;      (ii) term is the body of a defaxiom.
+
+; In this case, the terms satisfying (b) are the axioms that introduce
+; ancestors of defaxioms or of hyp-fn, meta-fn, ev, EXTRA-FNS, alistp, or
+; pseudo-termp.  We need only consider those that also satisfy (a).  By
+; hypothesis no defaxiom has any ancestor with an attachment, so since every
+; function symbol is in the domain of fs, we may ignore defaxioms.  We also
+; ignore alistp and pseudo-termp since they and their ancestors are fully
+; defined, so any replacement of red by green yields a provably equal function.
+; Any axiom introducing an ancestor f of hyp-fn or meta-fn clearly is either
+; left alone by fs or else is mapped to the axiom introducing the green version
+; of f.  The proof is concluded by showing that the axiom introducing an
+; arbitrary ancestor f of ev or EXTRA-FNS mentions no symbol in the domain of
+; fs.  Suppose to the contrary that g is such a symbol; then since g has a
+; green version, there is an ancestor h of g such that h has an attachment.
+; But then h is a common ancestor of ev or EXTRA-FNS and also of either hyp-fn
+; or meta-fn, contradicting the hypothesis that no such common ancestor has an
+; attachment.
+
+; By the Evaluation History Theorem in the Essay on Defattach, there is a world
+; W' whose theory is the evaluation theory of W.  (That theorem assumes that
+; only encapsulated functions get attachments, but that's immaterial since we
+; can always logically replace a defun by an encapsulate that exports the
+; corresponding definition rule.)  Clearly any call of hyp-fn or meta-fn that
+; completes in W0 with attachments gives the same result as the corresponding
+; call of its W1 version in W1 with attachments, hence in W with attachments.
+; Therefore, just as (2) followed from (1) in our earlier "warmup" argument,
+; (2) also follows from (1') in W'.  Let W2 be the world obtained by
+; restricting W' to the set of ancestors of at least one of the (red) functions
+; ev, EXTRA-FNS, alistp, and pseudo-termp, and all defaxioms.  As usual the
+; theory of W' conservatively extends the theory of W2: both are worlds and W2
+; contains all defaxioms.  So (2) is a theorem of W2.  But W2 is contained in
+; W0, since W2 consists entirely of red functions by the "closed upward"
+; property for green functions.  Therefore (2) is a theorem of W0.
+
+; That completes the proof of the Claim.  Thus (2) is a theorem of the current
+; world, and we justifiably ignore attachments for the remainder of this
+; discussion.
+
+; Now we functionally instantiate (2).  We do so as in the earlier "warmup"
+; argument (which was made without considering attachments), this time after
+; introducing an evaluator ev' that includes all currently known function
+; symbols, thus obtaining a world w' extending the current logical world, w.
 
 ;   (implies
 ;    (and (forall (obj1)
@@ -9812,8 +10199,8 @@
 ;         HYP)
 ;    (equal LHS RHS))
 
-; Thus, it remains only to modify the rest of the original argument by dealing
-; with the two universally quantified hypotheses.
+; Thus, it remains only to modify the rest of the earlier "warmup" argument by
+; dealing with the two universally quantified hypotheses.
 
 ; Our first step is to show that the second universally quantified hypothesis,
 ; where we may as well ignore the forall quantifier, is a theorem of w'.  Let
@@ -9932,6 +10319,21 @@
 ; imagining that all such calls of return-last are expanded away before storing
 ; events.  The parameter rlp passed to our functions is true when this special
 ; handling of return-last is to be performed.
+
+; Appendix.  Sol Swords observes that the restrictions in the Theorem above may
+; be weakened to allow attachments ev* and ev*-lst to ev and ev-lst even if ev
+; is ancestral in meta-fn or hyp-fn, provided ev* and ev*-lst are an evaluator
+; pair and that neither they nor EXTRA-FNS have any ancestral attachments.  (He
+; also notes that these attachments need not be direct: they can be by way of a
+; chain of attachments.)  He sketches the following modification of the
+; argument above.  As before we derive (2) in the evaluation theory, by
+; reducing (1) using evaluation.  Let (2*) be the result of replacing ev by ev*
+; in (2); then since ev and ev* are provably equal in the evaluation theory,
+; (2*) also holds there.  Since (2*) has no functions with ancestral
+; attachments, it holds in the current world by the usual conservativity
+; argument, as before.  Finally, complete the argument (the part after the
+; Claim) as before, replacing ev by ev*; here we use the fact that ev* is an
+; evaluator.
 
 ; End of Essay on Correctness of Meta Reasoning
 
@@ -10264,8 +10666,12 @@
 (defun extend-unify-subst (alist unify-subst)
 
 ; We attempt to keep all terms in quote-normal form, which explains the use of
-; sublis-var-lst below.  There are also three related calls, all of the form
-; (sublis-var nil X), in rewrite-with-lemma.
+; quote-normal-form below.  There are also three calls of quote-normal-form in
+; rewrite-with-lemma.
+
+; The rest of this remark was written before the introduction of the function
+; quote-normal-form, using (sublis-var nil ...) instead, which, unlike
+; quote-normal-form, recurred inside calls of HIDE.
 
 ; We wondered if for large problems, the cost of exploring large terms might
 ; not be worth the benefit of maintaining quote-normal form, so we tried
@@ -10325,7 +10731,7 @@
 ; might need to be.)
 
   (append (pairlis$ (strip-cars alist)
-                    (sublis-var-lst nil (strip-cdrs alist)))
+                    (quote-normal-form (strip-cdrs alist)))
           unify-subst))
 
 (defun relieve-hyp-synp (rune hyp0 unify-subst rdepth type-alist wrld state
@@ -10446,8 +10852,8 @@
 
   `(cond ((and (null ,ancestors)
                (access rewrite-constant ,rcnst :splitter-output)
-               (ffnnamep 'if ,rhs)
-               (ffnnamep 'if ,rewritten-rhs))
+               (ffnnamep-hide 'if ,rhs t)
+               (ffnnamep-hide 'if ,rewritten-rhs t))
           (let ((rune ,rune)
                 (ttree ,ttree))
             (add-to-tag-tree 'splitter-if-intro rune
@@ -10467,8 +10873,8 @@
   `(cond ((and ,rune
                (null ,ancestors)
                (access rewrite-constant ,rcnst :splitter-output)
-               (ffnnamep 'if ,rhs)
-               (ffnnamep 'if ,rewritten-rhs))
+               (ffnnamep-hide 'if ,rhs t)
+               (ffnnamep-hide 'if ,rewritten-rhs t))
           (add-to-tag-tree 'splitter-if-intro ,rune ,ttree))
          (t ,ttree)))
 
@@ -11071,16 +11477,18 @@
 
 (defun dumb-occur-var (var term)
 
-; This function determines if variable var occurs in the given term.  This is
-; the same as dumb-occur, but optimized for the case that var is a variable.
+; This function determines if variable var occurs free in the given term.  This
+; is the same as dumb-occur, but optimized for the case that var is a variable.
 
+  (declare (xargs :guard (and (symbolp var) (pseudo-termp term))))
   (cond ((eq var term) t)
         ((variablep term) nil)
         ((fquotep term) nil)
         (t (dumb-occur-var-lst var (fargs term)))))
 
 (defun dumb-occur-var-lst (var lst)
-  (cond ((null lst) nil)
+  (declare (xargs :guard (and (symbolp var) (pseudo-term-listp lst))))
+  (cond ((endp lst) nil)
         (t (or (dumb-occur-var var (car lst))
                (dumb-occur-var-lst var (cdr lst))))))
 )
@@ -11880,11 +12288,9 @@
 
 ; Warning: If you consider making a call of this function, ask yourself whether
 ; make-lambda-term would be more appropriate; the answer depends on why you are
-; calling this function.  For example, the present function requires that every
-; free variable in body is a member of formals, but make-lambda-term does not.
-; The present function will drop an unused formal, but make-lambda-term does
-; not (though its caller could choose to "hide" such a formal; see
-; translate11-let).
+; calling this function.  In particular, the present function will drop an
+; unused formal, but make-lambda-term does not (though its caller could choose
+; to "hide" such a formal; see translate11-let).
 
 ; Example:
 ; (make-lambda-application '(x y z)
@@ -11906,20 +12312,19 @@
       body)
      ((equal formals actuals)
       body)
-     ((set-difference-eq vars formals)
-      (er hard? 'make-lambda-application
-          "Unexpected unbound vars ~x0"
-          (set-difference-eq (reverse vars) formals)))
-     (t
+     (t (let ((extra-vars (set-difference-eq vars formals)))
 
-; The slightly tricky thing here is to avoid using all the formals,
-; since some might be irrelevant.  Note that the call of
-; intersection-eq below is necessary rather than just using vars, even
-; though it is a no-op when viewed as a set operation (as opposed to a
-; list operation), in order to preserve the order of the formals.
+; The slightly tricky thing here is to avoid using all the formals, since some
+; might be irrelevant.  Note that the call of intersection-eq below is
+; necessary rather than just using vars, even though it is a no-op when viewed
+; as a set operation (as opposed to a list operation), in order to preserve the
+; order of the formals.
 
-      (fcons-term (make-lambda (intersection-eq formals vars) body)
-                  (collect-by-position vars formals actuals))))))
+          (fcons-term (make-lambda (append? (intersection-eq formals vars)
+                                            extra-vars)
+                                   body)
+                      (append? (collect-by-position vars formals actuals)
+                               extra-vars)))))))
 
 ; The following two functions help us implement lambda-hide commuting,
 ; e.g., ((LAMBDA (x) (HIDE body)) arg) => (HIDE ((LAMBDA (x) body) arg)).
@@ -11983,13 +12388,13 @@
 (defun forbidden-fns (wrld state)
 
 ; We compute a value of forbidden-fns using the values of globals
-; 'untouchable-fns and 'temp-touchable-fns and constant *ttag-fns-and-macros*.
-; We might expect it to be necessary be concerned about untouchable variables,
-; perhaps simply forbidding calls of makunbound-global and put-global; but the
-; event (def-glcp-interp-thm glcp-generic-interp-w-state-preserved ...) in
-; community book books/centaur/gl/gl-generic-interp.lisp actually calls
-; put-global.  But the live state won't be an argument to any function call in
-; the generated clause, so this isn't a concern.
+; 'untouchable-fns and 'temp-touchable-fns and constant *ttag-fns*.  We might
+; expect it to be necessary be concerned about untouchable variables, perhaps
+; simply forbidding calls of makunbound-global and put-global; but the event
+; (def-glcp-interp-thm glcp-generic-interp-w-state-preserved ...) in community
+; book books/centaur/gl/gl-generic-interp.lisp actually calls put-global.  But
+; the live state won't be an argument to any function call in the generated
+; clause, so this isn't a concern.
 
   (let* ((forbidden-fns0 (cond ((eq (f-get-global 'temp-touchable-fns state)
                                     t)
@@ -12002,13 +12407,12 @@
     (reverse-strip-cars
      (and (not (ttag wrld))
 
-; Although translate11 allows the use of *ttag-fns-and-macros* during the
-; boot-strap, we would be surprised to see such use.  So we save the cost of
-; the following test, but note here that it is likely OK to uncomment this
-; test.
+; Although translate11 allows the use of *ttag-fns* during the boot-strap, we
+; would be surprised to see such use.  So we save the cost of the following
+; test, but note here that it is likely OK to uncomment this test.
 
 ;         (not (global-val 'boot-strap-flg wrld))
-          *ttag-fns-and-macros*)
+          *ttag-fns*)
      forbidden-fns0)))
 
 (table skip-meta-termp-checks-table nil nil
@@ -12111,6 +12515,142 @@
   `(all-fnnames1 nil ,term ,ans))
 (defmacro all-ffn-symbs-lst (lst ans)
   `(all-fnnames1 t ,lst ,ans))
+
+(defun warrant-name (fn)
+
+; Warning: Keep this in sync with warrant-name-inverse.
+
+; From fn generate the name APPLY$-WARRANT-fn.
+
+  (declare (xargs :mode :logic ; :program mode may suffice, but this is nice
+                  :guard (symbolp fn)))
+  (intern-in-package-of-symbol
+   (concatenate 'string
+                "APPLY$-WARRANT-"
+                (symbol-name fn))
+   fn))
+
+(defun apply$-rule-name (fn)
+  (declare (xargs :guard (symbolp fn)))
+  (intern-in-package-of-symbol
+   (coerce (append '(#\A #\P #\P #\L #\Y #\$ #\-)
+                   (coerce (symbol-name fn) 'list))
+           'string)
+   fn))
+
+(defun push-warrants (fns target type-alist ens wrld ok-to-force ttree ttree0)
+
+; See the Essay on Evaluation of Apply$ and Loop$ Calls During Proofs.
+
+; This function is called when *aokp* is nil and *warrant-reqs* is non-nil.
+
+; Fns is a list of warranted function symbols, each an argument to
+; apply$-userfn or badge-userfn during evaluation of target, which is the
+; application of some function symbol to constants and may have subsidiary
+; calls of apply$-userfn.  If ok-to-force is true, then we update ttree by
+; forcing warrants that are not known, to justify the evaluation of target.
+; Since one of the arguments is type-alist, we do not expect to call this
+; function during preprocess-clause.  (This is reasonable since execution that
+; is conditional on warrants isn't "simple", just as rules with hypotheses
+; aren't simple.)
+
+; We return (mv erp ttree), where if erp is non-nil then ttree extends the
+; input ttree (which is initially ttree0) to justify that every symbol in fns
+; has a warrant and to record the application of each rule APPLY$-fn.  This is
+; a no-change loser: if erp is non-nil then the returned ttree is ttree0.  Note
+; however that if ok-to-force is true, then erp will be nil.
+
+; We overload ok-to-force just a bit.  At the top level it is Boolean.
+; Otherwise, it can be :immediate or :force, meaning that it is ok to force
+; (the top-level value of ok-to-force is t) and the mode is :immediate or not,
+; respectively.
+
+  (cond
+   ((endp fns) (mv nil ttree))
+   (t
+    (let* ((fn (car fns))
+           (warrant-name (warrant-name fn))
+           (warrant (fcons-term* warrant-name))
+           (fn-apply$-rule (list :rewrite (apply$-rule-name fn))))
+      (assert$
+       (and (function-symbolp warrant-name wrld)
+            (logicp warrant-name wrld))
+       (cond
+        ((enabled-runep fn-apply$-rule ens wrld)
+         (mv-let (knownp nilp ttree)
+           (known-whether-nil warrant type-alist ens nil nil wrld ttree)
+           (cond
+            (knownp
+             (cond
+              ((not nilp)
+               (push-warrants (cdr fns) target type-alist ens wrld ok-to-force
+                              (push-lemma fn-apply$-rule ttree)
+                              ttree0))
+              (t
+
+; The warrant is known to be false, which is presumably rare.  There is no
+; point in trying to force the warrant, so we cause an error.
+
+               (mv t ttree0))))
+            (ok-to-force
+             (let* ((ok-to-force
+                     (cond ((not (eq ok-to-force t))
+                            ok-to-force)
+; Else ok-to-force is t, and we convert it to :immediate or :force.
+                           ((enabled-numep *immediate-force-modep-xnume*
+                                           ens)
+                            :immediate)
+                           (t :force)))
+                    (immediatep (eq ok-to-force :immediate)))
+               (mv-let (force-flg ttree)
+                 (force-assumption fn-apply$-rule target warrant type-alist nil
+                                   immediatep t
+                                   (push-lemma fn-apply$-rule ttree))
+                 (declare (ignore force-flg)) ; still t
+                 (push-warrants (cdr fns) target type-alist ens wrld ok-to-force
+                                ttree ttree0))))
+            (t ; Forcing is disallowed, so we cause an error.
+             (mv t ttree0)))))
+        (t (mv t ttree0))))))))
+
+(defun comment-fn (x y)
+
+; If y is a term, then (comment-fn x y) is a term.  We take advantage of this
+; fact when calling comment-fn in hide-with-comment.
+
+  (declare (xargs :guard t))
+  `(return-last 'progn '(:comment . ,x) ,y))
+
+(defmacro comment (x y)
+  (comment-fn x y))
+
+(defstub hide-with-comment-p () t)
+(defattach hide-with-comment-p constant-t-function-arity-0)
+
+(defun hide-with-comment (val term state)
+
+; Warning: Keep this in sync with ev-fncall-null-body-erp.
+
+  (declare (xargs :mode :program))
+  (cond
+   ((hide-with-comment-p)
+    (let ((fn (and (consp val)
+                   (eq (car val) 'ev-fncall-null-body-er)
+                   (symbolp (cdr val))
+                   (cdr val))))
+      (cond ((null fn)
+             (fcons-term* 'hide term))
+            (t (let* ((str0 "Called constrained function ")
+                      (str (if (symbol-in-current-package-p fn state)
+                               (concatenate 'string str0 (symbol-name fn))
+                             (concatenate 'string
+                                          str0
+                                          (symbol-package-name fn)
+                                          "::"
+                                          (symbol-name fn)))))
+                 (fcons-term* 'hide
+                              (comment-fn str term)))))))
+   (t (fcons-term* 'hide term))))
 
 (mutual-recursion
 
@@ -12458,7 +12998,7 @@
                                     (dumb-negate-lit rewritten-test)
                                     ttree))
                                ((or (quotep rewritten-concl) ; not *nil*
-				    (equal rewritten-test rewritten-concl))
+                                    (equal rewritten-test rewritten-concl))
                                 (mv step-limit *t* ttree))
                                ((quotep rewritten-test) ; not *nil*
 
@@ -12518,57 +13058,66 @@
                                (access rewrite-constant rcnst :pt))))
            (t
             (let ((fn (ffn-symb term)))
-              (cond
-               ((and (eq fn 'mv-nth)
-                     (simplifiable-mv-nthp term alist))
+              (mv-let (mv-nth-result mv-nth-rewritep)
+                (if (eq fn 'mv-nth)
+                    (simplifiable-mv-nth term alist)
+                  (mv nil nil))
+                (cond
+                 (mv-nth-result
 
-; This is a special case.  We are looking at a term/alist of the form
-; (mv-nth 'i (cons x0 (cons x1 ... (cons xi ...)...))) and we immediately
-; rewrite it to xi and proceed to rewrite that.  Before we did this, we would
-; rewrite x0, x1, etc., all of which are irrelevant.  This code is helpful
-; because of the way (mv-let (v0 v1 ... vi ...) (foo ...) (p v0 ...))
+; This is a special case.  We are looking at a term/alist of the form (mv-nth
+; 'i (cons x0 (cons x1 ... (cons xi ...)...))) and we immediately rewrite it to
+; xi.  The mv-nth-result either needs further rewriting under the alist (when
+; mv-nth-rewritep is t) or was taken from the alist and needs no further
+; rewriting (in which case we finish by calling rewrite-solidify-plus, since
+; this case is similar to the variablep case of rewrite).  Before we did this,
+; we would rewrite x0, x1, etc., all of which are irrelevant.  This code is
+; helpful because of the way (mv-let (v0 v1 ... vi ...) (foo ...)  (p v0 ...))
 ; is translated.  Note however that the bkptr we report in the rewrite entry
-; below is 2, i.e., we say we are rewriting the 2nd arg of the mv-nth, when
-; in fact we are rewriting a piece of it (namely xi).
+; below is 2, i.e., we say we are rewriting the 2nd arg of the mv-nth, when in
+; fact we are rewriting a piece of it (namely xi).
 
-                (mv-let (term1 alist1)
-                        (simplifiable-mv-nth term alist)
+                  (let ((ttree (push-lemma
+                                (fn-rune-nume 'mv-nth nil nil wrld)
+                                ttree))
+                        (step-limit (1+f step-limit)))
+                    (declare (type (signed-byte 30) step-limit))
+                    (if mv-nth-rewritep
                         (rewrite-entry
-                         (rewrite term1 alist1 2)
-                         :ttree (push-lemma
-                                 (fn-rune-nume 'mv-nth nil nil wrld)
-                                 ttree))))
-               (t
-                (let ((ens (access rewrite-constant rcnst
-                                   :current-enabled-structure)))
-                  (mv-let
-                   (deep-pequiv-lst shallow-pequiv-lst)
-                   (pequivs-for-rewrite-args fn geneqv pequiv-info wrld ens)
-                   (sl-let
-                    (rewritten-args ttree)
-                    (rewrite-entry
-                     (rewrite-args (fargs term) alist 1 nil
-                                   deep-pequiv-lst shallow-pequiv-lst
-                                   geneqv fn)
-                     :obj '?
-                     :geneqv
-                     (geneqv-lst fn geneqv ens wrld)
-                     :pequiv-info nil ; ignored
-                     )
-                    (cond
-                     ((and
-                       (or (flambdap fn)
-                           (logicp fn wrld))
-                       (all-quoteps rewritten-args)
-                       (or
-                        (flambda-applicationp term)
-                        (and (enabled-xfnp fn ens wrld)
+                         (rewrite mv-nth-result alist 2))
+                      (rewrite-entry
+                       (rewrite-solidify-plus mv-nth-result)))))
+                 (t
+                  (let ((ens (access rewrite-constant rcnst
+                                     :current-enabled-structure)))
+                    (mv-let
+                      (deep-pequiv-lst shallow-pequiv-lst)
+                      (pequivs-for-rewrite-args fn geneqv pequiv-info wrld ens)
+                      (sl-let
+                       (rewritten-args ttree)
+                       (rewrite-entry
+                        (rewrite-args (fargs term) alist 1 nil
+                                      deep-pequiv-lst shallow-pequiv-lst
+                                      geneqv fn)
+                        :obj '?
+                        :geneqv
+                        (geneqv-lst fn geneqv ens wrld)
+                        :pequiv-info nil ; ignored
+                        )
+                       (cond
+                        ((and
+                          (or (flambdap fn)
+                              (logicp fn wrld))
+                          (all-quoteps rewritten-args)
+                          (or
+                           (flambda-applicationp term)
+                           (and (enabled-xfnp fn ens wrld)
 
 ; We don't mind disallowing constrained functions that have attachments,
 ; because the call of ev-fncall below disallows the use of attachments (last
 ; parameter, aok, is nil).  Indeed, we rely on this check in chk-live-state-p.
 
-                             (not (getpropc fn 'constrainedp nil wrld)))))
+                                (not (getpropc fn 'constrainedp nil wrld)))))
 
 ; Note: The test above, if true, leads here where we execute the
 ; executable-counterpart of the fn (or just go into the lambda
@@ -12581,23 +13130,43 @@
 ; provided such functions are currently toggled.  Undefined functions
 ; (e.g., car) pass the test.
 
-                      (cond ((flambda-applicationp term)
-                             (rewrite-entry
-                              (rewrite (lambda-body fn)
-                                       (pairlis$ (lambda-formals fn)
-                                                 rewritten-args)
-                                       'lambda-body)))
-                            (t
+                         (cond
+                          ((flambda-applicationp term)
+                           (rewrite-entry
+                            (rewrite (lambda-body fn)
+                                     (pairlis$ (lambda-formals fn)
+                                               rewritten-args)
+                                     'lambda-body)))
+                          (t
+                           (let ((ok-to-force (ok-to-force rcnst)))
                              (mv-let
-                              (erp val latches)
-                              (pstk
-                               (ev-fncall fn
-                                          (strip-cadrs rewritten-args)
-                                          state
-                                          nil t nil))
-                              (declare (ignore latches))
-                              (cond
-                               (erp
+                               (erp val apply$ed-fns)
+                               (pstk
+                                (ev-fncall+ fn
+                                            (strip-cadrs rewritten-args)
+
+; The strictp argument is nil here, as we will deal with required true warrants
+; in push-warrants, below.  See the Essay on Evaluation of Apply$ and Loop$
+; Calls During Proofs.
+
+                                            nil
+                                            state))
+                               (mv-let
+                                 (erp ttree)
+                                 (cond ((or erp
+
+; No special action is necessary if apply$ed-fns is nil, as opposed to a
+; non-empty list.
+
+                                            (null apply$ed-fns))
+                                        (mv erp ttree))
+                                       (t (push-warrants
+                                           apply$ed-fns
+                                           (cons-term fn rewritten-args)
+                                           type-alist ens wrld ok-to-force
+                                           ttree ttree)))
+                                 (cond
+                                  (erp
 
 ; We following a suggestion from Matt Wilding and attempt to rewrite the term
 ; before applying HIDE.  This is really a heuristic choice; we could choose
@@ -12606,33 +13175,34 @@
 ; apply in the rare case that the current function symbol (whose evaluation has
 ; errored out) is a compound recognizer.
 
-                                (let ((new-term1
-                                       (cons-term fn rewritten-args)))
-                                  (sl-let
-                                   (new-term2 ttree)
-                                   (rewrite-entry
-                                    (rewrite-with-lemmas new-term1))
-                                   (cond
-                                    ((equal new-term1 new-term2)
-                                     (mv step-limit
-                                         (fcons-term* 'hide new-term1)
+                                   (let ((new-term1
+                                          (cons-term fn rewritten-args)))
+                                     (sl-let
+                                      (new-term2 ttree)
+                                      (rewrite-entry
+                                       (rewrite-with-lemmas new-term1))
+                                      (cond
+                                       ((equal new-term1 new-term2)
+                                        (mv step-limit
+                                            (hide-with-comment erp new-term1
+                                                               state)
+                                            (push-lemma
+                                             (fn-rune-nume 'hide nil nil wrld)
+                                             ttree)))
+                                       (t (mv step-limit new-term2 ttree))))))
+                                  (t (mv step-limit
+                                         (kwote val)
                                          (push-lemma
-                                          (fn-rune-nume 'hide nil nil wrld)
-                                          ttree)))
-                                    (t (mv step-limit new-term2 ttree))))))
-                               (t (mv step-limit
-                                      (kwote val)
-                                      (push-lemma
-                                       (fn-rune-nume fn nil t wrld)
-                                       ttree))))))))
-                     (t
-                      (sl-let
-                       (rewritten-term ttree)
-                       (rewrite-entry
-                        (rewrite-primitive fn rewritten-args))
-                       (rewrite-entry
-                        (rewrite-with-lemmas
-                         rewritten-term))))))))))))))))
+                                          (fn-rune-nume fn nil t wrld)
+                                          ttree))))))))))
+                        (t
+                         (sl-let
+                          (rewritten-term ttree)
+                          (rewrite-entry
+                           (rewrite-primitive fn rewritten-args))
+                          (rewrite-entry
+                           (rewrite-with-lemmas
+                            rewritten-term)))))))))))))))))
 
 (defun rewrite-solidify-plus (term ; &extra formals
                               rdepth step-limit
@@ -12922,10 +13492,7 @@
                     ))
     (t (let* ((ens (access rewrite-constant rcnst
                            :current-enabled-structure))
-              (recog-tuple (most-recent-enabled-recog-tuple
-                            fn
-                            (global-val 'recognizer-alist wrld)
-                            ens)))
+              (recog-tuple (most-recent-enabled-recog-tuple fn wrld ens)))
          (cond
           (recog-tuple
            (prepend-step-limit
@@ -14597,17 +15164,20 @@
                                  (t
                                   (let* ((hyps0 (flatten-ands-in-lit
 
-; Note: The sublis-var below normalizes the explicit constant constructors,
-; e.g., (cons '1 '2) becomes '(1 . 2).  See the comment in extend-unify-subst.
+; Note: The quote-normal-form call below normalizes the explicit constant
+; constructors, e.g., (cons '1 '2) becomes '(1 . 2).  See the comment in
+; extend-unify-subst.
 
-                                                 (sublis-var nil evaled-hyp)))
+                                                 (quote-normal-form
+                                                  evaled-hyp)))
                                          (extra-hyps (flatten-ands-in-lit
 
-; Note: The sublis-var below normalizes the explicit constant constructors,
-; e.g., (cons '1 '2) becomes '(1 . 2).  See the comment in extend-unify-subst.
+; Note: The quote-normal-form call below normalizes the explicit constant
+; constructors, e.g., (cons '1 '2) becomes '(1 . 2).  See the comment in
+; extend-unify-subst.
 
-                                                      (sublis-var nil
-                                                                  extra-evaled-hyp)))
+                                                 (quote-normal-form
+                                                  extra-evaled-hyp)))
                                          (hyps (append? hyps0 extra-hyps))
                                          (vars (and hyps
 
@@ -14724,11 +15294,11 @@
                                            t
                                            (rewrite-entry (rewrite
 
-; Note: The sublis-var below normalizes the explicit constant constructors in
-; val, e.g., (cons '1 '2) becomes '(1 . 2).  See the comment in
+; Note: The quote-normal-form call below normalizes the explicit constant
+; constructors, e.g., (cons '1 '2) becomes '(1 . 2).  See the comment in
 ; extend-unify-subst.
 
-                                                           (sublis-var nil val)
+                                                 (quote-normal-form val)
 
 ; At one point we ignored the unify-subst constructed above and used a nil
 ; here.  That was unsound if val involved free vars bound by the relief of the
@@ -14933,12 +15503,12 @@
 
 ; Nqthm Discrepancy: In nqthm, the caller of rewrite-fncall,
 ; rewrite-with-lemmas, would ask whether the result was different from term and
-; whether it contained rewriteable calls.  If so, it called the rewriter on the
+; whether it contained rewritable calls.  If so, it called the rewriter on the
 ; result.  We have changed that here so that rewrite-fncall, in the case that
-; it is returning the expanded body, asks about rewriteable calls and possibly
-; calls rewrite again.  In the implementation below we ask about rewriteable
+; it is returning the expanded body, asks about rewritable calls and possibly
+; calls rewrite again.  In the implementation below we ask about rewritable
 ; calls only for recursively defined fns.  The old code asked the question on
-; all expansions.  It is possible the old code sometimes found a rewriteable
+; all expansions.  It is possible the old code sometimes found a rewritable
 ; call of a non-recursive fn in the expansion of that fn's body because of uses
 ; of that fn in the arguments.  So this is a possible difference between ACL2
 ; and nqthm, although we have no reason to believe it is significant and we do
@@ -15007,7 +15577,7 @@
 ; their handling in both rewrite-fncallp (where we take advantage of
 ; the knowledge that lambda-expressions will not occur in rewritten
 ; bodies unless the user has explicitly prevented us from opening
-; them) and contains-rewriteable-callp.
+; them) and contains-rewritable-callp.
 
                (cond
                 ((and (not (recursive-fn-on-fnstackp fnstack))
@@ -15165,7 +15735,7 @@
 ;                           ((ffnnamep 'if rewritten-body)
 
 ; Nqthm Discrepancy: This clause is new to ACL2.  Nqthm always rewrote the
-; rewritten body if it contained rewriteable calls.  This allows Nqthm to open
+; rewritten body if it contained rewritable calls.  This allows Nqthm to open
 ; up (member x '(a b c d e)) to a 5-way case split in "one" apparent rewrite.
 ; In an experiment I have added the proviso above, which avoids rewriting the
 ; rewritten body if it contains an IF.  This effectively slows down the opening
@@ -15213,7 +15783,7 @@
 
 ; takes forever unless you give the two disable hints shown above.
 
-                              ((contains-rewriteable-callp
+                              ((contains-rewritable-callp
                                 fn rewritten-body
                                 (if (cdr recursivep)
                                     recursivep

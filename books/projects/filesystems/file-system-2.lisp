@@ -1,7 +1,3 @@
-; Copyright (C) 2017, Regents of the University of Texas
-; Written by Mihir Mehta
-; License: A 3-clause BSD license.  See the LICENSE file distributed with ACL2.
-
 (in-package "ACL2")
 
 ;  file-system-2.lisp                                  Mihir Mehta
@@ -18,7 +14,7 @@
 ; l2-wrchs anew, although they were proved in file-system-1 for the filesystem
 ; described therein.
 
-(include-book "misc/assert" :dir :system)
+(include-book "std/testing/assert" :dir :system)
 (include-book "file-system-1")
 
 ; This function defines a valid filesystem. It's an alist where all the cars
@@ -37,10 +33,6 @@
                     (or (and (consp entry) (stringp (car entry)) (natp (cdr entry)))
                         (l2-fs-p entry))))))
          (l2-fs-p (cdr fs)))))
-
-;; This example - which evaluates to t - remains as a counterexample to an
-;; erstwhile bug.
-(defconst *test01* (l2-fs-p '((a  "Mihir" . 5) (b "Warren" . 6) (c))))
 
 ;; This function transforms an instance of l2 into an equivalent instance of l1.
 (defun l2-to-l1-fs (fs)
@@ -70,9 +62,6 @@
                 (consp (assoc-equal name fs))
                 (consp (cddr (assoc-equal name fs))))
            (l2-fs-p (cdr (assoc-equal name fs)))))
-
-(assert!
- (l2-fs-p '((a "Mihir" . 5) (b "Warren" . 6) (c (a "Mehta" . 5) (b "Hunt" . 4)))))
 
 ;; This function allows a file or directory to be found in a filesystem given a path.
 (defun l2-stat (hns fs)
@@ -608,30 +597,3 @@ That takes care of that
 ; Add file -- or, if you will, create a file with some initial contents
 
 ; and so on...
-
-;; (assign fs '((a "Mihir" . 5) (b "Warren" . 6) (c (a "Mehta" . 5) (b "Hunt" . 4))))
-
-;; (assign h1 '(a))
-;; (assign h2 '(a b))
-;; (assign h3 '(c b))
-;; (assign h4 '(c))
-
-;; (l2-stat (@ h1) (@ fs))
-;; (l2-stat (@ h2) (@ fs))
-;; (l2-stat (@ h3) (@ fs))
-;; (l2-stat (@ h4) (@ fs))
-
-;; (l2-wc-len (@ h1) (@ fs))
-;; (l2-wc-len (@ h2) (@ fs))
-;; (l2-wc-len (@ h3) (@ fs))
-;; (l2-wc-len (@ h4) (@ fs))
-
-;; (l2-wrchs (@ h1) (@ fs) 1 "athur")
-;; (l2-wrchs (@ h3) (@ fs) 1 "inojosa")
-;; (l2-wrchs (@ h3) (@ fs) 5 "Alvarez")
-;; (l2-wrchs (@ h2) (@ fs) 1 "athur") ;; buggy example
-
-;; (l2-unlink (@ h1) (@ fs))
-;; (l2-unlink (@ h2) (@ fs))
-;; (l2-unlink (@ h3) (@ fs))
-;; (l2-unlink (@ h4) (@ fs))

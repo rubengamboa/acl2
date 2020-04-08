@@ -12,7 +12,26 @@
 
 (set-verify-guards-eagerness 2)
 (include-book "std/util/bstar" :dir :system)
+(include-book "../utilities")
 ;(include-book "basis")
+
+;; PETE: add the global cgen::cgen-guard-checking to control how
+; guard-checking is handled.
+; The default value is :none, but set it to :all to get more error reporting.
+; See below.
+
+(defmacro get-cgen-guard-checking ()
+  `(@ cgen::cgen-guard-checking))
+
+(defmacro set-cgen-guard-checking (val)
+  `(make-event (er-progn (acl2::assign cgen::cgen-guard-checking, val)
+                         (value '(value-triple nil)))
+               :check-expansion t))
+
+(set-cgen-guard-checking :none)
+; How to set guard-checking 
+; (set-cgen-guard-checking :all)
+
 
 ;;-- create a new symbol with prefix or suffix appended
 ;;-- if its a common-lisp symbol then attach acl2 package name to it
@@ -27,8 +46,8 @@
          (name (string-append prefix name))
          (name (string-append name postfix)))
     (if (member-eq sym *common-lisp-symbols-from-main-lisp-package*)
-      (intern-in-package-of-symbol name 'acl2::acl2-pkg-witness)
-      (intern-in-package-of-symbol name sym))))
+      (acl2s::fix-intern-in-pkg-of-sym name 'acl2::acl2-pkg-witness)
+      (acl2s::fix-intern-in-pkg-of-sym name sym))))
 
 (defun modify-symbol-lst (prefix syms postfix)
   (declare (xargs :guard (and (symbol-listp syms)
@@ -86,14 +105,12 @@
 
 (defun to-symbol-in-package (sym pkg-name)
   (declare (xargs :guard (and (symbolp sym)
-                              (not (equal pkg-name ""))
-                              (stringp pkg-name))))
-  (intern$ (symbol-name sym) pkg-name))
+                              (pkgp pkg-name))))
+  (acl2s::fix-intern$ (symbol-name sym) pkg-name))
 
 (defun to-symbol-in-package-lst (sym-lst pkg)
   (declare (xargs :guard (and (symbol-listp sym-lst)
-                              (not (equal pkg ""))
-                              (stringp pkg))))
+                              (pkgp pkg))))
   (if (endp sym-lst)
       nil
     (cons (to-symbol-in-package (car sym-lst) pkg)
@@ -154,7 +171,9 @@
   (declare (xargs :mode :program
                   :stobjs (state)))
   (acl2::state-global-let*
-   ((acl2::guard-checking-on :none))
+;   ((acl2::guard-checking-on :none))
+;; PETE: now controlled by the global cgen::cgen-guard-checking
+   ((acl2::guard-checking-on (@ cgen-guard-checking)))
    (er-let* ((ans (trans-eval expr ctx state t)));for now aok is t
      (if (equal (car ans) '(nil))
        (value (cdr ans))
@@ -553,7 +572,9 @@
 (defun trans-eval2 (form ctx state)
   (declare (xargs :mode :program :stobjs state))
   (acl2::state-global-let*
-   ((acl2::guard-checking-on :none))
+;   ((acl2::guard-checking-on :none))
+;; PETE: now controlled by the global cgen::cgen-guard-checking
+   ((acl2::guard-checking-on (@ cgen-guard-checking)))
    (mv-let
     (erp trans bindings state)
     (acl2::translate1 form
@@ -571,7 +592,7 @@
               "Global variables, such as ~&0, are not allowed. See ~
                :DOC ASSIGN and :DOC @."
               (acl2::non-stobjps vars t (w state)))) ;;; known-stobjs = t
-         (t (acl2::ev-for-trans-eval trans vars nil ctx state t
+         (t (acl2::ev-for-trans-eval trans nil ctx state t
 
 ; Matt K. mod: Added conservative value of new argument,
 ; user-stobjs-modified-warning.
@@ -582,7 +603,9 @@
 (defun trans-eval-single-value-with-bindings (term bindings ctx state)
   (declare (xargs :mode :program :stobjs state))
   (acl2::state-global-let*
-   ((acl2::guard-checking-on :none))
+;   ((acl2::guard-checking-on :none))
+;; PETE: now controlled by the global cgen::cgen-guard-checking
+   ((acl2::guard-checking-on (@ cgen-guard-checking)))
    (er-let* ((term-val (acl2::simple-translate-and-eval term bindings nil
                                                         "" ctx (w state) state t)))
      (value (cdr term-val)))))
@@ -1061,9 +1084,9 @@ Mainly to be used for evaluating enum lists "
 ;;; always same as the name of the defrec, just like in stobjs. THis way we
 ;;; can drop in stobjs in their place!
 (defmacro access (r a)
-  `(acl2::access ,r ,r ,(intern-in-package-of-symbol (symbol-name a) :key)))
+  `(acl2::access ,r ,r ,(acl2s::fix-intern-in-pkg-of-sym (symbol-name a) :key)))
 (defmacro change (r a val )
-  `(acl2::change ,r ,r ,(intern-in-package-of-symbol (symbol-name a) :key) ,val))
+  `(acl2::change ,r ,r ,(acl2s::fix-intern-in-pkg-of-sym (symbol-name a) :key) ,val))
 
 
 

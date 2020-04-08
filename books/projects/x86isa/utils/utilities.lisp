@@ -45,9 +45,11 @@
 
 (include-book "xdoc/top" :dir :system)
 (include-book "std/util/define" :dir :system)
+(include-book "std/util/def-bound-theorems" :dir :system)
 (include-book "std/strings/case-conversion" :dir :system)
 (include-book "centaur/bitops/part-install" :dir :system)
-(include-book "centaur/gl/def-gl-rule" :dir :system)
+(include-book "centaur/bitops/fast-logext" :dir :system)
+(include-book "centaur/gl/defthm-using-gl" :dir :system)
 (local (include-book "centaur/bitops/ihs-extensions" :dir :system))
 (local (include-book "centaur/bitops/logbitp-bounds" :dir :system))
 
@@ -68,327 +70,12 @@
 
   :parents (utilities)
   :short "Macro that can be used to create event names by
-  concatenating strings, symbols, and numbers."
-  :long "@(def mk-name)
-
-@(def string-concatenate)"
-
-  (defun string-cat (lst)
-    (declare (xargs :verify-guards nil))
-    (cond ((atom lst)
-           "")
-          ((stringp (car lst))
-           (string-append (str::upcase-string (car lst))
-                          (string-cat (cdr lst))))
-          ((symbolp (car lst))
-           (string-append (symbol-name (car lst))
-                          (string-cat (cdr lst))))
-          ((natp (car lst))
-           (string-append
-            (coerce (explode-nonnegative-integer (car lst) 10 '())
-                    'string)
-            (string-cat (cdr lst))))
-          (t
-           (string-cat (cdr lst)))))
-
-  (defmacro string-concatenate (&rest x)
-    `(string-cat (list ,@x)))
+  concatenating strings, symbols, numbers, and characters."
+  :long "@(def mk-name)"
 
   (defmacro mk-name (&rest x)
     ;; Note that the package is X86ISA here.
-    `(intern$ (string-concatenate ,@x) "X86ISA"))
-
-  (defmacro acl2-mk-name (&rest x)
-    ;; Note that intern, unlike the regular Lisp reader, is sensitive to
-    ;; case.
-    `(intern (string-concatenate ,@x) "ACL2"))
-
-  )
-
-;; ======================================================================
-
-(defsection proving-bounds
-  :parents (utilities)
-
-  :short "Some helpful macros that generate appropriate rewrite,
-  type-prescription, and linear rules when needed"
-
-  :long "<ul>
-<li><p>Use the macro @('defthm-natp') to prove
-a @('type-prescription') rule saying that some function returns a @('natp'),
-and a @('linear') corollary saying that the function
-returns a value greater than or equal to zero.</p>
-
-<p>Usage:</p>
-
-@({
-
-  (defthm-natp <theorem-name>
-    :hyp <hypotheses>
-    :concl <conclusion>
-    :hints <usual ACL2 hints>)
-  })
-
-<p>The above form produces a theorem of the form:</p>
-
-@({
-  (defthm <theorem-name>
-    (implies <hypotheses>
-             (natp <conclusion>))
-    :hints <usual ACL2 hints>
-    :rule-classes
-    (:type-prescription
-     (:linear
-      :corollary
-      (implies <hypotheses>
-               (<= 0 <conclusion>))
-      :hints <usual ACL2 hints>)))
-
-  })
-
-</li>
-
-<li><p>Use the macro @('defthm-usb') to prove
-a @('rewrite') rule saying that some function returns an @('unsigned-byte-p'),
-a @('type-prescription') corollary saying that the function returns a @('natp'),
-and a @('linear') corollary saying that the function
-returns a value less than or equal to <tt>(expt 2 bound)</tt>.</p>
-
-<p>Usage:</p>
-
-@({
-
-  (defthm-usb <theorem-name>
-    :hyp <hypotheses>
-    :bound <n>
-    :concl <conclusion>
-    :hints <usual ACL2 hints for the main theorem>
-    :gen-type <t or nil>    ;; Generate :type-prescription corollary
-    :gen-linear <t or nil>  ;; Generate :linear corollary
-    :hyp-t <hypotheses for the :type-prescription corollary>
-    :hyp-l <hypotheses for the :linear corollary>
-    :hints-t <usual ACL2 hints for the :type-prescription corollary>
-    :hints-l <usual ACL2 hints for the :linear corollary>
-    :otf-flg <t or nil>)
-  })
-
-<p>The above form produces a theorem of the following form (if both
-@(':gen-type') and @(':gen-linear') are @('t')):</p>
-
-@({
-  (defthm <theorem-name>
-    (implies <hypotheses>
-             (unsigned-byte-p <n> <conclusion>))
-    :hints <usual ACL2 hints for the main theorem>
-    :otf-flg <t or nil>
-    :rule-classes
-    (:rewrite
-     (:type-prescription
-      :corollary
-      (implies <hypotheses for the :type-prescription corollary>
-               (natp <conclusion>))
-      :hints <usual ACL2 hints for the :type-prescription corollary>)
-     (:linear
-      :corollary
-      (implies <hypotheses for the :linear corollary>
-               (< <conclusion> (expt 2 <n>)))
-      :hints <usual ACL2 hints for the :linear corollary>)))
-
-  })
-
-</li>
-
-<li><p>Use the macro @('defthm-sb') to prove
-a @('rewrite') rule saying that some function returns a @('signed-byte-p'),
-a @('type-prescription') corollary saying that the function returns an
-@('integerp'), and a @('linear') corollary saying that the function
-returns a value greater than or equal to <tt>(- (expt 2 (1-
-bound)))</tt> and less than <tt>(expt 2 (1- bound))</tt>.</p>
-
-<p>Usage:</p>
-
-@({
-
-  (defthm-sb <theorem-name>
-    :hyp <hypotheses>
-    :bound <n>
-    :concl <conclusion>
-    :hints <usual ACL2 hints for the main theorem>
-    :gen-type <t or nil>    ;; Generate :type-prescription corollary
-    :gen-linear <t or nil>  ;; Generate :linear corollary
-    :hyp-t <hypotheses for the :type-prescription corollary>
-    :hyp-l <hypotheses for the :linear corollary>
-    :hints-t <usual ACL2 hints for the :type-prescription corollary>
-    :hints-l <usual ACL2 hints for the :linear corollary>
-    :otf-flg <t or nil>)
-  })
-
-<p>The above form produces a theorem of the form: (if both
-@(':gen-type') and @(':gen-linear') are @('t'))</p>
-
-@({
-  (defthm <theorem-name>
-    (implies <hypotheses>
-             (signed-byte-p <n> <conclusion>))
-    :hints <usual ACL2 hints for the main theorem>
-    :otf-flg <t or nil>
-    :rule-classes
-    (:rewrite
-     (:type-prescription
-      :corollary
-      (implies <hypotheses for the :type-prescription corollary>
-               (integerp <conclusion>))
-      :hints <usual ACL2 hints for the :type-prescription corollary>)
-     (:linear
-      :corollary
-      (implies <hypotheses for the :linear corollary>
-               (and (<= (- (expt 2 (1- <n>)) <conclusion>))
-               (< <conclusion> (expt 2 (1- <n>)))))
-      :hints <usual ACL2 hints for the :linear corollary>)))
-
-  })
-
-</li>
-
-</ul>"
-
-  ;; since corollaries must just follow from their theorems,
-  ;; it may be possible to generate simpler hints for the corollaries below
-
-  (defmacro defthm-natp (name &key hyp concl hints)
-    (if concl
-        `(defthm ,name
-           ,(if (atom hyp)
-                `(natp ,concl)
-              `(implies ,hyp (natp ,concl)))
-           ,@(and hints `(:hints ,hints))
-           :rule-classes
-           (:type-prescription
-            (:linear
-             :corollary
-             ,(if (atom hyp)
-                  `(<= 0 ,concl)
-                `(implies ,hyp (<= 0 ,concl)))
-             ,@(and hints `(:hints ,hints)))))
-      nil))
-
-  (defmacro defthm-usb
-      (name &key hyp bound concl
-            gen-type gen-linear
-            hyp-t hyp-l
-            hints
-            hints-t hints-l
-            otf-flg)
-
-    (if (and concl bound)
-        (let ((hints-t (or hints-t hints))
-              (hints-l (or hints-l hints))
-              (2^bound (if (natp bound)
-                           (expt 2 bound)
-                         `(expt 2 ,bound))))
-          `(defthm ,name
-             ,(if (atom hyp)
-                  `(unsigned-byte-p ,bound ,concl)
-                `(implies ,hyp
-                          (unsigned-byte-p ,bound ,concl)))
-             ,@(and hints `(:hints ,hints))
-             ,@(and otf-flg `(:otf-flg t))
-             :rule-classes
-             (:rewrite
-              ,@(and gen-type
-                     `((:type-prescription
-                        :corollary
-                        ,(if (or (and (atom hyp-t) (atom hyp))
-                                 (equal hyp-t 't))
-                             `(natp ,concl)
-                           `(implies ,(or hyp-t hyp)
-                                     (natp ,concl)))
-                        ,@(and hints-t `(:hints ,hints-t)))))
-              ,@(and gen-linear
-                     `((:linear
-                        :corollary
-                        ,(if (or (and (atom hyp-l) (atom hyp))
-                                 (equal hyp-l 't))
-                             `(< ,concl ,2^bound)
-                           `(implies ,(or hyp-l hyp)
-                                     (< ,concl ,2^bound)))
-                        ,@(and hints-l `(:hints ,hints-l))))))))
-      nil))
-  ;; no need to generate a (>= ... 0) linear rule so far
-
-  (defmacro defthm-sb
-      (name &key hyp bound concl
-            gen-type gen-linear
-            hyp-t hyp-l
-            hints
-            hints-t hints-l
-            otf-flg)
-
-    (if (and concl bound)
-        (let* ((hints-t (or hints-t hints))
-               (hints-l (or hints-l hints))
-               (2^bound-1 (if (natp bound)
-                              (expt 2 (1- bound))
-                            `(expt 2 (1- ,bound))))
-               (low-2^bound-1 (if (natp bound)
-                                  (- 2^bound-1)
-                                `(- (expt 2 (1- ,bound))))))
-          `(defthm ,name
-             ,(if (atom hyp)
-                  `(signed-byte-p ,bound ,concl)
-                `(implies ,hyp
-                          (signed-byte-p ,bound ,concl)))
-             ,@(and hints `(:hints ,hints))
-             ,@(and otf-flg `(:otf-flg t))
-             :rule-classes
-             (:rewrite
-              ,@(and gen-type
-                     `((:type-prescription
-                        :corollary
-                        ,(if (or (and (atom hyp-t) (atom hyp))
-                                 (equal hyp-t 't))
-                             `(integerp ,concl)
-                           `(implies ,(or hyp-t hyp)
-                                     (integerp ,concl)))
-                        ,@(and hints-t `(:hints ,hints-t)))))
-              ,@(and gen-linear
-                     `((:linear
-                        :corollary
-                        ,(if (or (and (atom hyp-l) (atom hyp))
-                                 (equal hyp-l 't))
-                             `(and
-                               (<= ,low-2^bound-1 ,concl)
-                               (< ,concl ,2^bound-1))
-                           `(implies ,(or hyp-l hyp)
-                                     (and
-                                      (<= ,low-2^bound-1 ,concl)
-                                      (< ,concl ,2^bound-1))))
-                        ,@(and hints-l `(:hints ,hints-l))))))))
-      nil)))
-
-;; Misc.:
-
-(defmacro def-gl-export
-  (name &key hyp concl g-bindings rule-classes)
-
-  (if (and hyp concl g-bindings)
-
-      (let ((gl-name (mk-name name "-GL")))
-
-        `(progn
-
-           (gl::def-gl-ruledl
-            ,gl-name
-            :hyp ,hyp
-            :concl ,concl
-            :g-bindings ,g-bindings)
-
-           (defthm ,name
-             (implies ,hyp ,concl)
-             :hints (("Goal" :in-theory (theory 'minimal-theory)
-                      :use ((:instance ,gl-name))))
-             :rule-classes ,(or rule-classes :rewrite))))
-    nil))
+    `(acl2::packn-pos (list ,@x) 'x86isa::mk-name)))
 
 ;; ======================================================================
 
@@ -411,99 +98,79 @@ bound)))</tt> and less than <tt>(expt 2 (1- bound))</tt>.</p>
   convert between @('natp') and @('integerp'), etc."
 
   :long "<p>Definitions of constants (of the form @('2^W')) and
-functions/macros grouped in @('ruleset')s of the following form are defined (where W is at
-least a two-digit natural number; @('8') is represented as
+functions/macros grouped in @('ruleset')s of the following form are defined
+(where @('W') is at least a two-digit natural number; @('8') is represented as
 @('08')):</p>
 
 <ul>
-<li> @('nWp') belongs to @('nwp-defs') ruleset.
+
+<li>@('nWp') belongs to @('nwp-defs') ruleset.
 @({
     (define nWp (x)
       (unsigned-byte-p W x))
 })</li>
 
-<li> @('nW') belongs to @('nw-defs') ruleset.
+<li>@('nW') belongs to @('nw-defs') ruleset.
 @({
     (define nW ((x integerp))
       (mbe :logic (loghead W x)
            :exec (logand 2^W-1 x)))
 })</li>
 
-<li> @('iWp') belongs to @('iwp-defs') ruleset.
+<li>@('iWp') belongs to @('iwp-defs') ruleset.
 @({
     (define iWp (x)
       (signed-byte-p W x))
 })</li>
 
-<li> @('iW') belongs to @('iw-defs') ruleset.
+<li>@('iW') belongs to @('iw-defs') ruleset.
 @({
     (define iW ((x integerp))
       (logext W x))
 })</li>
 
-<li> @('nW-to-iW') belongs to @('nw-to-iw-defs') ruleset.
+<li>@('nW-to-iW') belongs to @('nw-to-iw-defs') ruleset.
 @({
     (define nW-to-iW ((x nWp :type (unsigned-byte W)))
         (mbe :logic (logext W x)
              :exec (if (< x 2^(W-1)) x (- x 2^W))))
 })</li>
 
-<li> @('iW-to-nW') belongs to @('iw-to-nw-defs') ruleset.
+<li>@('iW-to-nW') belongs to @('iw-to-nw-defs') ruleset.
 @({
     (define iW-to-Nw ((x iWp :type (signed-byte W)))
-        (mbe :logic (logext W x)
+        (mbe :logic (loghead W x)
              :exec (if (>= x 0) x (+ x 2^W))))
 })</li>
 
 </ul>
 
-<p> The function @('np-def-n') is used to automatically create these
-constants and functions; it also proves some associated lemmas.</p>"
+<p>The function @('np-def-n') is used to automatically create these
+constants and functions; it also proves some associated lemmas.</p>")
 
+;; Lemmas to help in the MBE proof obligations
+;; of the generated NTOI and ITON functions below:
 
-  )
+(defruledl logext-when-unsigned-byte-p-and-sign-changes
+  (implies (and (unsigned-byte-p size x)
+                (<= (expt 2 (1- size)) x))
+           (equal (logext size x) (- x (expt 2 size))))
+  :prep-books ((include-book "arithmetic-5/top" :dir :system))
+  :enable (logext logapp loghead))
 
-;; Lemmas to help in the MBE proof obligation of ntoi rules:
-
-(local
- (encapsulate
-  ()
-
-  (local (include-book "arithmetic/top-with-meta" :dir :system))
-
-  (defthm logext-is-the-same-as-ntoi-helper-1
-    (implies (and (unsigned-byte-p (1+ n) x)
-                  (<= 0 n)
-                  (< x (expt 2 n)))
-             (equal (loghead n x) x)))))
-
-(local
- (encapsulate
-  ()
-  (local (include-book "arithmetic-5/top" :dir :system))
-
-  (defthm logext-is-the-same-as-ntoi-helper-2
-    (implies (and (unsigned-byte-p (1+ n) x)
-                  (not (zp (1+ n)))
-                  (<= (expt 2 n) x))
-             (equal (logapp n x -1)
-                    (+ x (- (expt 2 (1+ n))))))
-    :hints (("Goal" :in-theory (e/d (logapp loghead) ()))))
-
-  (defthm logext-is-the-same-as-ntoi-helper-3
-    (implies (and (unsigned-byte-p (1+ n) x)
-                  (logbitp n x)
-                  (natp n)
-                  (< x (expt 2 n)))
-             (equal (logapp n x -1)
-                    x))
-    :hints (("Goal" :in-theory (e/d (logapp logbitp) ()))))
-
-  (defthm loghead-is-the-same-as-iton-helper
-    (implies (signed-byte-p n x)
-             (equal (loghead n x)
-                    (if (>= x 0) x (+ x (expt 2 n)))))
-    :hints (("Goal" :in-theory (enable loghead** logcons))))))
+(defruledl loghead-when-signed-byte-p-and-sign-changes
+  (implies (and (signed-byte-p size x)
+                (< x 0))
+           (equal (loghead size x) (+ (expt 2 size) x)))
+  :prep-books ((include-book "arithmetic-5/top" :dir :system))
+  :enable loghead
+  :prep-lemmas
+  ((defrule lemma
+     (implies (posp size)
+              (< (expt 2 (1- size))
+                 (expt 2 size)))
+     :rule-classes :linear
+     :prep-books ((include-book "arithmetic/top" :dir :system)))))
 
 (def-ruleset nwp-defs       nil)
 (def-ruleset nw-defs        nil)
@@ -513,24 +180,26 @@ constants and functions; it also proves some associated lemmas.</p>"
 (def-ruleset iw-to-nw-defs  nil)
 
 (define np-def-n (n)
-  :mode :program ;; NP-DEF-N is a :program mode function
+  :mode :program
   :guard (posp n)
   :parents (constants-conversions-and-bounds)
-  (let* ((str-n          (symbol-name (if (< n 10)
-                                          (acl2::packn (list 0 n))
-                                        (acl2::packn (list n)))))
-         (digits         (symbol-name (acl2::packn (list n))))
-         (2^XY           (mk-name "*2^" digits "*"))
-         (nXYp           (mk-name "N" str-n "P"))
-         (nXY            (mk-name "N" str-n))
-         (iXYp           (mk-name "I" str-n "P"))
-         (iXY            (mk-name "I" str-n))
-         (ntoi           (mk-name "N" str-n "-TO-I" str-n))
-         (iton           (mk-name "I" str-n "-TO-N" str-n)))
+  (let* ((str-n  (symbol-name (if (< n 10)
+                                  (acl2::packn (list 0 n))
+                                (acl2::packn (list n)))))
+         (digits (symbol-name (acl2::packn (list n))))
+         (2^XY   (mk-name "*2^" digits "*"))
+         (nXYp   (mk-name "N" str-n "P"))
+         (nXY    (mk-name "N" str-n))
+         (iXYp   (mk-name "I" str-n "P"))
+         (iXY    (mk-name "I" str-n))
+         (ntoi   (mk-name "N" str-n "-TO-I" str-n))
+         (iton   (mk-name "I" str-n "-TO-N" str-n)))
     (list
 
      `(defconst ,2^XY
         (expt 2 ,n))
+
+     ;; All the following functions are kept enabled.
 
      `(define ,nXYp (x)
         ;; XY-bit natural number recognizer
@@ -543,8 +212,7 @@ constants and functions; it also proves some associated lemmas.</p>"
      `(define ,nXY ((x integerp))
         ;; Truncate input to an XY-bit natural number
         ;; This function can be used to convert, say a 32-bit integer
-        ;; to a 32-bit natural number.  We choose to keep this function
-        ;; enabled.
+        ;; to a 32-bit natural number.
         :inline t
         :no-function t
         :enabled t
@@ -553,31 +221,33 @@ constants and functions; it also proves some associated lemmas.</p>"
              :exec (logand ,(1- (expt 2 n)) x)))
 
      `(define ,iXYp (x)
+        ;; XY-bit integer recognizer
         :inline t
         :no-function t
         :enabled t
         :parents (constants-conversions-and-bounds)
-        ;; XY-bit integer recognizer
         (signed-byte-p ,n x))
 
      `(define ,iXY ((x integerp))
         ;; Truncate input to an XY-bit signed integer number
         ;; This function can be used to convert, say a 32-bit natural number
-        ;; to a 32-bit integer.  We choose to keep this function
-        ;; enabled.
+        ;; to a 32-bit integer.
         :inline t
         :no-function t
         :enabled t
         :parents (constants-conversions-and-bounds)
-        (logext ,n x))
+        (mbe :logic (logext ,n x)
+             :exec (bitops::fast-logext ,n x)))
 
      `(define ,ntoi
+        ;; Convert natural number to integer
         :inline t
         :no-function t
         :enabled t
         :parents (constants-conversions-and-bounds)
-        ;; Convert natural number to integer
-        :guard-hints (("Goal" :in-theory (enable logext)))
+        :guard-hints (("Goal"
+                       :in-theory
+                       (enable logext-when-unsigned-byte-p-and-sign-changes)))
         ((x ,nXYp :type (unsigned-byte ,n)))
 
         (mbe :logic (logext ,n x)
@@ -586,11 +256,14 @@ constants and functions; it also proves some associated lemmas.</p>"
                      (- x ,(expt 2 n)))))
 
      `(define ,iton
+        ;; Convert integer to natural number
         :inline t
         :no-function t
         :enabled t
         :parents (constants-conversions-and-bounds)
-        ;; Convert integer to natural number
+        :guard-hints (("Goal"
+                       :in-theory
+                       (enable loghead-when-signed-byte-p-and-sign-changes)))
         ((x ,iXYp :type (signed-byte ,n)))
 
         (mbe :logic (loghead ,n x)
@@ -620,22 +293,18 @@ constants and functions; it also proves some associated lemmas.</p>"
 (defuns-np 1 2 3 4 5 6 8 9 11 12 16 17 18 20 21 22 24 25 26 27 28
   30 32 33 35 43 44 45 47 48 49 51 52 55 59 60 64 65 80 112 120 128 256 512)
 
-
 (defmacro n-size (n x)
-  ;; I prefer using n-size in functions that generate functions. E.g.,
-  ;; see gpr-add-spec-gen-fn in
-  ;; machine/instructions-spec/add-adc-sub-sbb-or-and-xor-cmp-test.lisp.
+  ;; We prefer using n-size in functions that generate functions. E.g.,
+  ;; see gpr-add-spec-gen-fn in machine/instructions/add-spec.lisp.
   (let* ((fn-name (mk-name "N"
                            (symbol-name (if (< n 10)
                                             (acl2::packn (list 0 n))
                                           (acl2::packn (list n)))))))
     `(,fn-name ,x)))
 
-
 (defmacro ntoi (n x)
-  ;; I prefer using ntoi in functions that generate functions. E.g.,
-  ;; see idiv-spec-gen in
-  ;; machine/instructions-spec/div-idiv.lisp
+  ;; We prefer using ntoi in functions that generate functions. E.g.,
+  ;; see idiv-spec-gen in machine/instructions/divide-spec.lisp.
   (let* ((val (symbol-name (if (< n 10)
                                (acl2::packn (list 0 n))
                              (acl2::packn (list n)))))
@@ -643,7 +312,7 @@ constants and functions; it also proves some associated lemmas.</p>"
     `(,fn-name ,x)))
 
 (define trunc
-  ;; I prefer using trunc in function definitions.
+  ;; We prefer using trunc in function definitions.
   ((n :type (integer 0 *))
    (x :type integer))
   :inline t
@@ -677,7 +346,7 @@ constants and functions; it also proves some associated lemmas.</p>"
                        (alistp y))))
   :hints (("Goal" :induct (revappend x y))))
 
-(defthm alist-list-to-alist
+(defthm alistp-of-list-to-alist
   (implies (alistp acc)
            (alistp (list-to-alist x i acc))))
 
@@ -717,6 +386,12 @@ constants and functions; it also proves some associated lemmas.</p>"
                           :name ,name)
                  ,@alist))))
 
+;; =============================================================================
+
+;; Maps a list of integers to a corresponding list of Booleans,
+;; treating 0 as false.  Example: (ints-to-booleans '(0 1 0 0 1)) ==>
+;; (nil t nil nil t).
+
 (defun ints-to-booleans-acc (x acc)
   (declare (xargs :guard (and (integer-listp x)
                               (true-listp acc))))
@@ -726,11 +401,6 @@ constants and functions; it also proves some associated lemmas.</p>"
                                        acc)))))
 
 (defun ints-to-booleans (x)
-
-  ;; Maps a list of integers to a corresponding list of Booleans,
-  ;; treating 0 as false.  Example: (ints-to-booleans '(0 1 0 0 1)) ==>
-  ;; (nil t nil nil t).
-
   (declare (xargs :guard (integer-listp x)))
   (ints-to-booleans-acc x nil))
 

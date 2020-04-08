@@ -1,5 +1,5 @@
-; ACL2 Version 8.1 -- A Computational Logic for Applicative Common Lisp
-; Copyright (C) 2018, Regents of the University of Texas
+; ACL2 Version 8.2 -- A Computational Logic for Applicative Common Lisp
+; Copyright (C) 2019, Regents of the University of Texas
 
 ; This version of ACL2 is a descendent of ACL2 Version 1.9, Copyright
 ; (C) 1997 Computational Logic, Inc.  See the documentation topic NOTE-2-0.
@@ -56,12 +56,7 @@
 (verify-termination-boot-strap cons-term) ; and guards
 (verify-termination-boot-strap symbol-class) ; and guards
 
-; observation1-cw
-
-(verify-termination-boot-strap observation1-cw)
-(verify-guards observation1-cw)
-
-; packn1 and packn
+; packn1, packn, and pack-to-string
 
 (verify-termination-boot-strap packn1) ; and guards
 
@@ -83,25 +78,10 @@
 (verify-termination-boot-strap packn-pos) ; and guards
 (verify-termination-boot-strap find-first-non-cl-symbol) ; and guards
 (verify-termination-boot-strap packn) ; and guards
+(verify-termination-boot-strap pack-to-string) ; and guards
 )
 
 (verify-termination-boot-strap read-file-into-string1) ; and guards
-
-(encapsulate
- ()
-
-; At one the following local lemma seemed to be helpful, but it is not
-; currently necessary.  If we simplify read-file-into-string2, for example by
-; removing ec-call, then perhaps we will need this lemma once again.
-
-;(local
-; (defthm stringp-read-file-into-string1
-;   (implies (car (read-file-into-string1 channel state ans bound))
-;            (stringp (car (read-file-into-string1 channel state ans
-;                                                  bound))))))
-
- (verify-termination-boot-strap read-file-into-string2) ; and guards
- )
 
 ; miscellaneous
 
@@ -111,6 +91,7 @@
 (verify-termination-boot-strap pairlis-x1) ; and guards
 (verify-termination-boot-strap pairlis-x2) ; and guards
 (verify-termination-boot-strap first-keyword) ; and guards
+(verify-termination-boot-strap symbol-name-lst) ; and guards
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Attachment: too-many-ifs-post-rewrite and too-many-ifs-pre-rewrite
@@ -1093,12 +1074,14 @@
                   :guard (symbolp name)))
   (let ((wrld (w state)))
     (or (getpropc name 'theorem nil wrld)
-        (mv-let (flg prop)
-          (constraint-info name wrld)
-          (cond ((unknown-constraints-p prop)
-                 *t*)
-                (flg (ec-call (conjoin prop)))
-                (t prop))))))
+        (cond ((logicp name wrld)
+               (mv-let (flg prop)
+                 (constraint-info name wrld)
+                 (cond ((unknown-constraints-p prop)
+                        *t*)
+                       (flg (ec-call (conjoin prop)))
+                       (t prop))))
+              (t *t*)))))
 
 (verify-termination-boot-strap type-set-quote)
 (verify-guards type-set-quote)
@@ -1191,19 +1174,24 @@
         *t*))
      (& *t*))))
 
+(defun rewrite-rule-term-exec (x)
+  (declare (xargs :guard (and (weak-rewrite-rule-p x)
+                              (or (eq (access rewrite-rule x :subclass) 'meta)
+                                  (true-listp (access rewrite-rule x :hyps))))))
+  (if (eq (access rewrite-rule x :subclass) 'meta)
+      *t*
+    `(implies ,(conjoin (access rewrite-rule x :hyps))
+              (,(access rewrite-rule x :equiv)
+               ,(access rewrite-rule x :lhs)
+               ,(access rewrite-rule x :rhs)))))
+
 (defun rewrite-rule-term (x)
 
-; This function is not intended to be executed.  It turns a rewrite-rule record
-; into a term.
+; This function turns a rewrite-rule record into a term.  Consider using
+; rewrite-rule-term-exec instead when its guard doesn't cause problems.
 
   (declare (xargs :guard t))
-  (non-exec
-   (if (eq (access rewrite-rule x :subclass) 'meta)
-       *t*
-     `(implies ,(conjoin (access rewrite-rule x :hyps))
-               (,(access rewrite-rule x :equiv)
-                ,(access rewrite-rule x :lhs)
-                ,(access rewrite-rule x :rhs))))))
+  (ec-call (rewrite-rule-term-exec x)))
 
 (defmacro meta-extract-global-fact (obj state)
 ; See meta-extract-global-fact+.
@@ -1211,20 +1199,23 @@
 
 (defun fncall-term (fn arglist state)
   (declare (xargs :stobjs state
-                  :guard (true-listp arglist)))
-  (mv-let (erp val)
-          (magic-ev-fncall fn arglist state
-                           t   ; hard-error-returns-nilp
-                           nil ; aok
-                           )
-          (cond (erp *t*)
-                (t (fcons-term* 'equal
+                  :guard (and (symbolp fn)
+                              (true-listp arglist))))
+  (cond ((logicp fn (w state))
+         (mv-let (erp val)
+           (magic-ev-fncall fn arglist state
+                            t  ; hard-error-returns-nilp
+                            nil ; aok
+                            )
+           (cond (erp *t*)
+                 (t (fcons-term* 'equal
 
 ; As suggested by Sol Swords, we use fcons-term below in order to avoid having
 ; to reason about the application of an evaluator to (cons-term fn ...).
 
-                                (fcons-term fn (kwote-lst arglist))
-                                (kwote val))))))
+                                 (fcons-term fn (kwote-lst arglist))
+                                 (kwote val))))))
+        (t *t*)))
 
 (defun logically-equivalent-states (st1 st2)
    (declare (xargs :guard t))

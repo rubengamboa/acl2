@@ -10,8 +10,6 @@
 
 (in-package "ACL2")
 
-(include-book "kestrel/utilities/xdoc/constructors" :dir :system)
-
 (include-book "add-to-set-theorems")
 (include-book "append-theorems")
 (include-book "index-of-theorems")
@@ -26,7 +24,6 @@
 (include-book "set-difference-theorems")
 (include-book "set-size")
 (include-book "take-theorems")
-(include-book "union-theorems")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -34,7 +31,7 @@
   :parents (kestrel-utilities lists)
   :short "Some utilities for @(see lists)."
   :long
-  (xdoc::topapp
+  (xdoc::topstring
    (xdoc::p
     "These are for lists with elements of any types,
      similarly to @(see std/lists).

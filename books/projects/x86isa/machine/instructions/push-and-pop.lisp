@@ -4,7 +4,7 @@
 ; http://opensource.org/licenses/BSD-3-Clause
 
 ; Copyright (C) 2015, Regents of the University of Texas
-; Copyright (C) 2018, Kestrel Technology, LLC
+; Copyright (C) 2019, Kestrel Technology, LLC
 ; All rights reserved.
 
 ; Redistribution and use in source and binary forms, with or without
@@ -96,6 +96,7 @@
 ;; ======================================================================
 
 (def-inst x86-push-general-register
+
   :parents (one-byte-opcodes)
 
   :short "PUSH: 50+rw/rd"
@@ -118,21 +119,8 @@
 
   :body
 
-  (b* ((ctx 'x86-push-general-register)
-
-       (p3? (eql #.*operand-size-override*
-		 (prefixes->opr prefixes)))
-
-       ((the (integer 1 8) operand-size)
-	(if (equal proc-mode #.*64-bit-mode*)
-	    (if p3? 2 8)
-	  (b* (((the (unsigned-byte 16) cs-attr)
-		(xr :seg-hidden-attr #.*cs* x86))
-	       (cs.d
-		(code-segment-descriptor-attributesBits->d cs-attr)))
-	    (if (= cs.d 1)
-		(if p3? 2 4)
-	      (if p3? 4 2)))))
+  (b* (((the (integer 1 8) operand-size)
+        (select-operand-size proc-mode nil rex-byte nil prefixes t t nil x86))
 
        (rsp (read-*sp proc-mode x86))
        ((mv flg new-rsp) (add-to-*sp proc-mode rsp (- operand-size) x86))
@@ -177,6 +165,7 @@
     x86))
 
 (def-inst x86-push-Ev
+
   :parents (one-byte-opcodes)
 
   :short "PUSH: FF /6 r/m"
@@ -200,36 +189,23 @@
 						 signed-byte-p
 						 unsigned-byte-p)))))
 
+  :modr/m t
+
   :body
 
-  (b* ((ctx 'x86-push-Ev)
-
-       (p2 (prefixes->seg prefixes))
-       (p3? (eql #.*operand-size-override*
-		 (prefixes->opr prefixes)))
+  (b* ((p2 (prefixes->seg prefixes))
        (p4? (eql #.*addr-size-override*
 		 (prefixes->adr prefixes)))
 
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-
        ((the (integer 1 8) operand-size)
-	(if (equal proc-mode #.*64-bit-mode*)
-	    (if p3? 2 8)
-	  (b* (((the (unsigned-byte 16) cs-attr)
-		(xr :seg-hidden-attr #.*cs* x86))
-	       (cs.d
-		(code-segment-descriptor-attributesBits->d cs-attr)))
-	    (if (= cs.d 1)
-		(if p3? 2 4)
-	      (if p3? 4 2)))))
+        (select-operand-size proc-mode nil rex-byte nil prefixes t t nil x86))
 
        (rsp (read-*sp proc-mode x86))
 
        ((mv flg new-rsp) (add-to-*sp proc-mode rsp (- operand-size) x86))
        ((when flg) (!!fault-fresh :ss 0 :push flg)) ;; #SS(0)
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        ((mv flg0 E (the (unsigned-byte 3) increment-RIP-by) ?E-addr x86)
 	(x86-operand-from-modr/m-and-sib-bytes
@@ -307,25 +283,13 @@
 
   :body
 
-  (b* ((ctx 'x86-push-I)
-
-       (p3? (eql #.*operand-size-override*
-		 (prefixes->opr prefixes)))
-
-       (byte-imm? (eql opcode #x6A))
+  (b* ((byte-imm? (eql opcode #x6A))
        ((the (integer 1 8) imm-size)
-	(select-operand-size proc-mode byte-imm? rex-byte t prefixes x86))
+	(select-operand-size
+         proc-mode byte-imm? rex-byte t prefixes nil nil nil x86))
 
        ((the (integer 1 8) operand-size)
-	(if (equal proc-mode #.*64-bit-mode*)
-	    (if p3? 2 8)
-	  (b* (((the (unsigned-byte 16) cs-attr)
-                (xr :seg-hidden-attr #.*cs* x86))
-	       (cs.d
-		(code-segment-descriptor-attributesBits->d cs-attr)))
-	    (if (= cs.d 1)
-		(if p3? 2 4)
-	      (if p3? 4 2)))))
+        (select-operand-size proc-mode nil rex-byte nil prefixes t t nil x86))
 
        (rsp (read-*sp proc-mode x86))
        ((mv flg new-rsp) (add-to-*sp proc-mode rsp (- operand-size) x86))
@@ -377,12 +341,13 @@
     x86))
 
 (def-inst x86-push-segment-register
+
   :parents (one-byte-opcodes two-byte-opcodes)
 
   :short "PUSH Segment Register"
   :long
   "<p>Note that PUSH CS/SS/DS/ES are invalid in 64-bit mode.  Only PUSH FS/GS
-  are valid in 64-bit mode.</p>
+   are valid in 64-bit mode.</p>
 
    <p><tt>0E</tt>:    \[PUSH CS\]</p>
    <p><tt>16</tt>:    \[PUSH SS\]</p>
@@ -392,11 +357,16 @@
    <p><tt>0F A8</tt>: \[PUSH GS\]</p>
 
    <p>If the source operand is a segment register \(16 bits\) and the operand
-   size is 64-bits, a zero- extended value is pushed on the stack; if the
+   size is 64-bits, a zero-extended value is pushed on the stack; if the
    operand size is 32-bits, either a zero-extended value is pushed on the stack
    or the segment selector is written on the stack using a 16-bit move. For the
    last case, all recent Core and Atom processors perform a 16-bit move,
    leaving the upper portion of the stack location unmodified.</p>
+
+   <p>For now, our model handles the last case described above by doing a
+   16-bit move. This should be how all modern processor work. In the future, we
+   might parameterize the model on a flag that says how this case is handled
+   (modern or legacy).</p>
 
    <p>PUSH doesn't have a separate instruction semantic function, unlike other
    opcodes like ADD, SUB, etc. The decoding is coupled with the execution in
@@ -411,21 +381,8 @@
 
   :body
 
-  (b* ((ctx 'x86-push-general-register)
-
-       (p3? (eql #.*operand-size-override*
-		 (prefixes->opr prefixes)))
-
-       ((the (integer 1 8) operand-size)
-	(if (equal proc-mode #.*64-bit-mode*)
-	    (if p3? 2 8)
-	  (b* (((the (unsigned-byte 16) cs-attr)
-                (xr :seg-hidden-attr #.*cs* x86))
-	       (cs.d
-		(code-segment-descriptor-attributesBits->d cs-attr)))
-	    (if (= cs.d 1)
-		(if p3? 2 4)
-	      (if p3? 4 2)))))
+  (b* (((the (integer 1 8) operand-size)
+        (select-operand-size proc-mode nil rex-byte nil prefixes t t nil x86))
 
        (rsp (read-*sp proc-mode x86))
        ((mv flg new-rsp) (add-to-*sp proc-mode rsp (- operand-size) x86))
@@ -444,15 +401,19 @@
        ;; Update the x86 state:
 
        ((mv flg x86)
-	(wme-size-opt proc-mode operand-size
-		  (the (signed-byte #.*max-linear-address-size*) new-rsp)
-		  #.*ss*
-		  ;; If operand-size is 64, val is zero-extended here
-		  ;; automatically.
-		  val
-		  (alignment-checking-enabled-p x86)
-		  x86
-		  :mem-ptr? nil))
+	(wme-size-opt proc-mode
+                      ;; If the operand size is 32 bits, only write the low 16
+                      ;; bits to the stack, leaving the high 16 bits unchanges;
+                      ;; otherwise, write 64 or 16 bits, and in the case of 64
+                      ;; bits the 16-bit value is zero-extended. See the
+                      ;; documentation of this function, above.
+                      (if (= operand-size 4) 2 operand-size)
+                      (the (signed-byte #.*max-linear-address-size*) new-rsp)
+                      #.*ss*
+                      val
+                      (alignment-checking-enabled-p x86)
+                      x86
+                      :mem-ptr? nil))
        ((when flg) ;; Would also handle bad rsp values.
 	(cond
 	 ;; FIXME? The non-canonical-address error won't come up here
@@ -475,9 +436,11 @@
 ;; ======================================================================
 
 (def-inst x86-pop-general-register
+
   :parents (one-byte-opcodes)
 
   :short "POP: 58+rw/rd"
+
   :long "<p>Op/En: O</p>
    <p><tt>58+rw/rd r16/r32/r64</tt></p>
    <p>Note that <tt>58+rd r32</tt> is N.E. in the 64-bit mode
@@ -495,21 +458,8 @@
 						 unsigned-byte-p)))))
   :body
 
-  (b* ((ctx 'x86-pop-general-register)
-
-       (p3? (eql #.*operand-size-override*
-		 (prefixes->opr prefixes)))
-
-       ((the (integer 1 8) operand-size)
-	(if (equal proc-mode #.*64-bit-mode*)
-	    (if p3? 2 8)
-	  (b* (((the (unsigned-byte 16) cs-attr)
-                (xr :seg-hidden-attr #.*cs* x86))
-	       (cs.d
-		(code-segment-descriptor-attributesBits->d cs-attr)))
-	    (if (= cs.d 1)
-		(if p3? 2 4)
-	      (if p3? 4 2)))))
+  (b* (((the (integer 1 8) operand-size)
+        (select-operand-size proc-mode nil rex-byte nil prefixes t t nil x86))
 
        (rsp (read-*sp proc-mode x86))
 
@@ -557,6 +507,7 @@
   :guard-hints (("Goal" :in-theory (enable rme-size))))
 
 (def-inst x86-pop-Ev
+
   :parents (one-byte-opcodes)
 
   :short "POP: 8F/0 r/m"
@@ -579,29 +530,17 @@
 						(select-operand-size
 						 signed-byte-p
 						 unsigned-byte-p)))))
+
+  :modr/m t
+
   :body
 
-  (b* ((ctx 'x86-pop-Ev)
-
-       (p2 (prefixes->seg prefixes))
-       (p3? (equal #.*operand-size-override*
-		   (prefixes->opr prefixes)))
+  (b* ((p2 (prefixes->seg prefixes))
        (p4? (equal #.*addr-size-override*
 		   (prefixes->adr prefixes)))
 
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-
        ((the (integer 1 8) operand-size)
-	(if (equal proc-mode #.*64-bit-mode*)
-	    (if p3? 2 8)
-	  (b* (((the (unsigned-byte 16) cs-attr)
-                (xr :seg-hidden-attr #.*cs* x86))
-	       (cs.d
-		(code-segment-descriptor-attributesBits->d cs-attr)))
-	    (if (= cs.d 1)
-		(if p3? 2 4)
-	      (if p3? 4 2)))))
+        (select-operand-size proc-mode nil rex-byte nil prefixes t t nil x86))
 
        (rsp (read-*sp proc-mode x86))
 
@@ -636,7 +575,7 @@
        ((when flg1) ;; #SS exception?
 	(!!ms-fresh :x86-effective-addr-error flg1))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        ((mv flg temp-rip) (add-to-*ip proc-mode temp-rip increment-RIP-by x86))
        ((when flg) (!!fault-fresh :gp 0 :increment-ip-error flg)) ;; #GP(0)
@@ -676,9 +615,11 @@
   )
 
 ;; (def-inst x86-pop-segment-register
+
 ;;   :parents (one-byte-opcodes)
 
 ;;   :short "POP FS/GS"
+
 ;;   :long "<p><tt>0F A1</tt>: \[POP FS\]</p>
 ;; <p><tt>0F A9</tt>: \[POP GS\]</p>
 ;;    <p>Popping other segment registers in the 64-bit mode is
@@ -700,18 +641,16 @@
 
 ;;   :guard-debug t
 
+;;   :modr/m t
+
 ;;   :body
 
-;;   (b* ((ctx 'x86-pop-Ev)
-;;        (lock (equal #.*lock* (prefixes->lck prefixes)))
+;;   (b* ((lock (equal #.*lock* (prefixes->lck prefixes)))
 ;;        ((when lock)
 ;;         (!!ms-fresh :lock-prefix prefixes))
 ;;        (p2 (prefixes->group-2-prefix prefixes))
 ;;        (p3 (equal #.*operand-size-override*
 ;;               (prefixes->group-3-prefix prefixes)))
-
-;;        (r/m (modr/m->r/m modr/m))
-;;        (mod (modr/m->mod modr/m))
 
 ;;        ((the (integer 1 8) operand-size)
 ;;         (if p3
@@ -798,6 +737,7 @@
 
   ;; #x9C: Op/En: NP
   :parents (one-byte-opcodes)
+
   :guard-hints (("Goal" :in-theory (e/d (riml08 riml32) ())))
 
   :returns (x86 x86p
@@ -809,21 +749,8 @@
 
   :body
 
-  (b* ((ctx 'x86-pushf)
-
-       (p3? (equal #.*operand-size-override*
-		   (prefixes->opr prefixes)))
-
-       ((the (integer 1 8) operand-size)
-	(if (equal proc-mode #.*64-bit-mode*)
-	    (if p3? 2 8)
-	  (b* (((the (unsigned-byte 16) cs-attr)
-                (xr :seg-hidden-attr #.*cs* x86))
-	       (cs.d
-		(code-segment-descriptor-attributesBits->d cs-attr)))
-	    (if (= cs.d 1)
-		(if p3? 2 4)
-	      (if p3? 4 2)))))
+  (b* (((the (integer 1 8) operand-size)
+        (select-operand-size proc-mode nil rex-byte nil prefixes t t nil x86))
 
        (rsp (read-*sp proc-mode x86))
        ((mv flg new-rsp) (add-to-*sp proc-mode rsp (- operand-size) x86))
@@ -932,6 +859,7 @@
   ;; end if
 
   :parents (one-byte-opcodes)
+
   :guard-hints (("Goal" :in-theory (e/d (riml08 riml32) ())))
 
   :returns (x86 x86p
@@ -943,21 +871,8 @@
 
   :body
 
-  (b* ((ctx 'x86-popf)
-
-       (p3? (equal #.*operand-size-override*
-		   (prefixes->opr prefixes)))
-
-       ((the (integer 1 8) operand-size)
-	(if (equal proc-mode #.*64-bit-mode*)
-	    (if p3? 2 8)
-	  (b* (((the (unsigned-byte 16) cs-attr)
-                (xr :seg-hidden-attr #.*cs* x86))
-	       (cs.d
-		(code-segment-descriptor-attributesBits->d cs-attr)))
-	    (if (= cs.d 1)
-		(if p3? 2 4)
-	      (if p3? 4 2)))))
+  (b* (((the (integer 1 8) operand-size)
+        (select-operand-size proc-mode nil rex-byte nil prefixes t t nil x86))
 
        (rsp (read-*sp proc-mode x86))
 
@@ -1057,12 +972,12 @@
 
   :prepwork
   ((local (in-theory (e/d* () (not (tau-system))))))
+
   :body
 
-  (b* ((ctx 'x86-pusha)
-
-       ((the (integer 2 4) operand-size)
-	(select-operand-size proc-mode nil 0 nil prefixes x86))
+  (b* (((the (integer 2 4) operand-size)
+	(select-operand-size
+         proc-mode nil 0 nil prefixes nil nil nil x86))
 
        (rsp (read-*sp proc-mode x86))
 
@@ -1187,10 +1102,10 @@
 			   ((tau-system))))))
 
   :body
-  (b* ((ctx 'x86-popa)
 
-       ((the (integer 2 4) operand-size)
-	(select-operand-size proc-mode nil 0 nil prefixes x86))
+  (b* (((the (integer 2 4) operand-size)
+	(select-operand-size
+         proc-mode nil 0 nil prefixes nil nil nil x86))
 
        (rsp (read-*sp proc-mode x86))
 

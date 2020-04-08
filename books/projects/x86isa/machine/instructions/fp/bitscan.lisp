@@ -104,18 +104,15 @@
 
   :guard-hints (("Goal" :in-theory (enable reg-index)))
 
-  :returns (x86 x86p :hyp (and (x86p x86)
-                               (canonical-address-p temp-rip)))
+  :returns (x86 x86p :hyp (x86p x86))
+
+  :modr/m t
 
   :body
-  (b* ((ctx 'x86-bsf-Op/En-RM)
 
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-
-       ((the (integer 2 8) operand-size)
-        (select-operand-size proc-mode nil rex-byte nil prefixes x86))
+  (b* (((the (integer 2 8) operand-size)
+        (select-operand-size
+         proc-mode nil rex-byte nil prefixes nil nil nil x86))
 
        ((the (unsigned-byte 4) rgf-index)
         (reg-index reg rex-byte #.*r*))
@@ -124,7 +121,7 @@
        (p4? (eql #.*addr-size-override*
                  (prefixes->adr prefixes)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        (inst-ac? t)
        ((mv flg0

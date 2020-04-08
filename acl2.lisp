@@ -1,5 +1,5 @@
-; ACL2 Version 8.1 -- A Computational Logic for Applicative Common Lisp
-; Copyright (C) 2018, Regents of the University of Texas
+; ACL2 Version 8.2 -- A Computational Logic for Applicative Common Lisp
+; Copyright (C) 2019, Regents of the University of Texas
 
 ; This version of ACL2 is a descendent of ACL2 Version 1.9, Copyright
 ; (C) 1997 Computational Logic, Inc.  See the documentation topic NOTE-2-0.
@@ -40,6 +40,11 @@
 ; verified using ACL2, and (c) makes a couple of checks concerning minor,
 ; non-CLTL, assumptions that we make about Common Lisps in which ACL2 is to
 ; run.
+
+; Other programs may want a compile-time check for whether ACL2 is running, so
+; we push this feature.
+
+(push :ACL2 *features*)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;                            CLTL1/CLTL2
@@ -1058,7 +1063,7 @@ ACL2 from scratch.")
    (setq acl2::*copy-of-acl2-version*
 ;  Keep this in sync with the value of acl2-version in *initial-global-table*.
          (concatenate 'string
-                      "ACL2 Version 8.1"
+                      "ACL2 Version 8.2"
                       #+non-standard-analysis
                       "(r)"
                       #+(and mcl (not ccl))
@@ -1410,8 +1415,8 @@ ACL2 from scratch.")
             ("COMMON-LISP")
             (with-warnings-suppressed ,@forms)))
 
-; The following prevents an error when SBCL compiles ec-calls in the definition
-; of concrete-apply$-lambda.  We may do something more principled in the near
+; The following may prevent an error when SBCL compiles ec-calls in the
+; definition of apply$-lambda.  We may do something more principled in the
 ; future.  The names could be obtained with (add-suffix name *inline-suffix*),
 ; except that add-suffix and inline-suffix* are not yet defined here.  We could
 ; wait until they are, but then we'd need to teach note-fns-in-form about
@@ -2712,3 +2717,4 @@ You are using version ~s.~s.~s."
 
 #+ccl ; originally for ACL2(h), but let's make behavior the same for ACL2
 (setq ccl::*quit-on-eof* t)
+

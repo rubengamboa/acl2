@@ -1,5 +1,5 @@
-; ACL2 Version 8.1 -- A Computational Logic for Applicative Common Lisp
-; Copyright (C) 2018, Regents of the University of Texas
+; ACL2 Version 8.2 -- A Computational Logic for Applicative Common Lisp
+; Copyright (C) 2019, Regents of the University of Texas
 
 ; This version of ACL2 is a descendent of ACL2 Version 1.9, Copyright
 ; (C) 1997 Computational Logic, Inc.  See the documentation topic NOTE-2-0.
@@ -486,6 +486,10 @@
 ; as a delimiter -- thus, even "**" is probably OK for a constant since the
 ; empty string is delimited.  But it doesn't seem important to change this
 ; now.  If we do make such a change, consider the following (at least).
+
+; - Be sure to rule out * in any package as a stobj name, since in a signature,
+;   such a symbol denotes a non-stobj (see for example collect-non-* and see
+;   mentions of "*" in functions that involve signatures).
 
 ; - It will be necessary to update :doc defconst.
 
@@ -2751,7 +2755,7 @@
            (xargs :guard (and (<= maximum (length s)) ; typically, =
                               (<= (+ i j) maximum)
                               (or (null err-flg)
-				  (not (= (+ i j) maximum))))))
+                                  (not (= (+ i j) maximum))))))
   (the character
        (cond ((< (+f i j) maximum)
 
@@ -5654,9 +5658,10 @@
 
   (declare (ignore state))
   (prog2$
-   (io? error t state (alist str ctx)
-        (error-fms nil ctx str alist state)
-        :chk-translatable nil)
+   (our-with-terminal-input ; probably not necessary because of (io? ... t ...)
+    (io? error t state (alist str ctx)
+         (error-fms nil ctx str alist state)
+         :chk-translatable nil))
    (mv@par t nil state)))
 
 (defun error1-safe (ctx str alist state)
@@ -5958,7 +5963,7 @@
    (accessor-name . updater-name)
    resize-name
    resizable
-   . other ; e.g., for hacking in community book books/add-ons/hash-stobjs.lisp
+   . other ; for a hash-table field
    )
   nil)
 
@@ -6011,6 +6016,18 @@
 (defun pack2 (n1 n2)
   (packn (list n1 n2)))
 
+(defun defstobj-fnname-key2 (type)
+
+; This function provides the value of the key2 argument of defstobj-fnname when
+; it is not :top.
+
+  (if (consp type)
+      (case (car type)
+        (array :array)
+        (hash-table :hash-table)
+        (t :scalar))
+    :scalar))
+
 (defun defstobj-fnname (root key1 key2 renaming-alist)
 
 ; Warning: Keep this in sync with stobj-updater-guess-from-accessor.
@@ -6019,23 +6036,16 @@
 ; by defstobj.  Root and renaming-alist are, respectively, a symbol and an
 ; alist.  Key1 describes which function name we are to generate and is one of
 ; :length, :resize, :recognizer, :accessor, :updater, or :creator.  Key2
-; describes the ``type'' of root.  It is :top if root is the name of the live
-; object (and hence, root starts with a $) and it is otherwise either :array or
-; :non-array.  Note that if renaming-alist is nil, then this function returns
-; the ``default'' name used.  If renaming-alist pairs some default name with an
-; illegal name, the result is, of course, an illegal name.
+; describes the ``type'' of root.  It is :top if root is the name of the stobj
+; and it is otherwise either :array, :hash-table, or :scalar (see
+; defstobj-fnname-key2).  Note that if renaming-alist is nil, then this
+; function returns the ``default'' name used.  If renaming-alist pairs some
+; default name with an illegal name, the result is, of course, an illegal name.
 
   (let* ((default-fnname
            (case key1
              (:recognizer
-              (case key2
-                (:top
-                 (packn-pos
-                  (list (coerce (append (coerce (symbol-name root) 'list)
-                                        '(#\P))
-                                'string))
-                  root))
-                (otherwise (packn-pos (list root "P") root))))
+              (packn-pos (list root "P") root))
 
 ; This function can legitimately return nil for key1 values of :length
 ; and :resize.  We are careful in the assoc-eq call below not to look
@@ -6051,16 +6061,36 @@
              (:accessor
               (case key2
                 (:array (packn-pos (list root "I") root))
+                (:hash-table (packn-pos (list root "-GET") root))
                 (otherwise root)))
              (:updater
               (case key2
                 (:array (packn-pos (list "UPDATE-" root "I") root))
+                (:hash-table (packn-pos (list root "-PUT") root))
                 (otherwise (packn-pos (list "UPDATE-" root) root))))
              (:creator
               (packn-pos (list "CREATE-" root) root))
+             (:boundp
+              (and (eq key2 :hash-table)
+                   (packn-pos (list root "-BOUNDP") root)))
+             (:accessor?
+              (and (eq key2 :hash-table)
+                   (packn-pos (list root "-GET?") root)))
+             (:remove
+              (and (eq key2 :hash-table)
+                   (packn-pos (list root "-REM") root)))
+             (:count
+              (and (eq key2 :hash-table)
+                   (packn-pos (list root "-COUNT") root)))
+             (:clear
+              (and (eq key2 :hash-table)
+                   (packn-pos (list root "-CLEAR") root)))
+             (:init
+              (and (eq key2 :hash-table)
+                   (packn-pos (list root "-INIT") root)))
              (otherwise
               (er hard 'defstobj-fnname
-                  "Implementation error (bad case); please contact ACL2 ~
+                  "Implementation error (bad case); please contact the ACL2 ~
                    implementors."))))
          (temp (and default-fnname ; see comment above
                     (assoc-eq default-fnname renaming-alist))))
@@ -6126,13 +6156,17 @@
            (resizable (if (consp field-desc)
                           (cadr (assoc-keyword :resizable (cdr field-desc)))
                         nil))
-           (key2 (if (and (consp type)
-                          (eq (car type) 'array))
-                     :array
-                   :non-array))
+           (key2 (defstobj-fnname-key2 type))
            (fieldp-name (defstobj-fnname field :recognizer key2 renaming))
            (accessor-name (defstobj-fnname field :accessor key2 renaming))
            (updater-name (defstobj-fnname field :updater key2 renaming))
+           (boundp-name (defstobj-fnname field :boundp key2 renaming))
+           (accessor?-name (defstobj-fnname field :accessor? key2
+                             renaming))
+           (remove-name (defstobj-fnname field :remove key2 renaming))
+           (count-name (defstobj-fnname field :count key2 renaming))
+           (clear-name (defstobj-fnname field :clear key2 renaming))
+           (init-name (defstobj-fnname field :init key2 renaming))
            (resize-name (defstobj-fnname field :resize key2 renaming))
            (length-name (defstobj-fnname field :length key2 renaming)))
       (cons (make defstobj-field-template
@@ -6146,7 +6180,14 @@
                   :updater-name updater-name
                   :length-name length-name
                   :resize-name resize-name
-                  :resizable resizable)
+                  :resizable resizable
+                  :other
+                  (list boundp-name
+                        accessor?-name
+                        remove-name
+                        count-name
+                        clear-name
+                        init-name))
             (defstobj-field-templates
               (cdr field-descriptors) renaming wrld))))))
 
@@ -6261,11 +6302,11 @@
    (t `(simple-array ,array-etype (*)))))
 
 #-acl2-loop-only
-(defun-one-output stobj-copy-array-aref (a1 a2 i n)
-  (declare (type (unsigned-byte 29) i n))
+(defun-one-output copy-array-aref (a1 a2 i n)
+  (declare (type fixnum i n))
 
 ; Copy the first n elements of array a1 into array a2, starting with index i,
-; and then return a2.  See also copy-array-svref and stobj-copy-array-fix-aref.
+; and then return a2.  See also copy-array-svref and copy-array-fix-aref.
 ; Note that this copying does not copy substructures, so in the case that a1 is
 ; an array of stobjs, if 0 <= i < n then the ith element of a1 will be EQ to
 ; the ith element of a2 after the copy is complete.
@@ -6274,13 +6315,13 @@
    ((>= i n) a2)
    (t (setf (aref a2 i)
             (aref a1 i))
-      (stobj-copy-array-aref a1 a2
-                             (the (unsigned-byte 29) (1+ i))
-                             (the (unsigned-byte 29) n)))))
+      (copy-array-aref a1 a2
+                       (the fixnum (1+ i))
+                       n))))
 
 #-acl2-loop-only
-(defun-one-output stobj-copy-array-svref (a1 a2 i n)
-  (declare (type (unsigned-byte 29) i n)
+(defun-one-output copy-array-svref (a1 a2 i n)
+  (declare (type fixnum i n)
            (type simple-vector a1 a2))
 
 ; This is a variant of copy-array-aref for simple vectors a1 and a2.
@@ -6289,16 +6330,14 @@
    ((>= i n) a2)
    (t (setf (svref a2 i)
             (svref a1 i))
-      (stobj-copy-array-svref a1 a2
-                              (the (unsigned-byte 29) (1+ i))
-                              (the (unsigned-byte 29) n)))))
+      (copy-array-svref a1 a2
+                        (the fixnum (1+ i))
+                        n))))
 
 #-acl2-loop-only
-(defun-one-output stobj-copy-array-fix-aref (a1 a2 i n)
-  #+gcl ; declaration causes errors in cmucl and sbcl and may not be necessary
-        ; except in gcl (to avoid boxing)
-  (declare (type (unsigned-byte 29) i n)
-           (type (simple-array (signed-byte 29) (*)) a1 a2))
+(defun-one-output copy-array-fix-aref (a1 a2 i n)
+  (declare (type fixnum i n)
+           (type (simple-array fixnum (*)) a1 a2))
 
 ; This is a variant of copy-array-aref for arrays of fixnums a1 and a2.  We
 ; need this special version to avoid fixnum boxing in GCL during resizing.
@@ -6307,19 +6346,20 @@
    ((>= i n) a2)
    (t (setf (aref a2 i)
             (aref a1 i))
-      (stobj-copy-array-fix-aref a1 a2
-                                 (the (unsigned-byte 29) (1+ i))
-                                 (the (unsigned-byte 29) n)))))
+      (copy-array-fix-aref a1 a2
+                           (the fixnum (1+ i))
+                           n))))
 
 (defmacro live-stobjp (name)
 
-; Through Version_4.3, this macro was called the-live-stobj, and its body was
-; `(eq ,name ,(the-live-var name)).  However, we need a more permissive
-; definition in support of congruent stobjs (and perhaps local stobjs and stobj
-; fields of nested stobjs).  Note that no ACL2 object is a simple-vector; in
-; particular, a string is a vector but not a simple-vector.
+; Note that unlike the raw Lisp representation of a stobj, no ordinary ACL2
+; object is a vector, unless it is a string; nor is any ordinary ACL2 object a
+; hash table (unlike the raw Lisp representation of a single-field stobj whose
+; field is a hash table).
 
-  `(typep ,name 'simple-vector))
+  `(or (and (typep ,name 'vector)
+            (not (stringp ,name)))
+       (typep ,name 'hash-table)))
 
 (defconst *expt2-28* (expt 2 28))
 
@@ -6430,6 +6470,128 @@
          val)
         (t `(the ,type ,val))))
 
+#-acl2-loop-only
+(defun make-hash-table-with-defaults (test size rehash-size rehash-threshold)
+
+; We leave it to the underlying Lisp implementation to provide the size,
+; rehash-size, and rehash-threshold in place of nil.  The test is required to
+; be non-nil, and in fact, is required to have value EQ, EQL, HONS-EQUAL, or
+; EQUAL.  Note that stobj hash tables with test HONS-EQUAL are actually EQL
+; hash tables in the HONS version of ACL2.
+
+; In CCL the relevant defaults appear to be:
+; (:SIZE 60 :REHASH-SIZE 1.5 :REHASH-THRESHOLD 0.85)
+
+; In SBCL the relevant defaults appear to be:
+; (:SIZE 16 :REHASH-SIZE 1.5 :REHASH-THRESHOLD 1.0)
+
+  (apply 'make-hash-table
+         `(:test
+           ,(if (eq test 'hons-equal)
+                #+hons 'eql #-hons 'equal
+                test)
+           ,@(and size `(:size ,size))
+           ,@(and rehash-size `(:rehash-size ,(float rehash-size)))
+           ,@(and rehash-threshold `(:rehash-threshold ,(float rehash-threshold))))))
+
+(defmacro get-stobj-scalar-field (elt-type fld)
+
+; Warning: Keep this in sync with make-stobj-scalar-field.
+
+; Through Version_8.2, a scalar field of a stobj with non-trivial type was
+; represented as a 1-element array of that type.  This presumably had the
+; advantage of avoiding fixnum boxing in GCL for types contained in fixnum.  We
+; thus preserve this approach for GCL, but for other Lisps (which presumably do
+; not do GCL-style boxing) we avoid the extra indirection through the
+; one-element array.
+
+  #+gcl
+  `(aref (the (simple-array ,elt-type (1))
+              ,fld)
+         0)
+  #-gcl
+  `(the ,elt-type ,fld))
+
+(defmacro make-stobj-scalar-field (elt-type init)
+
+; Warning: Keep this in sync with get-stobj-scalar-field.  See the comments
+; there.
+
+  #+gcl
+  `(make-array$ 1
+                :element-type ',elt-type
+                :initial-element ',init)
+  #-gcl
+  `(the ,elt-type ',init))
+
+(mutual-recursion
+
+(defun maybe-contained-in-character (type)
+  (cond ((atom type)
+         (or (eq type 'character)
+             (eq type 'standard-char)
+
+; We probably don't need to consider 'nil, since no element can have that
+; type.  But we have decided to be conservative here.
+
+             (eq type 'nil)))
+        ((eq (car type) 'and)
+         (some-maybe-contained-in-character (cdr type)))
+        ((eq (car type) 'member)
+
+; In GCL, an array type whose elements are, for example, of type (member #\a
+; #\b #\c) can be a string.
+
+         (character-listp (cdr type)))
+        ((eq (car type) 'not)
+
+; Probably every type-spec of the form (not ...) fails to be contained in
+; character.  But we are conservative here and only make that conclusion for
+; (not x) where x is an atom.
+
+         (consp (cadr type)))
+        ((eq (car type) 'satisfies)
+
+; In GCL, an array type whose elements are of type (satisfies character) can be
+; a string.  Since the predicate could be an alias for character, or a subtype
+; of character, we are conservative here.
+
+         t)
+        ((eq (car type) 'or)
+         (all-maybe-contained-in-character (cdr type)))
+        (t nil)))
+
+(defun some-maybe-contained-in-character (lst)
+  (cond ((endp lst) nil)
+        (t (or (maybe-contained-in-character (car lst))
+               (some-maybe-contained-in-character (cdr lst))))))
+
+(defun all-maybe-contained-in-character (lst)
+  (cond ((endp lst) t)
+        (t (and (maybe-contained-in-character (car lst))
+                (all-maybe-contained-in-character (cdr lst))))))
+)
+
+(defun single-field-type-p (type)
+
+; Normally, when a stobj has a single field which is either an array or a hash
+; table, the "backbone" of the stobj is omitted, avoiding one level of
+; indirection: in other words, the stobj *is* its field.  However, in the case
+; of an array whose type specifies elements that are characters, that array may
+; be a string (depending on the host Lisp and exactly how the type is
+; specified), which is problematic since the utility live-stobjp depends on
+; live stobjs not being strings.  See community book
+; books/system/tests/stobj-issues.lisp.  Here, we check whether we can safely
+; give the special "single-field" treatment of avoiding the "backbone", based
+; on the type of the single field, returning t only if that is indeed safe.
+
+  (and (consp type)
+       (cond ((eq (car type) 'array)
+              (not (maybe-contained-in-character (cadr type))))
+             ((eq (car type) 'hash-table)
+              t)
+             (t nil))))
+
 (defun defstobj-field-fns-raw-defs (var flush-var inline n field-templates)
 
 ; Warning: Keep the formals in the definitions below in sync with corresponding
@@ -6448,6 +6610,24 @@
             (init (access defstobj-field-template field-template :init))
             (arrayp (and (consp type) (eq (car type) 'array)))
             (array-etype0 (and arrayp (cadr type)))
+            (hashp (and (consp type) (eq (car type) 'hash-table)))
+            (hash-test (and hashp (cadr type)))
+            (single-fieldp
+
+; Warning: Keep this in sync with the binding of single-fieldp in
+; defstobj-raw-init.
+
+; We avoid some indirection by arranging that when there is a single field that
+; is an array or hash-table, the stobj is the entire structure.  If that
+; changes, for example to keep indirection for hash-tables, then consider
+; changing the definition of live-stobjp.
+
+             (and (= n 0)
+                  (null (cdr field-templates))
+                  (single-field-type-p type)))
+            (fld (if single-fieldp
+                     var
+                   `(svref ,var ,n)))
             (stobj-creator (get-stobj-creator (if arrayp array-etype0 type)
                                               nil))
             (scalar-type
@@ -6488,8 +6668,91 @@
                                  :resize-name))
             (resizable (access defstobj-field-template
                                field-template
-                               :resizable)))
+                               :resizable))
+            (other (access defstobj-field-template
+                           field-template
+                           :other))
+            (boundp-name (nth 0 other))
+            (accessor?-name (nth 1 other))
+            (remove-name (nth 2 other))
+            (count-name (nth 3 other))
+            (clear-name (nth 4 other))
+            (init-name (nth 5 other)))
        (cond
+        (hashp
+         `((,accessor-name
+            (k ,var)
+            ,@(and inline (list *stobj-inline-declare*))
+            (values (gethash ,(if (eq hash-test 'hons-equal)
+                                 '(hons-copy k)
+                               'k)
+                             (the hash-table ,fld))))
+           (,updater-name
+            (k v ,var)
+            ,@(and inline (list *stobj-inline-declare*))
+            (progn
+              #+hons (memoize-flush ,var)
+              (setf (gethash ,(if (eq hash-test 'hons-equal)
+                                  '(hons-copy k)
+                                'k)
+                             (the hash-table ,fld))
+                    v)
+              ,var))
+           (,boundp-name
+            (k ,var)
+            ,@(and inline (list *stobj-inline-declare*))
+            (multiple-value-bind (val boundp)
+                (gethash ,(if (eq hash-test 'hons-equal)
+                              '(hons-copy k)
+                            'k)
+                         (the hash-table ,fld))
+              (declare (ignore val))
+              (if boundp t nil)))
+           (,accessor?-name
+            (k ,var)
+            ,@(and inline (list *stobj-inline-declare*))
+            (multiple-value-bind
+                (val boundp)
+                (gethash ,(if (eq hash-test 'hons-equal)
+                              '(hons-copy k)
+                            'k)
+                         (the hash-table ,fld))
+              (mv val (if boundp t nil))))
+           (,remove-name
+            (k ,var)
+            ,@(and inline (list *stobj-inline-declare*))
+            (progn
+              #+(and hons (not acl2-loop-only))
+              (memoize-flush ,var)
+              (remhash ,(if (eq hash-test 'hons-equal)
+                            '(hons-copy k)
+                          'k)
+                       (the hash-table ,fld))
+              ,var))
+           (,count-name
+            (,var)
+            ,@(and inline (list *stobj-inline-declare*))
+            (hash-table-count (the hash-table ,fld)))
+           (,clear-name
+            (,var)
+            (progn
+              #+(and hons (not acl2-loop-only))
+              (memoize-flush ,var)
+              (clrhash (the hash-table ,fld))
+              ,@(and (not single-fieldp)
+                     (list var))))
+           (,init-name
+            (ht-size rehash-size rehash-threshold ,var)
+            (progn
+              #+(and hons (not acl2-loop-only))
+              (memoize-flush ,var)
+              (setf ,fld
+                    (make-hash-table-with-defaults ',hash-test
+                                                   ht-size
+                                                   rehash-size
+                                                   rehash-threshold))
+              ,@(and (not single-fieldp)
+                     (list var))))))
         (arrayp
          `((,length-name
             (,var)
@@ -6498,7 +6761,7 @@
                   `((declare (ignore ,var))
                     ,array-length)
                 `((the (and fixnum (integer 0 *))
-                       (length (svref ,var ,n))))))
+                       (length ,fld)))))
            (,resize-name
             (i ,var)
             ,@(if (not resizable)
@@ -6524,7 +6787,9 @@
                        (list (cons #\0 i)
                              (cons #\1 array-dimension-limit)))
                     (let* ((var ,var)
-                           (old (svref var ,n))
+                           (old ,(if single-fieldp
+                                     'var
+                                   `(svref var ,n)))
                            (min-index (min i (length old)))
                            (new (make-array$ i
 
@@ -6544,21 +6809,24 @@
                                              :element-type
                                              ',array-etype)))
                       #+hons (memoize-flush ,flush-var)
-                      (setf (svref var ,n)
-                            (,(pack2 'stobj-copy-array- fix-vref)
-                             old new 0 min-index))
-                      ,@(and stobj-creator
-                             `((when (< (length old) i)
-                                 (loop for j from (length old) to (1- i)
-                                       do (setf (svref new j)
-                                                (,stobj-creator))))))
-                      var)))))
+                      (prog1 (setf ,(if single-fieldp
+                                        'var
+                                      `(svref var ,n))
+                                   (,(pack2 'copy-array- fix-vref)
+                                    old new 0 min-index))
+                        ,@(and stobj-creator
+                               `((when (< (length old) i)
+                                   (loop for j from (length old) to (1- i)
+                                         do (setf (svref new j)
+                                                  (,stobj-creator)))))))
+                      ,@(and (not single-fieldp)
+                             '(var)))))))
            (,accessor-name
             (i ,var)
             (declare (type (and fixnum (integer 0 *)) i))
             ,@(and inline (list *stobj-inline-declare*))
             (the$ ,array-etype
-                  (,vref (the ,simple-type (svref ,var ,n))
+                  (,vref (the ,simple-type ,fld)
                          (the (and fixnum (integer 0 *)) i))))
            (,updater-name
             (i v ,var)
@@ -6573,15 +6841,15 @@
 ; supporting *1* functions.
 
               (setf (,vref ,(if (eq simple-type t)
-                                `(svref ,var ,n)
-                              `(the ,simple-type (svref ,var ,n)))
+                                fld
+                              `(the ,simple-type ,fld))
                            (the (and fixnum (integer 0 *)) i))
                     (the$ ,array-etype v))
               ,var))))
         ((eq scalar-type t)
          `((,accessor-name (,var)
                            ,@(and inline (list *stobj-inline-declare*))
-                           (svref ,var ,n))
+                           ,fld)
            (,updater-name (v ,var)
                           ,@(and inline (list *stobj-inline-declare*))
                           (progn
@@ -6601,7 +6869,7 @@
 
 ;                           ,@(when stobj-creator '((break$))) ; see just above
 
-                            (setf (svref ,var ,n) v)
+                            (setf ,fld v)
                             ,var))))
         (t
          (assert$
@@ -6609,18 +6877,14 @@
           `((,accessor-name (,var)
                             ,@(and inline (list *stobj-inline-declare*))
                             (the$ ,scalar-type
-                                  (aref (the (simple-array ,scalar-type (1))
-                                             (svref ,var ,n))
-                                        0)))
+                                  (get-stobj-scalar-field ,scalar-type ,fld)))
             (,updater-name (v ,var)
                            ,@(and (not (eq scalar-type t))
                                   `((declare (type ,scalar-type v))))
                            ,@(and inline (list *stobj-inline-declare*))
                            (progn
                              #+hons (memoize-flush ,flush-var)
-                             (setf (aref (the (simple-array ,scalar-type (1))
-                                              (svref ,var ,n))
-                                         0)
+                             (setf (get-stobj-scalar-field ,scalar-type ,fld)
                                    (the$ ,scalar-type v))
                              ,var)))))))
      (defstobj-field-fns-raw-defs
@@ -6635,6 +6899,9 @@
    (t (let* ((field-template (car field-templates))
              (type (access defstobj-field-template field-template :type))
              (arrayp (and (consp type) (eq (car type) 'array)))
+             (hashp (and (consp type) (eq (car type) 'hash-table)))
+             (hash-test (and hashp (cadr type)))
+             (hash-init-size (and hashp (caddr type)))
              (array-etype0 (and arrayp (cadr type)))
              (array-size (and arrayp (car (caddr type))))
              (stobj-creator (get-stobj-creator (if arrayp array-etype0 type)
@@ -6674,15 +6941,19 @@
                                        :element-type ',array-etype
                                        :initial-element ',init)))
                 (defstobj-raw-init-fields (cdr field-templates))))
+         (hashp
+          (cons `(make-hash-table-with-defaults ',hash-test
+                                                ,hash-init-size
+                                                nil
+                                                nil)
+                (defstobj-raw-init-fields (cdr field-templates))))
          ((eq type t)
           (cons (kwote init)
                 (defstobj-raw-init-fields (cdr field-templates))))
          (stobj-creator
           (cons `(,stobj-creator)
                 (defstobj-raw-init-fields (cdr field-templates))))
-         (t (cons `(make-array$ 1
-                                :element-type ',type
-                                :initial-element ',init)
+         (t (cons `(make-stobj-scalar-field ,type ,init)
                   (defstobj-raw-init-fields (cdr field-templates)))))))))
 
 (defun defstobj-raw-init-setf-forms (var index raw-init-fields acc)
@@ -6702,9 +6973,20 @@
 
   (let* ((field-templates (access defstobj-template template :field-templates))
          (raw-init-fields (defstobj-raw-init-fields field-templates))
-         (len (length field-templates)))
-    `(cond
-      ((< ,len call-arguments-limit)
+         (len (length field-templates))
+         (single-fieldp
+
+; Warning: Keep this binding in sync with the binding of single-fieldp in
+; defstobj-field-fns-raw-defs.
+
+          (and (= len 1)
+               (single-field-type-p (access defstobj-field-template
+                                            (car field-templates)
+                                            :type)))))
+    (cond
+     (single-fieldp `,(car raw-init-fields))
+     (t `(cond
+          ((< ,len call-arguments-limit)
 
 ; This check is necessary because GCL complains when VECTOR is called on more
 ; than 64 arguments.  Actually, the other code -- where LIST is called instead
@@ -6713,11 +6995,11 @@
 ; least) been forgiving when LIST is called with too many arguments (as per
 ; call-arguments-limit).
 
-       (vector ,@raw-init-fields))
-      (t
-       (let ((v (make-array$ ,len)))
-         ,@(defstobj-raw-init-setf-forms 'v 0 raw-init-fields nil)
-         v)))))
+           (vector ,@raw-init-fields))
+          (t
+           (let ((v (make-array$ ,len)))
+             ,@(defstobj-raw-init-setf-forms 'v 0 raw-init-fields nil)
+             v)))))))
 
 (defun defstobj-component-recognizer-calls (field-templates n var ans)
 
@@ -6814,8 +7096,9 @@
 ; recognizers for the single-threaded resource named name with the given
 ; template.  The answer contains the top-level recognizer as well as the
 ; definitions of all component recognizers.  The answer contains defs for
-; auxiliary functions used in array component recognizers.  The defs are listed
-; in an order suitable for processing (components first, then top-level).
+; auxiliary functions used in array and hash-table component recognizers.  The
+; defs are listed in an order suitable for processing (components first, then
+; top-level).
 
   (cond
    ((endp field-templates)
@@ -6867,6 +7150,13 @@
                                 (and ,(translate-stobj-type-to-guard
                                        etype '(car x) wrld)
                                      (,recog-name (cdr x)))))))
+             ((and (consp type)
+                   (eq (car type) 'hash-table))
+              `(,recog-name (x)
+                            (declare (xargs :guard t
+                                            :verify-guards t)
+                                     (ignore x))
+                            t))
              (t (let ((type-term (translate-stobj-type-to-guard
                                   type 'x wrld)))
 
@@ -6967,12 +7257,12 @@
 
 (defun the-live-var (name)
 
-; If the user declares a single-threaded object named $S then we will
-; use *the-live-$s* as the Lisp parameter holding the live object
-; itself.  One might wonder why we don't choose to name this object
-; $s?  Perhaps we could, since starting with Version  2.6 we no longer
-; get the symbol-value of *the-live-$s* except at the top level,
-; because of local stobjs.  Below we explain our earlier thinking.
+; Through Version_8.2, for a stobj named st, (the-live-var st) was a special
+; variable.  At that time we thought that one might wonder why we didn't choose
+; to name this object $s.  Below we explain our earlier thinking.  Now that we
+; use only (the-live-var name) only to store properties, perhaps we could
+; instead store those properties on name; but when we eliminated the special
+; variable in October 2019, that didn't seem worthwhile to explore.
 
 ; Historical Plaque for Why the Live Var for $S Is Not $S
 
@@ -7016,14 +7306,9 @@
                                   (congruent-stobj-rep-raw congruent-to)
                                 name))
          (non-memoizable (access defstobj-template template :non-memoizable))
-         (init (defstobj-raw-init template))
+         (init-form (defstobj-raw-init template))
          (the-live-name (the-live-var name)))
     `(progn
-
-; We place the defvar above the subsequent let*, in order to avoid
-; warnings in Lisps such as CCL that compile on-the-fly.
-
-       (defvar ,the-live-name)
        #+hons ,@(and (null congruent-to)
 
 ; It has occurred to us that this defg form might be avoidable when
@@ -7053,15 +7338,15 @@
        (let* ((template ',template)
               (congruent-stobj-rep ',congruent-stobj-rep)
               (non-memoizable ',non-memoizable)
-              (boundp (boundp ',the-live-name))
-              (d (and boundp
+              (old-pair (assoc-eq ',name *user-stobj-alist*))
+              (d (and old-pair
                       (get ',the-live-name
                            'redundant-raw-lisp-discriminator)))
 
 ; d is expected to be of the form (DEFSTOBJ namep creator field-templates
 ; . congruent-stobj-rep).
 
-              (ok-p (and boundp
+              (ok-p (and old-pair
                          (consp d)
                          (eq (car d) 'defstobj)
                          (consp (cdr d))
@@ -7075,18 +7360,6 @@
                          (eq (car (cddddr d)) congruent-stobj-rep)
                          (eq (cdr (cddddr d)) non-memoizable)
 
-; We also formerly required:
-
-;                        (stobj-initial-statep (symbol-value ',the-live-name)
-;                                              (access defstobj-template template
-;                                                      :field-templates))
-
-; However, the stobj need not have its initial value; consider a redundant
-; defstobj in a book whose certification world has already modified the stobj,
-; or a defstobj in a book whose value is modified in a make-event later in that
-; book.  Either way, ok-p would be false when this code is executed by loading
-; the compiled file.
-
 ; We do not check the :inline :congruent-to fields, because these incur no
 ; proof obligations.  If a second pass of encapsulate, or inclusion of a book,
 ; exposes a later non-local defstobj that is redundant with an earlier local
@@ -7095,15 +7368,11 @@
                          )))
          (cond
           (ok-p ',name)
-          ((and boundp (not (raw-mode-p *the-live-state*)))
+          ((and old-pair (not (raw-mode-p *the-live-state*)))
            (interface-er
             "Illegal attempt to redeclare the single-threaded object ~s0."
             ',name))
           (t
-
-; Memoize-flush expects the variable (st-lst name) to be bound.
-
-           (setf ,the-live-name ,init)
            (setf (get ',the-live-name 'redundant-raw-lisp-discriminator)
                  (list* 'defstobj
                         (access defstobj-template template
@@ -7115,27 +7384,16 @@
                         congruent-stobj-rep
                         (access defstobj-template template
                                 :non-memoizable)))
-           (let ((old (and boundp
-
-; Since boundp, then by a test made above, we also know (raw-mode-p state).
-; This boundp test could be omitted, since otherwise we know that the assoc-eq
-; call below will return nil; the boundp check is just an optimization.
-
-                           (assoc-eq ',name *user-stobj-alist*))))
-             (cond
-              (old ; hence raw-mode
-               (fms "Note:  Redefining and reinitializing stobj ~x0 in raw ~
-                     mode.~%"
-                    (list (cons #\0 ',name))
-                    (standard-co *the-live-state*) *the-live-state* nil)
-               (setf (cdr old)
-                     (symbol-value ',the-live-name)))
-              (t
-               (assert$
-                (not (assoc-eq ',name *user-stobj-alist*))
-                (setq *user-stobj-alist*
-                      (cons (cons ',name (symbol-value ',the-live-name))
-                            *user-stobj-alist*))))))
+           (cond (old-pair ; hence raw-mode
+                  (fms "Note:  Redefining and reinitializing stobj ~x0 in raw ~
+                        mode.~%"
+                       (list (cons #\0 ',name))
+                       (standard-co *the-live-state*) *the-live-state* nil)
+                  (setf (cdr old-pair) ,init-form))
+                 (t
+                  (setq *user-stobj-alist* ; update-user-stobj-alist
+                        (cons (cons ',name ,init-form)
+                              *user-stobj-alist*))))
            ',name))))))
 
 ; End of stobj support in raw lisp
@@ -7200,16 +7458,16 @@
 ; Occurrences of a symbol after the first match only structures equal to
 ; the binding.  Non-symbolp atoms match themselves.
 
-; There are some exceptions to the general scheme described above.  A
-; cons structure starting with QUOTE matches only itself.  The symbols
-; nil and t, and all symbols whose symbol-name starts with #\* match
-; only structures equal to their values.  (These symbols cannot be
-; legally bound in ACL2 anyway, so this exceptional treatment does not
-; restrict us further.)  Any symbol starting with #\! matches only the
-; value of the symbol whose name is obtained by dropping the #\!.
-; This is a way of referring to already bound variables in the
-; pattern.  Finally, the symbol & matches anything and causes no
-; binding.
+; There are some exceptions to the general scheme described above.  A cons
+; structure starting with QUOTE matches only itself.  A cons structure of the
+; form (QUOTE~ sym), where sym is a symbol, is like (QUOTE sym) except it
+; matches any symbol with the same symbol-name as sym.  The symbols nil and t,
+; and all symbols whose symbol-name starts with #\* match only structures equal
+; to their values.  (These symbols cannot be legally bound in ACL2 anyway, so
+; this exceptional treatment does not restrict us further.)  Any symbol
+; starting with #\! matches only the value of the symbol whose name is obtained
+; by dropping the #\!.  This is a way of referring to already bound variables
+; in the pattern. Finally, the symbol & matches anything and causes no binding.
 
   (declare (xargs :guard (symbol-doublet-listp bindings)))
   (cond
@@ -7245,6 +7503,12 @@
          (consp (cdr pat))
          (null (cddr pat)))
     (mv (cons (equal-x-constant x pat) tests)
+        bindings))
+   ((and (eq (car pat) 'quote~)
+         (consp (cdr pat))
+         (symbolp (cadr pat))
+         (null (cddr pat)))
+    (mv (cons (list 'symbol-name-equal x (symbol-name (cadr pat))) tests)
         bindings))
    (t (mv-let (tests1 bindings1)
         (match-tests-and-bindings (list 'car x) (car pat)
@@ -7323,10 +7587,6 @@
     `(mv-let ,(cadr mv-let-form)
              (let* (,@(and (not (eq st 'state))
                            `((,st (,creator))))
-
-; We bind the live var so that user-stobj-alist-safe can catch misguided
-; attempts to use functions like trans-eval in inappropriate contexts.
-
                     ,@(cond ((eq st 'state)
                              '((*inside-with-local-state* t)
                                (*wormholep*
@@ -7341,8 +7601,7 @@
                                (*t-stack-length* *t-stack-length*)
                                (*32-bit-integer-stack* *32-bit-integer-stack*)
                                (*32-bit-integer-stack-length*
-                                *32-bit-integer-stack-length*)))
-                            (t `((,(the-live-var st) ,st)))))
+                                *32-bit-integer-stack-length*)))))
                ,(let ((p (if w
                              (oneify producer flet-fns w program-p)
                            producer)))
@@ -7363,229 +7622,7 @@
 #-acl2-loop-only ; see the comment in mv-let-for-with-local-stobj
 (defmacro with-local-stobj (&rest args)
 
-; Below are some tests of local stobjs.
-
-;  (defstobj foo bar xxx)
-;
-;  (thm (equal (create-foo) '(nil nil))) ; succeeds
-;
-;  (defun up1 (x foo)
-;    (declare (xargs :stobjs foo))
-;    (update-bar x foo))
-;
-;  (bar foo) ; nil
-;
-;  (up1 3 foo) ; <foo>
-;
-;  (bar foo) ; 3
-;
-;  (defun test (x) ; should fail; must use with-local-stobj explicitly
-;    (mv-let (a b foo)
-;            (let ((foo (create-foo)))
-;              (let ((foo (up1 (1+ x) foo)))
-;                (mv (bar foo) (xxx foo) foo)))
-;            (declare (ignore foo))
-;            (mv a b x)))
-;
-;  (defun test (x)
-;    (declare (xargs :guard (acl2-numberp x) :verify-guards nil))
-;    (with-local-stobj
-;     foo
-;     (mv-let (a b foo)
-;             (let ((foo (up1 (1+ x) foo)))
-;               (mv (bar foo) (xxx foo) foo))
-;             (mv a b x))))
-;
-;  (test 17) ; (18 NIL 17)
-;
-;  (bar foo) ; 3
-;
-;  (thm (equal (test x) (list (1+ x) nil x))) ; succeeds
-;
-;  (thm (equal (test x) (list (1+ x) nil x)) ; succeeds
-;       :hints (("Goal"
-;                :in-theory
-;                (enable
-;                 (:executable-counterpart create-foo)))))
-;
-;  (thm (equal (test x) (list (1+ x) nil x)) ; fails, creating (NOT (NTH 1 (HIDE (CREATE-FOO))))
-;       :hints (("Goal"
-;                :in-theory
-;                (set-difference-theories
-;                 (enable
-;                  (:executable-counterpart create-foo))
-;                 '(create-foo)))))
-;
-;  (verify-guards test)
-;
-;  (test 17) ; (18 nil 17)
-;
-;  (bar foo) ; 3
-;
-;  (defun test2 (x)
-;    (with-local-stobj
-;     foo
-;     (mv-let (a foo)
-;             (let ((foo (up1 (1+ x) foo))) (mv (bar foo) foo))
-;             (mv a x))))
-;
-;  (test2 12) ; (13 12)
-;
-;  (bar foo) ; 3
-;
-;  (thm (equal (test x) (mv-let (x y) (test2 x) (mv x nil y)))) ; succeeds
-;
-;  (create-foo) ; should get graceful error
-;
-;  (defun test3 (x) ; Should be OK.
-;    (with-local-stobj
-;     foo
-;     (mv-let (a foo)
-;             (let ((foo (up1 (1+ x) foo))) (mv (bar foo) foo))
-;             a)))
-;
-;  (test3 11) ; 12
-;
-;  (bar foo) ; 3
-;
-;  (defun test4 (x foo) ; Should be OK.
-;    (declare (xargs :stobjs foo
-;                    :verify-guards nil))
-;    (let* ((x+1
-;           (with-local-stobj
-;            foo
-;            (mv-let (a foo)
-;                    (let ((foo (up1 (1+ x) foo))) (mv (bar foo) foo))
-;                    a)))
-;           (foo (up1 92 foo)))
-;      (mv x+1 foo)))
-;
-;  (test4 19 foo) ; (20 <foo>)
-;
-;  (bar foo) ; 92
-;
-;  (defun test5 (x foo) ; Should be OK.
-;    (declare (xargs :stobjs foo
-;                    :verify-guards nil))
-;    (let* ((foo (up1 23 foo))
-;           (x+1
-;            (with-local-stobj
-;             foo
-;             (mv-let (a foo)
-;                     (let ((foo (up1 (1+ x) foo))) (mv (bar foo) foo))
-;                     a))))
-;      (mv x+1 foo)))
-;
-;  (test5 35 foo) ; (36 <foo>)
-;
-;  (bar foo) ; 23
-;
-;  (with-local-stobj ; should get macroexpansion error or the equivalent
-;   foo
-;   (mv foo 3))
-;
-;  (defun trans-eval-test (x foo state) ; this part is ok
-;    (declare (xargs :stobjs (foo state)
-;                    :mode :program))
-;    (mv-let (erp val state)
-;            (trans-eval '(update-bar (cons 3 (bar foo)) foo) 'top state t)
-;            (declare (ignore erp val))
-;            (mv x foo state)))
-;
-;  (with-local-stobj ; should fail; cannot use with-local-stobj in top level loop
-;   foo
-;   (mv-let (x foo state)
-;           (trans-eval-test 3 foo state t)
-;           (mv x state)))
-;
-;  (pprogn
-;   (with-local-stobj ; should fail with create-foo error
-;    foo
-;    (mv-let (x foo state)
-;            (trans-eval-test 3 foo state t)
-;            (declare (ignore x))
-;            state))
-;   (mv 3 state))
-;
-;  (defun test6 (a state)
-;    (declare (xargs :mode :program :stobjs state))
-;    (with-local-stobj
-;     foo
-;     (mv-let (x foo state)
-;             (trans-eval-test a foo state t)
-;             (mv x state))))
-;
-;  (test6 100 state) ; should get trans-eval error:  user-stobj-alist mismatch
-;
-;  (bar foo) ; 23, still -- trans-eval did not affect global state
-
-; Below are some more tests, contributed by Rob Sumners.
-
-;  (defstobj foo foo-fld)
-;  (defstobj bar bar-fld)
-;
-;  (defun test-wls1 (x)
-;    (with-local-stobj
-;     foo
-;     (mv-let (result foo)
-;             (let ((foo (update-foo-fld 2 foo)))
-;               (mv (with-local-stobj
-;                    bar
-;                    (mv-let (result bar)
-;                            (let ((bar (update-bar-fld 3 bar)))
-;                              (mv x bar))
-;                            result))
-;                   foo))
-;             result)))
-;
-;  (test-wls1 129) ; 129
-;
-;  :comp t
-;
-;  (test-wls1 '(adjka 202)) ; '(ADJKA 202)
-;
-;  (thm (equal (test-wls1 x) x))
-;
-;  (defun test-wls2 (x)
-;    (with-local-stobj
-;     foo
-;     (mv-let (result foo)
-;             (let ((foo (update-foo-fld 2 foo)))
-;               (mv (with-local-stobj
-;                    foo
-;                    (mv-let (result foo)
-;                            (let ((foo (update-foo-fld 3 foo)))
-;                              (mv x foo))
-;                            result))
-;                   foo))
-;             result)))
-;
-;  (test-wls2 129) ; 129
-;
-;  :comp t
-;
-;  (test-wls2 '(adjka 202)) ; (ADJKA 202)
-;
-;  (thm (equal (test-wls2 x) x))
-;
-;  (defun test-wls3 (x)
-;    (if (atom x) x
-;      (with-local-stobj
-;       foo
-;       (mv-let (result foo)
-;               (mv (cons (car x)
-;                         (test-wls3 (cdr x)))
-;                   foo)
-;               (let ((x result))
-;                 (if (atom x) x (cons (car x) (cdr x))))))))
-;
-;  (test-wls3 129) ; 129
-;
-;  :comp t
-;
-;  (test-wls3 '(adjka 202)) ; (ADJKA 202)
-;
-;  (thm (equal (test-wls3 x) x))
+; See books/system/tests/local-stobj.lisp for some tests.
 
   (mv-let (erp st mv-let-form creator)
           (parse-with-local-stobj args)

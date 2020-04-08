@@ -77,21 +77,19 @@
       MUL r/m32: EDX:EAX := EAX \* r/m32<br/>
       MUL r/m64: RDX:RAX := RAX \* r/m64<br/></p>"
 
+  :modr/m t
+
   :body
 
-  (b* ((ctx 'x86-mul)
-
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-
-       (p2 (prefixes->seg prefixes))
+  (b* ((p2 (prefixes->seg prefixes))
        (p4? (equal #.*addr-size-override* (prefixes->adr prefixes)))
 
        (select-byte-operand (equal opcode #xF6))
        ((the (integer 1 8) reg/mem-size)
-        (select-operand-size proc-mode select-byte-operand rex-byte nil prefixes x86))
+        (select-operand-size
+         proc-mode select-byte-operand rex-byte nil prefixes nil nil nil x86))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        (inst-ac? t)
        ((mv flg0
@@ -186,21 +184,19 @@
       IMUL r/m32: EDX:EAX := EAX \* r/m32<br/>
       IMUL r/m64: RDX:RAX := RAX \* r/m64<br/></p>"
 
+  :modr/m t
+
   :body
 
-  (b* ((ctx 'x86-imul-Op/En-M)
-
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-
-       (p2 (prefixes->seg prefixes))
+  (b* ((p2 (prefixes->seg prefixes))
        (p4? (equal #.*addr-size-override* (prefixes->adr prefixes)))
 
        (select-byte-operand (equal opcode #xF6))
        ((the (integer 1 8) reg/mem-size)
-        (select-operand-size proc-mode select-byte-operand rex-byte nil prefixes x86))
+        (select-operand-size
+         proc-mode select-byte-operand rex-byte nil prefixes nil nil nil x86))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        (inst-ac? t)
        ((mv flg0
@@ -260,6 +256,7 @@
     x86))
 
 (def-inst x86-imul-Op/En-RM
+
   :parents (two-byte-opcodes)
 
   :returns (x86 x86p :hyp (x86p x86)
@@ -274,21 +271,19 @@
       IMUL r32, r/m32: r32 := r32 \* r/m32 <br/>
       IMUL r64, r/m64: r64 := r64 \* r/m64 <br/> </p>"
 
+  :modr/m t
+
   :body
 
-  (b* ((ctx 'x86-imul-Op/En-RM)
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-
-       (p2 (prefixes->seg prefixes))
+  (b* ((p2 (prefixes->seg prefixes))
        (p4? (equal #.*addr-size-override*
                    (prefixes->adr prefixes)))
 
        ((the (integer 1 8) reg/mem-size)
-        (select-operand-size proc-mode nil rex-byte nil prefixes x86))
+        (select-operand-size
+         proc-mode nil rex-byte nil prefixes nil nil nil x86))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        (inst-ac? t)
        ((mv flg0
@@ -366,19 +361,16 @@
                                            rme-size-of-2-to-rme16
                                            rme-size-of-4-to-rme32)))
 
+  :modr/m t
+
   :body
 
-  (b* ((ctx 'x86-imul-Op/En-RMI)
-
-       (r/m (the (unsigned-byte 3) (modr/m->r/m modr/m)))
-       (mod (the (unsigned-byte 2) (modr/m->mod modr/m)))
-       (reg (the (unsigned-byte 3) (modr/m->reg modr/m)))
-
-       (p2 (prefixes->seg prefixes))
+  (b* ((p2 (prefixes->seg prefixes))
        (p4? (equal #.*addr-size-override* (prefixes->adr prefixes)))
 
        ((the (integer 1 8) reg/mem-size)
-        (select-operand-size proc-mode nil rex-byte nil prefixes x86))
+        (select-operand-size
+         proc-mode nil rex-byte nil prefixes nil nil nil x86))
 
        ((the (integer 1 4) imm-size)
         (if (equal opcode #x6B)
@@ -388,7 +380,7 @@
               2
             4)))
 
-       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m x86))
+       (seg-reg (select-segment-register proc-mode p2 p4? mod r/m sib x86))
 
        (inst-ac? t)
        ((mv flg0

@@ -21,6 +21,19 @@ questions.
 
 <><><><><><><><><><><><><><><><><><><><><><><><><>
 
+{{Possibly add function-symbolp to the guard of logicp.}}
+
+Currently logicp returns t on a symbol that is not a function symbol, which is
+slightly odd.  Adding function-symbolp to the guard of logicp would eliminate
+this slight oddity, but would require discharging the ensuing guard verification
+obligations.  Note also that some existing ACL2 code may rely on logicp
+returning t on a non-function symbol, e.g., see the following line in the
+definition of sublis-var!:
+
+              (logicp (ffn-symb term) wrld) ; maybe fn is being admitted
+
+<><><><><><><><><><><><><><><><><><><><><><><><><>
+
 {{Perhaps split :doc hints into separate topics.}}
 
 This item was added by Matt K. but is based on correspondence
@@ -68,79 +81,6 @@ I (Matt) suspect that this is a relatively simple development task,
 and I expect whoever takes it on to deal not only with the
 set-guard-checking implementation but also all relevant output and
 documentation.
-
-<><><><><><><><><><><><><><><><><><><><><><><><><>
-
-{{Consider redefining take using mbe, so that the :logic has a standard recursion.}}
-
-This might involve fixing a bunch of community books, perhaps by
-adding a book of lemmas that could also help proprietary books.
-
-Here is a relevant email thread, added by Matt with permission from
-Mihir.
-
-From: Matt Kaufmann <kaufmann@cs.utexas.edu>
-To: acl2-devel@utlists.utexas.edu
-In-Reply-To: <t4dr2h4tohm.fsf@ginger.cs.utexas.edu> (message from Matt Kaufmann on Fri, 05 Oct 2018 10:14:13 -0500)
-Date: Fri, 05 Oct 2018 10:22:23 -0500
-Subject: Re: [acl2-devel] redefining take
-
-P.S. Although I'd likely only want to be involved in vetting this
-work, this could be a great task for getting the acl2-devel community
-involved.  That could dovetail nicely with my goal for the two
-developer's workshops (last year and next month): to encouragement the
-evolution of that community.
-
--- Matt
-Matt Kaufmann <kaufmann@cs.utexas.edu> writes:
-
-> Hi, Mihir --
->
-> This all seems very reasonable to me.  Please feel free to add that
-> note to the to-do list.  Better yet, add this email thread, or ask me
-> to do so.
->
-> As always, if you or someone wants to take this on, do check with me
-> first.  I'll probably respond that it's a great idea, but sufficiently
-> low priority that I don't want to spend time on it other than to vet
-> the proposed solution (and to go through my part of the process in
-> :doc developers-guide-maintenance).  I'm pretty sure you agree that
-> there will be likely some work needed for the books, even beyond your
-> own library of lemmas.  And for maintainers of books outside the
-> community books, it will probably be important to include a definition
-> rule somewhere that provides the old logical definition of take.
->
-> A more ambitious project would be to try to remove the
-> #-acl2-loop-only code in take in favor of :exec code in an mbe.  This
-> would include experiments in at least CCL and SBCL to check
-> performance.
->
-> Thanks --
-> -- Matt
-> Mihir Mehta <mihir@cs.utexas.edu> writes:
->
->> Hi folks,
->>
->> I see that the developers' to-do list (books/system/to-do.txt) has this
->> item.
->> --
->> {{Consider redefining take using mbe, so that the :logic has a standard
->> recursion.}}
->> --
->> There happens to be a :definition rule, take-redefinition, in
->> books/std/lists/take.lisp. Do you all think that using this recursive
->> definition for the :logic part of take would make sense? If yes, perhaps
->> it would be good to note this in the to-do list for whoever takes it on.
->>
->> Speaking for myself, I've developed a library of lemmas about first-n-ac
->> (which is currently used for the :logic of take) and I wouldn't be
->> particularly adversely affected. In fact, I might be a little better
->> off, since my books which include the Kestrel string libraries have take
->> itself disabled in the theory and take-redefinition enabled, with
->> unexpected results sometimes. Unifying these two would probably help
->> others in the same way.
->>
->> Mihir.
 
 <><><><><><><><><><><><><><><><><><><><><><><><><>
 
@@ -353,54 +293,6 @@ directory, and idea Keshav Kini put forward for consideration.  That
 is likely to be much more difficult, and it would also increase the
 lisp-specific code in the system.  So I (Matt) am not in favor of that
 approach, though it's intriguing.
-
-<><><><><><><><><><><><><><><><><><><><><><><><><>
-
-{{Extend defstub to support :guard.}}
-
-**********
-**NOTE**: Alessandro Coglio is probably working on this item.
-**********
-
-Below is the relevant email thread.
-
-Harsh Raju Chamarthi <harshrc@gmail.com>	Mon, Jun 26, 2017 at 1:44 PM
-To: acl2-help <acl2-help@utlists.utexas.edu>
-
-The documentation for defstub says we can use signatures
-signatures also have the following form:
-((hd *) => * :formals (x) :guard (consp x))
-
-But neither
-(defstub hd (*) => * :formals (x) :guard (consp x))
-nor
-(defstub (hd *) => * :formals (x) :guard (consp x))
-works.
-
-Because this does not work I have to use encapsulate directly, which
-is more wordy, but works fine. Am I missing some basic syntax with
-defstub?
-
-Matt Kaufmann <kaufmann@cs.utexas.edu>	Mon, Jun 26, 2017 at 2:04 PM
-To: Harsh Raju Chamarthi <harshrc@gmail.com>
-Cc: acl2-help@utlists.utexas.edu
-Hi, Harsh --
-
-I don't think you're missing anything.  Defstub is very limited; it
-doesn't support the use of :guard (or :formals), or anything actually
-beyond what's shown in :doc defstub.  Of course, this is legal
-
-  (defstub hd (*) => *)
-
-as is the old-style version:
-
-  (defstub hd (x) t)
-
-But you were right to use encapsulate if you want anything beyond
-that.
-
--- Matt
-[Quoted text hidden]
 
 <><><><><><><><><><><><><><><><><><><><><><><><><>
 
@@ -624,5 +516,225 @@ Hi Matt, I understand. Adding it to the developer to-do list seems like a good i
 >> Please feel free to ignore this idea, but I was wondering if 'value-event' may be a more descriptive name for what is currently called 'value-triple'. In a sense, this function “lifts” an arbitrary value to an event. I’m sure there’s a reason for the ‘triple’ of ‘value-triple’, but it’s not immediately evident to me; I looked at value-triple-fn and I see that it uses the value function to return error triples, so maybe that’s the rationale?
 >>
 >> Thanks.
+
+<><><><><><><><><><><><><><><><><><><><><><><><><>
+
+{{Retain the guard of a defun-sk with :constrain t.}}
+
+Currently a defun-sk with :constrain t has its guard set to t, regardless of
+whether a different guard is specified in the defun-sk; if specified, the guard
+is silently ignored. This is not a bug, because :doc defun-sk documents this
+behavior, but it is undesirable.
+
+
+> On May 24, 2019, at 7:57 PM, Matt Kaufmann <kaufmann@cs.utexas.edu> wrote:
+
+> (defun-sk f (x)
+>  (declare (xargs :guard (consp x)))
+>  (exists y (equal (cons y y) x))
+> ; Either include the following or not:
+>  :constrain t)
+
+> Then the command
+
+> :args f
+
+> shows that the guard is t if we use :constrain t, but the guard is
+> (consp x) if we don't.  That disparity seems goofy.
+
+<><><><><><><><><><><><><><><><><><><><><><><><><>
+
+{{Name the free variables of each rule in the output of :pr.}}
+
+A user may need to know the free variables for a given rule in cases
+where this information is not lexically visible, for instance, when
+the event generating the rule has let-bindings. Currently, :pr
+writes out the LHS (for :rewrite rules)/typed term
+(for :type-prescription rules)/trigger terms (for
+:forward-chaining/:linear rules) without syntactic sugar; it may be
+desirable for :pr to also list the free variables. Note, free
+variables may arise in rule classes other than the ones mentioned above.
+
+A developer taking on this task may find Matt Kaufmann's example,
+below, helpful.
+
+ACL2 !>(let ((rule (car (find-rules-of-rune
+			 '(:rewrite symbol-<-transitive)
+			 (w state)))))
+	 (set-difference-eq
+	  (union-eq (all-vars (access rewrite-rule rule :rhs))
+		    (all-vars1-lst (access rewrite-rule rule :hyps) nil))
+	  (all-vars (access rewrite-rule rule :lhs))))
+(Y)
+ACL2 !>
+
+<><><><><><><><><><><><><><><><><><><><><><><><><>
+
+{{Enable the generation of extra-info hypothesis for each functional instantiation constraint}}
+
+A couple of reasons for this: a) knowing where constraints are coming
+from is useful for debugging. and, perhaps more importantly, b) the
+proofs of different constraints can have radically different
+strategies.  Generating extra-info hyps would allow a user to write
+robust computed hints that could employ strategies appropriate for
+each constraint.
+
+There could be a table to enable this feature.  A good model for that
+is the inhibit-warnings-table, where the macro set-inhibit-warnings is
+a local table event using that table:
+
+(defmacro set-inhibit-warnings (&rest lst)
+  `(local (set-inhibit-warnings! ,@lst)))
+
+Or it could be yet another acl2-defaults-table key, which would
+automatically make it local to books and encapsulate events.  That's
+probably best in general, but the former approach is good if one wants
+a way to make the setting global in one's session, including all books
+that one is certifying in that session.
+
+Note: extra-info hypotheses are already available for guard and
+termination proofs.
+
+Note: A cursory look into how constraints are computed reveals that
+some constraints (ie: from encapsulations) are associated with
+function symbols at the time of their admission:
+
+ACL2 !>(trace$ putprop-constraints)
+ACL2 !>(encapsulate
+    (
+     ((fn *) => *)
+     )
+  (local (defun fn (x) x))
+  (defthm integerp-fn
+    (implies
+     (integerp x)
+     (integerp (fn x))))
+  )
+
+1> (PUTPROP-CONSTRAINTS FN NIL
+                        ((IMPLIES (INTEGERP X)
+                                  (INTEGERP (FN X))))
+                        NIL
+                        ((FN SIBLINGS FN)
+                         . |current-acl2-world|))
+<1 (PUTPROP-CONSTRAINTS ((FN CONSTRAINT-LST
+                             (IMPLIES (INTEGERP X)
+                                      (INTEGERP (FN X))))
+                         (FN SIBLINGS FN)
+                         . |current-acl2-world|))
+
+In other words, enabling the event:
+
+:hints (("Goal" :use (:functional-instance lemma
+                                           (fn zed))))
+
+to generate an attributed constraint, such as:
+
+(implies
+ (and
+  (extra-info '(:functional-instantiation) '(:constraint integerp-fn))
+  (integerp x))
+ (integerp (zed x)))
+
+will require us to generate constraint attribution at the time of
+function admission.
+
+[[
+Matt's reply: Or will it?  It seems to me that at the time the
+:functional-instance hint is processed, we have this chain of calls:
+
+translate-lmi
+calls
+translate-lmi/functional-instance
+calls
+relevant-constraints
+calls
+relevant-constraints1
+calls
+constraint-info
+
+If a suitable flag were passed, then constraint-info could return
+extra-info.  For example, after the encapsulate above, try this:
+
+(defthm lemma (equal (fn x) (fn x)) :rule-classes nil)
+(trace$ constraint-info)
+(thm t :hints (("Goal" :use (:functional-instance lemma (fn ifix)))))
+
+Then you'll see this:
+
+1> (CONSTRAINT-INFO FN |current-acl2-world|)
+<1 (CONSTRAINT-INFO FN
+                    ((IMPLIES (INTEGERP X)
+                              (INTEGERP (FN X)))))
+
+But actually, I think it would make a lot more sense to modify
+relevant-constraints1 to take a flag instead of constraint-info.
+... end of Matt's reply]]
+
+<><><><><><><><><><><><><><><><><><><><><><><><><>
+
+{{Improve :pl output when a free variable of the rule occurs in the argument of :pl.}}
+
+Eric Smith sent this example:
+
+(defthm <-trans
+  (implies (and (< x y) ; y is a free var
+                (< y z))
+           (< x z)))
+
+and then do:
+
+:pl (< y z)
+
+The current output is confusing, since sometimes "Y" refers to the
+free variable in the hypotheses of <-trans, and other times "Y" refers
+to the variable in the input term, (< y z)::
+
+(:REWRITE <-TRANS)
+  New term: T
+  Hypotheses: ((< Y Y) (< Y Z))
+  Equiv: EQUAL
+  Substitution: ((Z Z) (X Y))
+  Free variable: Y
+
+On the acl2-devel list we seemed to agree on the following as desired
+output for this example.
+
+(:REWRITE <-TRANS)
+ New term: T
+ Hypotheses: ((< Y Y{FREE}) (< Y{FREE} Z))
+ Equiv: EQUAL
+ Substitution: ((Z Z) (X Y) (Y Y{FREE}))
+ Free variable bindings: ((Y Y{FREE}))
+
+Of course, if Y{FREE} should be suitably "fresh"; if it weren't then
+we could search for the first "fresh" variable of the form Y{FREE}1,
+Y{FREE}2, etc.
+
+The same issue arises in the proof-builder: you can see it with
+(verify (< y z)) followed by sr.
+
+This issue also applies to :linear rules and perhaps others; whoever
+takes this item on should figure out which rule classes are relevant
+and fix them all.  Perhaps :pl2 or :pr should also be considered (not
+sure).  Here's an example involving a :linear rule.
+
+(defthm <-trans
+  (implies (and (< x y) ; y is a free var
+                (< y z))
+           (< (identity x) (identity z)))
+  :rule-classes :linear)
+
+:pl (identity y) currently gives this output.
+
+(:LINEAR <-TRANS)
+  Conclusion: (< (IDENTITY Y) (IDENTITY Z))
+  Hypotheses: ((< Y Y) (< Y Z))
+  Substitution: ((X Y))
+  Free variables: Y and Z
+
+Again, an analogous issue arises in the proof-builder: you can see it
+with (verify (< (identity y) (identity z))) followed by (dv 1) and
+show-linears.
 
 <><><><><><><><><><><><><><><><><><><><><><><><><>

@@ -11,6 +11,7 @@
 ;; def-saved-event is a wrapper that is used by the documentation system,
 ;; and can be ignored by the reader.
 ;; Check the book centaur/sv/tutorial/support.lisp for detailed explanation.
+(include-book "basictypes")
 
 ; cert_param: (uses-smtlink)
 
@@ -449,12 +450,7 @@ finds out @('integerp') is not a supported function.</p>
           :smtlink
           (:fty (sandwich))))
   :rule-classes nil)
-)
-
-
-(def-saved-event maybe-integer-example
-  (defoption maybe-integer integerp)
-  )
+) 
 
 (def-saved-event x^2+y^2-fixed-example
   (define x^2+y^2-fixed ((x maybe-integer-p)
@@ -731,3 +727,27 @@ Possible counter-example found: ((M2 (SOME 0)) (M1 (SOME 0)))
 })
 
 ")
+
+(defthm poly-ineq-example-with-prog2$
+  (implies (and (real/rationalp x) (real/rationalp y)
+                (<= (+ (* (/ 9 8) x x) (* y y)) 1)
+                (<= (prog2$ (cw "I'm here!~%")
+                            (x^2-y^2 x y))
+                    1))
+           (< y (- (* 3 (- x (/ 17 8)) (- x (/ 17 8))) 3)))
+  :hints(("Goal"
+          :smtlink nil)))
+
+;; Abstract datatype example
+(encapsulate
+  (((abstract-p *) => *))
+  (local
+   (defun abstract-p (x)
+       (acl2::any-p x))))
+
+(defthm abstract-example
+  (implies (abstract-p x)
+           (equal x x))
+  :hints(("Goal"
+          :smtlink (:abstract (abstract-p))))
+  :rule-classes nil)

@@ -64,10 +64,6 @@
   :outputs
   '(("ans" _ _ ans _))) ; [3:0]
 
-(define nibblep (x)
-  (and (natp x)
-       (< x (expt 2 4))))
-
 (define doomsday-step ((a nibblep)
                        (b nibblep))
   :verify-guards nil
@@ -81,6 +77,11 @@
                        (b nibblep))
   :verify-guards nil
   (loghead 4 (+ a b)))
+
+; Matt K. mod: Turn off warnings about "Fast alist discipline violated".  David
+; Rager is aware of them but is not terribly concerned, and he has has approved
+; this mod.
+(local (set-slow-alist-action nil))
 
 (def-gl-thm doomsday-adds
   :hyp (and (nibblep a)

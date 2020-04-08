@@ -32,7 +32,6 @@
 (include-book "cat")
 (include-book "strprefixp")
 
-(local (include-book "misc/assert" :dir :system))
 (local (include-book "arithmetic"))
 
 (defsection strsubst-aux
@@ -130,13 +129,7 @@ individual characters, whereas @('strsubst') works on substrings.</p>"
 
   (defthm stringp-of-strsubst
     (stringp (strsubst old new x))
-    :rule-classes :type-prescription)
-
-  (local (assert! (equal (strsubst "World" "Star" "Hello, World!")
-                         "Hello, Star!")))
-
-  (local (assert! (equal (strsubst "oo" "aa" "xoooyoo")
-                         "xaaoyaa"))))
+    :rule-classes :type-prescription))
 
 
 
@@ -191,7 +184,7 @@ individual characters, whereas @('strsubst') works on substrings.</p>"
     :hints(("Goal"
             :in-theory (disable l0)
             :use ((:instance l0 (x x))
-                  (:instance l0 (x acl2::x-equiv))))))
+                  (:instance l0 (x x-equiv))))))
 
   (defthm strsubst-list-of-append
     (equal (strsubst-list old new (append x y))

@@ -1,5 +1,5 @@
-; ACL2 Version 8.1 -- A Computational Logic for Applicative Common Lisp
-; Copyright (C) 2018, Regents of the University of Texas
+; ACL2 Version 8.2 -- A Computational Logic for Applicative Common Lisp
+; Copyright (C) 2019, Regents of the University of Texas
 
 ; This version of ACL2 is a descendent of ACL2 Version 1.9, Copyright
 ; (C) 1997 Computational Logic, Inc.  See the documentation topic NOTE-2-0.
@@ -1241,7 +1241,7 @@
 ; program-p = t when attempting to approximate raw Lisp behavior.
 
   (cond
-   ((or (atom x) (eq (car x) 'quote))
+   ((atom x)
     (cond ((keywordp x)
            (kwote x))
           ((symbolp x)
@@ -1254,6 +1254,17 @@
            x)
           ((atom x) (kwote x))
           (t x)))
+   ((eq (car x) 'quote)
+    (cond ((and ; (consp (cdr x)) ; always true
+                  (consp (cadr x))
+                  (eq (car (cadr x)) 'lambda))
+
+; Just as we apply hons-copy when translating lambda objects in
+; translate11-lambda-object, we hons-copy here as well, to support fast lookup
+; by fetch-cl-cache-line.
+
+           (hons-copy x))
+          (t x)))
    ((eq (car x) 'lambda$)
     (mv-let (flg tx bindings)
       (translate11-lambda-object x
@@ -1264,16 +1275,39 @@
                                  x
                                  'oneify
                                  w
-                                 *default-state-vars*)
+                                 *default-state-vars*
+                                 nil)
       (declare (ignore bindings))
       (if flg
           (interface-er "Implementation error: Translate11-lambda-object in ~
                          oneify encountered an untranslatable LAMBDA$, ~x0, ~
                          even though it was supposedly translated ~
                          successfully earlier.  Please contact the ACL2 ~
-                         implementors." 
+                         implementors."
                         x)
           tx)))
+   ((eq (car x) 'loop$)
+    (mv-let (flg tx bindings)
+      (translate11-loop$
+       x
+       '(nil) ; stobjs-out
+       nil    ; bindings
+       nil    ; known-stobjs
+       nil    ; flet-alist
+       x
+       'oneify
+       w
+       *default-state-vars*)
+      (declare (ignore bindings))
+      (if flg
+          `(interface-er "Implementation error: translate11-loop$ in oneify ~
+                          encountered an untranslatable LOOP$, ~x0.  We ~
+                          thought that this could only happen under a call of ~
+                          non-exec, in which case we should never be ~
+                          executing this code!  Please contact the ACL2 ~
+                          implementors."
+                         ',x)
+        (oneify tx fns w program-p))))
    ((not (symbolp (car x)))
     (oneify
      (list* 'let (listlis (cadr (car x))
@@ -1478,12 +1512,7 @@
    ((eq (car x) 'stobj-let)
 
 ; Stobj-let is rather complicated, so we prefer to take advantage of the logic
-; code for that macro.  However, bindings of live stobjs vars may be necessary
-; so that when we call a traced function on a live stobj that was stobj-let
-; bound, then stobj-print-symbol can print the "{instance}" suffix, as it
-; should.  The easiest way to code that seems to be to go ahead and use the
-; logical macroexpansion of stobj-let, and then fix it up with suitable
-; bindings.
+; code for that macro.
 
     (let ((temp (oneify (stobj-let-fn x)
                         fns w program-p)))
@@ -1492,9 +1521,7 @@
 ; Warning: Keep these cases in sync with stobj-let-fn.
 
         (('let bindings . rest)
-         `(let* ,(append bindings
-                         (the-maybe-live-var-bindings (strip-cars bindings)))
-            ,@rest))
+         `(let* ,bindings ,@rest))
         (('progn conjoined-no-dups-exprs
                  ('let bindings . rest))
 
@@ -1503,10 +1530,7 @@
 ; form by oneify.
 
          `(progn ,conjoined-no-dups-exprs
-                 (let* ,(append bindings
-                                (the-maybe-live-var-bindings
-                                 (strip-cars bindings)))
-                   ,@rest)))
+                 (let* ,bindings ,@rest)))
         (& (interface-er "Implementation error: unexpected form of stobj-let ~
                           encountered by ~
                           oneify!.~|~%Input:~|~y0~%Output:~|~y1~%Please ~
@@ -1663,14 +1687,11 @@
             (t `(and ,tst ,rst))))))
 
 (defun labels-form-for-*1* (fn *1*fn formals *1*body
-                               declare-stobj-special
                                ignore-vars ignorable-vars
                                super-stobjs-in super-stobjs-chk
                                guard wrld)
   (let ((*1*fn-binding `(,*1*fn
                          ,formals
-                         ,@(and declare-stobj-special
-                                (list declare-stobj-special))
                          ,@(and ignore-vars
                                 `((declare (ignore ,@ignore-vars))))
                          ,@(and ignorable-vars
@@ -2018,21 +2039,6 @@
                      `(live-stobjp ,first-non-nil))
                  `(live-state-p
                    ,(select-stobj 'state super-stobjs-in formals))))
-              (declare-stobj-special
-
-; Without a special declaration for the live stobj, a defstobj or defabsstobj
-; event will introduce *1* functions in add-trip, via a defuns trip, before the
-; defstobj or defabsstobj trip introduces the live stobj variable as special.
-; This might not be a big deal unless we compile, by which time (at the end of
-; processing the defstobj or defabsstobj trip) the live stobj variable has been
-; introduced with defparameter, thus globally declaring it special.  However,
-; CCL complains because compilation is done when the *1* function is first
-; introduced.  It seems appropriate to declare the live stobj variable special
-; as soon as it is referenced, in such *1* functions, even though CCL might be
-; the only Lisp that could need this done.
-
-               (and stobj-flag
-                    `(declare (special ,(the-live-var stobj-flag)))))
               (guarded-primitive-p
 
 ; We want to check guards on the "leaves" of a computation in safe-mode, for
@@ -2459,7 +2465,6 @@
                                            fn *1*fn formals
                                            (oneify body nil wrld
                                                    'invariant-risk)
-                                           declare-stobj-special
                                            ignore-vars ignorable-vars
                                            super-stobjs-in super-stobjs-chk
                                            guard wrld)))
@@ -2478,15 +2483,11 @@
                        (list
                         (labels-form-for-*1*
                          fn *1*fn formals *1*body
-                         declare-stobj-special
                          ignore-vars ignorable-vars
                          super-stobjs-in super-stobjs-chk
                          guard wrld)))))))
-         (let ((*1*dcls (and declare-stobj-special
-                             (list declare-stobj-special))))
-           `(,*1*fn
-             ,formals
-             ,@*1*dcls
+         `(,*1*fn
+           ,formals
 
 ; At one time we attempted to do some code-sharing using a macro call, by using
 ; *1*body-call in place of *1*body in the code above, where *1*body-call was
@@ -2526,7 +2527,7 @@
 ;                     ,@*1*-body-forms))
 ;               *1*-body-forms)
 
-             ,@*1*-body-forms))))))))
+           ,@*1*-body-forms)))))))
 
 
 ;          PROMPTS
@@ -3235,6 +3236,9 @@
 
 (defun-one-output maybe-push-undo-stack (fn name &optional extra)
 
+; This function is evaluated only for side-effect; its return value is
+; irrelevant.
+
 ; See add-trip below for context.  Fn is one of the raw Lisp function names
 ; secretly spawned by CLTL-COMMAND forms, e.g., DEFUN, DEFMACRO, DEFCONST,
 ; DEFPKG, DEFATTACH, or (for the HONS version) MEMOIZE or UNMEMOIZE.  Name is
@@ -3356,15 +3360,29 @@
               (push `(defpkg ,name ',(package-entry-imports temp))
                     (get (packn (cons name '("-PACKAGE"))) '*undo-stack*))))))
         (attachment
-         (let ((at-sym (attachment-symbol name)))
-           (push `(progn #+hons (push ',name *defattach-fns*)
-                         ,(set-attachment-symbol-form
-                           name
+         (cond
+          #+hons ; else this branch will be impossible
+          ((eq name *special-cltl-cmd-attachment-mark-name*)
 
-; Note that at-sym is bound when name is introduced; see throw-or-attach-call.
+; This case arises from a call of table-cltl-cmd for (table badge-table ...);
+; so in this case we should not call set-attachment-symbol-form.  Just below,
+; we optimize ever so slightly, to avoid making *defattach-fns* really long in
+; the case that there are many such badges being added but not many defattach
+; events.
 
-                           (symbol-value at-sym)))
-                 (get name '*undo-stack*))))
+           (push `(unless (eq ',name (car *defattach-fns*))
+                    (push ',name *defattach-fns*))
+                 (get name '*undo-stack*)))
+          (t (push `(progn
+                      #+hons (push ',name *defattach-fns*)
+                      ,(set-attachment-symbol-form
+                        name
+
+; Note that (attachment-symbol name) is bound when name is introduced; see
+; throw-or-attach-call.
+
+                        (symbol-value (attachment-symbol name))))
+                   (get name '*undo-stack*)))))
         #+hons
         (memoize
          (push `(unmemoize-fn ',name)
@@ -3433,7 +3451,7 @@
 ; We start with pushing a new value onto the stack for a given key.
 ; Complicating things is our decision to order the keys in the alists by (a
 ; priori) frequency of access.  The aim is to speed up getprop.  We record
-; the results of many experiments below.
+; the results of many early experiments below.
 
 ; Recall that the current-acl2-world is implemented so that the logical
 ; properties are stored in an alist which is obtained via a raw lisp get of the
@@ -3442,23 +3460,23 @@
 ; encountered by the raw lisp get and the order of the keys encountered by the
 ; assoc :test #'eq.
 
-; The basic experiment addressed one particular proof in the Nqthm package.  To
-; set the stage, the Nqthm package was loaded and then undone back through
-; NQTHM-COUNT-SYMBOL-IS-COUNT-FN-UNPACK, a theorem whose reported proof time is
-; 35.23 by the current Version 1.8.  Then that theorem was proved again while a
-; patch was in place inside of fgetprop.  The patch collected together an alist
-; recording the calls of fgetprop.  In particular the alist entries were of the
-; form (symb (key1 . cnt1) ... (keyk . cntk)) indicating that (fgetprop symb
-; keyi <some-default> <current-acl2-world>) was called cnti times during the
-; proof.  We then wrote and compiled a program that swept the alist and
-; repeated every call of fgetprop simply to allow us to measure the total time
-; spent in fgetprop.  There were a total of 102781 calls.  To sweep the alist
-; with a no-op function of the same arity as fgetprop required 0.25 seconds.
-; We therefore consider that to be the overhead of the sweep itself.  To sweep
-; with fgetprop required 0.75 seconds, indicating that a "net" 0.50 seconds
-; were actually spent in fgetprop on the actual calls in the sample theorem.
-; (We will use "net" henceforth to mean the measured time minus 0.25.)  This
-; gives an expected "per call" time of 4.86E-6.
+; An early basic experiment addressed one particular proof in the Nqthm
+; package.  To set the stage, the Nqthm package was loaded and then undone back
+; through NQTHM-COUNT-SYMBOL-IS-COUNT-FN-UNPACK, a theorem whose reported proof
+; time is 35.23 by the current Version 1.8.  Then that theorem was proved again
+; while a patch was in place inside of fgetprop.  The patch collected together
+; an alist recording the calls of fgetprop.  In particular the alist entries
+; were of the form (symb (key1 . cnt1) ... (keyk . cntk)) indicating that
+; (fgetprop symb keyi <some-default> <current-acl2-world>) was called cnti
+; times during the proof.  We then wrote and compiled a program that swept the
+; alist and repeated every call of fgetprop simply to allow us to measure the
+; total time spent in fgetprop.  There were a total of 102781 calls.  To sweep
+; the alist with a no-op function of the same arity as fgetprop required 0.25
+; seconds.  We therefore consider that to be the overhead of the sweep itself.
+; To sweep with fgetprop required 0.75 seconds, indicating that a "net" 0.50
+; seconds were actually spent in fgetprop on the actual calls in the sample
+; theorem.  (We will use "net" henceforth to mean the measured time minus
+; 0.25.)  This gives an expected "per call" time of 4.86E-6.
 
 ; For what it is worth, a noop that calls get has an overhead of 0.267 for
 ; a net of 0.017 or a per call time of 1.65E-7 seconds.  Thus an fgetprop
@@ -3474,7 +3492,7 @@
 ; We now move on to ordering the keys seen by assoc :test #'eq.  In prior
 ; experiments we had determined the frequency with which the various keys are
 ; accessed (during the entire Nqthm package proof).  For what it is worth, here
-; is the key list, in order from most frequently accessed to least:
+; is the key list we found, in order from most frequently accessed to least:
 
 ;   '(COARSENINGS GLOBAL-VALUE CONGRUENCES SYMBOL-CLASS TYPE-PRESCRIPTIONS
 ;     LEMMAS RUNIC-MAPPING-PAIRS MULTIPLICITY STATE-IN
@@ -3582,9 +3600,9 @@
 ; ...
 
 ; As a result, we revised the ordering of keys.  We also noticed that although
-; GLOBAL-VALUE is high on the list, most of that is accounted for by looking it
-; up for symbols RECOGNIZER-ALIST and UNTOUCHABLES, which do not have other
-; properties:
+; GLOBAL-VALUE is high on the list, most of that was accounted for by looking
+; it up for symbols RECOGNIZER-ALIST (which is no longer a world global, after
+; Version_8.2) and UNTOUCHABLES, which do not have other properties:
 
 ; books/certify-numbers.lisp:
 ;
@@ -3719,6 +3737,39 @@
 ;
 ; ============================================================
 
+; In December 2019 we did several experiments to improve
+; *current-acl2-world-key-ordering*, since it had probably been many years
+; since that was attempted and also because RECOGNIZER-ALIST had recently been
+; added as a new property (with property GLOBAL-VALUE therefore being accessed
+; less often).  Several community books were included or LDed, as follows, in
+; each case after adding the commented-out call of update-fgetprop-stats to the
+; definition of fgetprop (together with the commented-out definitions,
+; including the one for update-fgetprop-stats, just above fgetprop's definition
+; in axioms.lisp).
+
+;   (include-book "centaur/sv/top" :dir :system)
+
+;   (ld "proof-by-generalization-mult.lisp") ; in workshops/2004/legato/support/
+
+;   (include-book "centaur/gl/gl" :dir :system)
+
+;   (ld "centaur/aignet/cert.acl2" :dir :system)
+;   (ld "centaur/aignet/cuts4.lisp" :dir :system)
+
+;   (ld "centaur/bitops/cert.acl2" :dir :system)
+;   (ld "centaur/bitops/ihsext-basics.lisp" :dir :system)
+
+;   (include-book "centaur/bitops/ihsext-basics" :dir :system)
+
+;   (include-book "projects/x86isa/top" :dir :system)
+
+;   (ld "projects/x86isa/proofs/popcount/cert.acl2" :dir :system)
+;   (ld "projects/x86isa/proofs/popcount/popcount.lisp" :dir :system)
+
+; We then called analyze-fgetprop-stats in each case to get suitable
+; statistics.  Finally, we modified *current-acl2-world-key-ordering* by
+; inspecting the results.
+
 ; End of Experimental Results.
 
 ; Below we list the most important property keys according to the results
@@ -3729,21 +3780,20 @@
 ; system are in this list (see below).
 
 (defparameter *current-acl2-world-key-ordering*
-  '(COARSENINGS
-    GLOBAL-VALUE ; mostly looked up for RECOGNIZER-ALIST and UNTOUCHABLES,
-                 ; which do not have other properties
-    RUNIC-MAPPING-PAIRS
-    DEF-BODIES
+  '(COARSENINGS ; during proofs more than include-book
+    GLOBAL-VALUE ; largely for untouchables when including a book
+    RECOGNIZER-ALIST ; during proofs more than include-book
+    RUNIC-MAPPING-PAIRS ; during proofs more than include-book
+    DEF-BODIES ; during proofs more than include-book
+    SYMBOL-CLASS
+    STOBJS-OUT
     TYPE-PRESCRIPTIONS
     TABLE-ALIST
+    LEMMAS
     CONGRUENCES
     PEQUIVS
-    SYMBOL-CLASS
-    LEMMAS
-    STOBJS-OUT
-    MACRO-BODY
-    FORMALS
-    FORWARD-CHAINING-RULES
+    MACRO-BODY ; during include-book more than proofs
+    FORMALS ; during include-book more than proofs
 
 ; Note: As of this writing there are many properties not included above, all of
 ; which fall into the low priority category.  We have omitted keys simply to
@@ -3866,6 +3916,11 @@
 ; (maybe-introduce-empty-pkg "MY-PKG")
 ;;; Save some information about the fni:
 ; (setq *hcomp-fn-alist* '((fn1 ..) (fn2 ..) ..))
+;;; Support compilation of loop$ forms (see Part 3 below):
+; (when (eq *readtable* *reckless-acl2-readtable*)
+;   (setq *set-hcomp-loop$-alist* t))
+; (when *set-hcomp-loop$-alist*
+;   (setq *hcomp-loop$-alist* '..))
 ;;; Build a hash table associating each fni with its pre-existing
 ;;; symbol-function or special *unbound* mark:
 ; (hcomp-init)
@@ -4239,21 +4294,6 @@
 ; :load-compiled-file, where by "effective value" we mean the value after
 ; accounting for state global 'compiler-enabled.
 
-; A stobj may be defined during evaluation of the raw Lisp definition of
-; include-book.  In that case, the-live-name for that stobj is an add-trip
-; symbol, and hence its value is stored in *hcomp-const-ht*.  However, the raw
-; Lisp definition of defstobj or defabsstobj also assigns to
-; *user-stobj-alist*, which we expect will associate the-live-name of a stobj
-; with its Lisp relevant value.  Now imagine subsequent processing of events by
-; the same include-book.  When defstobj or defabsstobj is encountered, add-trip
-; obtains the value of the-live-name of that stobj from *hcomp-const-ht*, and
-; uses that value to update *user-stobj-alist* just as it would if it were
-; updating without benefit of *hcomp-const-ht*.  The only tricky bit here is
-; that we need to ensure that add-trip, along with undo-trip and flush-trip,
-; are the only functions that update *user-stobj-alist*.  Therefore, we bind
-; *user-stobj-alist* to itself when doing an early load of the compiled file or
-; expansion file; see include-book-raw.
-
 ; If the compiled file or certificate is missing, or else if the compiled file
 ; is older than the certificate, we may print a warning and go on, assigning
 ; 'incomplete status to that book in *hcomp-book-ht* -- but there are a couple
@@ -4590,6 +4630,33 @@
 
 ; Note that some of these are wrapped together in a progn to maximize sharing
 ; using #n# syntax.
+
+; Note added February, 2019: We have extended the expansion file to support the
+; macroexpansion of loop$ in raw Lisp.  The main idea is to mirror the world
+; global, 'loop$-alist, in a Lisp special variable to be consulted during the
+; early load of compiled files: *hcomp-loop$-alist*.  See loop$.  The
+; discussion below outlines how the expansion file supports the macroexpansion
+; of loop$ in raw Lisp.
+
+; The loop$-alist -- whether the value of world global 'loop$-alist or the
+; value of special variable *hcomp-loop$-alist* -- needs to distinguish entries
+; added for the current book during its certification, because these are the
+; only ones that are placed directly in that book's expansion file.  Thus the
+; loop$-alist-entry record has a field, :flg, that is usually nil but is t when
+; adding an entry during certification and not under include-book (i.e., under
+; a sub-book).  The variable *hcomp-loop$-alist* is set to nil in
+; include-book-raw-top and then populated in expansion files.  Then each
+; expansion file overwrites that variable to the list of loop$-alist-entry
+; records appropriate for loop$ forms introduced in that book, not in
+; sub-books.  But upon exit from the expansion file, the value of that variable
+; from before that overwrite is extended by the final value from the expansion
+; file, using the macro wrapper, handle-hcomp-loop$-alist.
+
+; An optimizbation is that *set-hcomp-loop$-alist* is only true when under some
+; load of an expansion file (where (eq *readtable* *reckless-acl2-readtable*)).
+; In particular, in the normal case that compiled files are loaded,
+; *hcomp-loop$-alist* will remain nil, which is fine since the loop$ macros
+; will have already been expanded.
 
 ; End of Essay on Hash Table Support for Compilation
 
@@ -5007,8 +5074,39 @@
              (assert$ (member-eq status '(to-be-compiled complete incomplete))
                       status)))))))))
 
+(defvar *set-hcomp-loop$-alist* nil)
+
+(defun extend-hcomp-loop$-alist (new old full-book-name)
+
+; Extend old by new, checking that we never change an existing value.
+
+  (let ((result old))
+    (loop for pair in new
+          when (let ((old-pair (assoc-equal (car pair) old)))
+                 (cond ((null old-pair) t)
+                       ((equal (cdr pair) (cdr old-pair)) nil)
+                       (t (er hard 'extend-hcomp-loop$-alist
+                              "Implementation error: unexpected ~
+                               incompatibility in loop$-alists when ~
+                               processing the book ~x0.~%new:~%~x1~%old~%~x2"
+                              full-book-name new old))))
+          do (push pair result)
+          finally (return result))))
+
+(defmacro handle-hcomp-loop$-alist (form full-book-name)
+  (let ((saved-hcomp-loop$-alist (gensym)))
+    `(let ((,saved-hcomp-loop$-alist *hcomp-loop$-alist*))
+       (prog1 ,form
+         (setq *hcomp-loop$-alist*
+               (extend-hcomp-loop$-alist *hcomp-loop$-alist*
+                                         ,saved-hcomp-loop$-alist
+                                         ,full-book-name))))))
+
 (defun include-book-raw (book-name directory-name load-compiled-file dir ctx
-                                   state)
+                                   state
+                                   &aux ; protect global value
+                                   (*set-hcomp-loop$-alist*
+                                    *set-hcomp-loop$-alist*))
 
 ; This function is generally called on behalf of include-book-fn.  No load
 ; takes place if load-compiled-file is effectively nil (either nil or else
@@ -5149,7 +5247,9 @@
                 ((and book-date
                       ofile-date
                       (<= book-date ofile-date))
-                 (load-compiled ofile t))
+                 (handle-hcomp-loop$-alist
+                  (load-compiled ofile t)
+                  full-book-name))
                 (t (let ((reason (cond (ofile-exists
                                         "the compiled file is not at least as ~
                                          recent as the book")
@@ -5189,7 +5289,10 @@
                                                lfile)
                                           reason)
                                 (cond (efile-p
-                                       (with-reckless-read (load efile)))
+                                       (with-reckless-read
+                                        (handle-hcomp-loop$-alist
+                                         (load efile)
+                                         full-book-name)))
                                       (raw-mode-p (load os-file))))))))))))
       ((let* ((entry (assert$ *hcomp-book-ht* ; not raw mode, e.g.
                               (gethash full-book-name *hcomp-book-ht*)))
@@ -5246,12 +5349,13 @@
 ; Our intention is that the call of load-compiled-book below has no effect on
 ; the state other than to define some packages and populate *hcomp-xxx-ht* hash
 ; tables.  We therefore protect the one global managed by add-trip that is not
-; managed by those hash tables: *user-stobj-alist*.  See the Essay on Hash
-; Table Support for Compilation.
+; managed by those hash tables: *user-stobj-alist*.
 
                       *user-stobj-alist*))
-                 (load-compiled-book full-book-name directory-name
-                                     load-compiled-file ctx state))))
+                 (handle-hcomp-loop$-alist
+                  (load-compiled-book full-book-name directory-name
+                                      load-compiled-file ctx state)
+                  full-book-name))))
           (setf (gethash full-book-name *hcomp-book-ht*)
                 (make hcomp-book-ht-entry
                       :status   status
@@ -5294,7 +5398,8 @@
 ; then for acl2-unwind-protect to do the actual cleanup using those saved
 ; values.
 
-     (setq *saved-hcomp-restore-hts* nil)
+     (setq *saved-hcomp-restore-hts* nil
+           *hcomp-loop$-alist* nil)
      (acl2-unwind-protect
       "include-book-raw"
       (unwind-protect
@@ -5317,12 +5422,16 @@
                   (value nil)))
         (setq *saved-hcomp-restore-hts*
               (list* *hcomp-fn-macro-restore-ht*
-                     *hcomp-const-restore-ht*)))
+                     *hcomp-const-restore-ht*)
+              *hcomp-loop$-alist*
+              nil))
       (progn (hcomp-restore-defs)
              (setq *saved-hcomp-restore-hts* nil)
+             (setq *hcomp-loop$-alist* nil)
              state)
       (progn (hcomp-restore-defs)
              (setq *saved-hcomp-restore-hts* nil)
+             (setq *hcomp-loop$-alist* nil)
              state)))))
 
 (defmacro hcomp-ht-from-type (type ctx)
@@ -5698,14 +5807,9 @@
                                          wrld t nil)))
           ((defstobj defabsstobj)
             (let ((name (nth 1 cltl-cmd))
-                  (the-live-name (nth 2 cltl-cmd))
-                  (init (nth 3 cltl-cmd))
                   (raw-defs (nth 4 cltl-cmd))
                   (ax-defs (nth 6 cltl-cmd))
                   (new-defs nil))
-              (install-for-add-trip `(defparameter ,the-live-name ,init)
-                                    nil
-                                    nil)
               (dolist
                 (def raw-defs)
                 (push (cond ((eq (car cltl-cmd) 'defabsstobj)
@@ -5731,12 +5835,16 @@
           (attachment ; (cddr trip) is produced by attachment-cltl-cmd
            (dolist (x (cdr cltl-cmd))
              (let ((name (if (symbolp x) x (car x))))
-               (install-for-add-trip
-                (cond ((symbolp x)
-                       (set-attachment-symbol-form x nil))
-                      (t (set-attachment-symbol-form name (cdr x))))
-                nil
-                nil))))
+               (unless (eq name *special-cltl-cmd-attachment-mark-name*)
+
+; See maybe-push-undo-stack for relevant discussion of the condition above.
+
+                 (install-for-add-trip
+                  (cond ((symbolp x)
+                         (set-attachment-symbol-form x nil))
+                        (t (set-attachment-symbol-form name (cdr x))))
+                  nil
+                  nil)))))
 
 ; There is nothing to do for memoize or unmemoize.
 
@@ -6072,15 +6180,7 @@
 ; in the previous case.
 
                  nil))
-            (maybe-push-undo-stack 'defconst the-live-name)
             (maybe-push-undo-stack 'defconst '*user-stobj-alist*)
-
-; See the comment below, just above where we formerly set the symbol-value of
-; name.  If we re-install that code, then the next line of code also needs to
-; be re-installed.
-
-;           (maybe-push-undo-stack 'defconst name)
-            (install-for-add-trip `(defparameter ,the-live-name ,init) nil t)
 
 ; Memoize-flush expects the variable (st-lst name) to be bound.  We take care
 ; of that directly here.  We see no need to involve install-for-add-trip or the
@@ -6113,13 +6213,6 @@
                                   (access defstobj-template template-or-event
                                           :non-memoizable)))))
 
-; At one point we executed the following form.  But now we see that this is not
-; necessary, since trans-eval binds stobj names anyhow using *user-stobj-alist*
-; and even acl2-raw-eval uses *user-stobj-alist* to bind stobj names.  If the
-; following code is re-installed (uncommented), then also re-install the code
-; (maybe-push-undo-stack 'defconst name) above.
-;           (setf (symbol-value name) (symbol-value the-live-name))
-
 ; The following assignment to *user-stobj-alist* is structured to keep
 ; new ones at the front, so we can more often exploit the optimization
 ; in put-assoc-eq-alist.
@@ -6130,9 +6223,9 @@
 ; This is a redefinition!  We'll just replace the old entry.
 
                          (put-assoc-eq name
-                                       (symbol-value the-live-name)
+                                       (eval init)
                                        *user-stobj-alist*))
-                        (t (cons (cons name (symbol-value the-live-name))
+                        (t (cons (cons name (eval init))
                                  *user-stobj-alist*))))
 
 ; We eval and compile the raw lisp definitions first, some of which may be
@@ -6355,14 +6448,18 @@
         (attachment ; (cddr trip) is produced by attachment-cltl-cmd
          (dolist (x (cdr (cddr trip)))
            (let ((name (if (symbolp x) x (car x))))
-             #+hons (push name *defattach-fns*)
              (maybe-push-undo-stack 'attachment name)
-             (install-for-add-trip
-              (cond ((symbolp x)
-                     (set-attachment-symbol-form x nil))
-                    (t (set-attachment-symbol-form name (cdr x))))
-              nil
-              t))))
+             (unless (eq name *special-cltl-cmd-attachment-mark-name*)
+
+; See maybe-push-undo-stack for relevant discussion of the condition above.
+
+               #+hons (push name *defattach-fns*)
+               (install-for-add-trip
+                (cond ((symbolp x)
+                       (set-attachment-symbol-form x nil))
+                      (t (set-attachment-symbol-form name (cdr x))))
+                nil
+                t)))))
         #+hons
         (memoize
          (maybe-push-undo-stack 'memoize (cadr (cddr trip)))
@@ -6426,11 +6523,9 @@
             (dolist (tuple (cdddr (cddr trip)))
                     (maybe-pop-undo-stack (car tuple))))
           ((defstobj defabsstobj)
-            (let ((name (nth 1 (cddr trip)))
-                  (the-live-name (nth 2 (cddr trip))))
+            (let ((name (nth 1 (cddr trip))))
               (maybe-pop-undo-stack name)
-              (maybe-pop-undo-stack '*user-stobj-alist*)
-              (maybe-pop-undo-stack the-live-name)))
+              (maybe-pop-undo-stack '*user-stobj-alist*)))
           (defpkg nil)
           ((defconst defmacro #+hons memoize #+hons unmemoize)
             (maybe-pop-undo-stack (cadr (cddr trip))))
@@ -6456,11 +6551,9 @@
             (dolist (tuple (cdddr (cddr trip)))
                     (flush-undo-stack (car tuple))))
           ((defstobj defabsstobj)
-            (let ((name (nth 1 (cddr trip)))
-                  (the-live-name (nth 2 (cddr trip))))
+            (let ((name (nth 1 (cddr trip))))
               (flush-undo-stack name)
-              (flush-undo-stack '*user-stobj-alist*)
-              (flush-undo-stack the-live-name)))
+              (flush-undo-stack '*user-stobj-alist*)))
           (defpkg nil)
           ((defconst defmacro #+hons memoize #+hons unmemoize)
             (flush-undo-stack (cadr (cddr trip))))
@@ -6493,14 +6586,41 @@
 
 (defparameter *known-worlds* nil)
 
+(defvar *saved-user-stobj-alist* nil)
+
 (defun update-wrld-structures (wrld state)
   (install-global-enabled-structure wrld state)
   (recompress-global-enabled-structure
    'global-arithmetic-enabled-structure
    wrld)
-  (recompress-stobj-accessor-arrays
-   (strip-cars *user-stobj-alist*)
-   wrld)
+  (when (not (eq *saved-user-stobj-alist* *user-stobj-alist*))
+
+; On 12/12/2019 we found, using CCL on a Mac, that the time for (include-book
+; "centaur/sv/top" :dir :system) was reduced by 2.6% by adding the test above
+; before calling recompress-stobj-accessor-arrays.  The time reduction however
+; was only 0.2% for (include-book "projects/x86isa/top" :dir :system).  The
+; former book involved many more stobjs: 27 after including it, vs. only 4 for
+; the latter book.  So this change seems important mainly for scalability.
+
+    (recompress-stobj-accessor-arrays
+     (strip-cars *user-stobj-alist*)
+     wrld)
+    (setq *saved-user-stobj-alist* *user-stobj-alist*))
+  (when (let ((i (f-get-global 'certify-book-info state)))
+          (and i
+               (not (access certify-book-info i :include-book-phase))
+               (not ; not inside include-book
+                (global-val 'include-book-path wrld))))
+
+; The world global 'translate-cert-data is only updated during book
+; certification, and not during include-book (especially, not during the
+; include-book pass of certify-book); hence the guard above.  The following
+; preservation of fast-alist status might only be necessary because of changes
+; to translate-cert-data made during make-event expansion.  But we protect the
+; fast-alist status of that world global against any change to the world made
+; (especially) by xtrans-eval.
+
+    (make-fast-alist (global-val 'translate-cert-data wrld)))
   #+hons
   (update-memo-entries-for-attachments *defattach-fns* wrld state)
   nil)
@@ -7278,19 +7398,28 @@
 (assert (subsetp-equal *acl2-pass-2-files* *acl2-files*))
 
 ; Next we define fns-different-wrt-acl2-loop-only, used below in
-; check-built-in-constants.  We base our code loosely on
-; functions-defined-in-file in hons-raw.lisp.
+; check-built-in-constants.
 
-(defun our-update-ht (key val ht)
-  (let ((old (gethash key ht)))
+(defun our-update-ht (key val ht when-pass-2-p)
+
+; We aim to store in ht all definitions associated with key, and here we add
+; one definition, val.  Perhaps it is only necessary to store the most recent
+; definition, but here we store them all, even though that is probably
+; needlessly conservative for our purpose of finding where logical and raw Lisp
+; definitions differ.
+
+  (let ((old (gethash key ht))
+        (val (if when-pass-2-p
+                 (list :when-pass-2-p val)
+               val)))
     (setf (gethash key ht)
           (cond ((and (consp old)
                       (eq (car old) :multiple))
                  (list* (car old) val (cdr old)))
-                (old (list :multiple val))
+                (old (list :multiple val old))
                 (t val)))))
 
-(defun note-fns-in-form (form ht)
+(defun note-fns-in-form (form ht when-pass-2-p)
 
 ; For every macro and every function defined by form, associate its definition
 ; with its name in the given hash table, ht.  See note-fns-in-files.
@@ -7298,36 +7427,50 @@
   (and (consp form)
        (case (car form)
          ((defun defund defn defproxy defun-nx defun-one-output defstub
-            defmacro defabbrev defun@par defmacro-last defun-overrides
+            defmacro defmacro-untouchable defabbrev
+            defun@par defmacro-last defun-overrides
             defun-with-guard-check defun-sk)
-          (our-update-ht (cadr form) form ht))
+          (our-update-ht (cadr form) form ht when-pass-2-p))
          (save-def
-          (note-fns-in-form (cadr form) ht))
+          (note-fns-in-form (cadr form) ht when-pass-2-p))
          (defun-for-state
-           (our-update-ht (defun-for-state-name (cadr form)) form ht))
+           (our-update-ht (defun-for-state-name (cadr form)) form ht when-pass-2-p))
          (define-global
-           (our-update-ht (define-global-name (cadr form)) form ht)
-           (our-update-ht (cadr form) form ht))
+           (our-update-ht (define-global-name (cadr form)) form ht when-pass-2-p)
+           (our-update-ht (cadr form) form ht when-pass-2-p))
          ((define-pc-atomic-macro define-pc-bind* define-pc-help
             define-pc-macro define-pc-meta define-pc-primitive)
           (let ((name (make-official-pc-command
                        (if (eq (car form) 'define-pc-meta-or-macro-fn)
                            (nth 2 form)
                          (nth 1 form)))))
-            (our-update-ht name form ht)))
-         ((mutual-recursion mutual-recursion@par progn when-pass-2)
+            (our-update-ht name form ht when-pass-2-p)))
+         ((mutual-recursion mutual-recursion@par progn)
           (loop for x in (cdr form)
-                do (note-fns-in-form x ht)))
+                do (note-fns-in-form x ht when-pass-2-p)))
+         ((when-pass-2)
+
+; When inside when-pass-2, since the #-acl2-loop-only definition of when-pass-2
+; is nil, #-acl2-loop-only code is ignored.  So as we collect definitions
+; inside when-pass-2, we add a special when-pass-2 marker to help us to cause
+; an error (see fns-different-wrt-acl2-loop-only) when such #-acl2-loop-only
+; code is detected.  Note also that merely being in a pass-2 file like
+; apply.lisp may not be a problem: that is, putting the #-acl2-loop-only
+; outside when-pass-2 is enough to get the raw lisp code to be noticed.
+
+          (loop for x in (cdr form)
+                do (note-fns-in-form x ht t)))
          ((encapsulate when)
           (loop for x in (cddr form)
-                do (note-fns-in-form x ht)))
+                do (note-fns-in-form x ht when-pass-2-p)))
          (partial-encapsulate
           (loop for x in (cdddr form)
-                do (note-fns-in-form x ht)))
+                do (note-fns-in-form x ht when-pass-2-p)))
          ((skip-proofs local)
-          (note-fns-in-form (cadr form) ht))
+          (note-fns-in-form (cadr form) ht when-pass-2-p))
          (defrec ; pick just one function introduced
-           (our-update-ht (record-changer-function-name (cadr form)) form ht))
+           (our-update-ht (record-changer-function-name (cadr form)) form ht
+                          when-pass-2-p))
          ((add-custom-keyword-hint
            add-macro-alias
            add-macro-fn
@@ -7335,10 +7478,12 @@
            #+ccl ccl:defstatic
            declaim
            def-basic-type-sets
+           defwarrant
            defattach
            defaxiom
            defconst
            defconstant
+           defequiv
            defg
            define-@par-macros
            define-atomically-modifiable-counter
@@ -7412,7 +7557,7 @@
      (loop while (not (eq (setq x (read str nil avrc))
                           avrc))
            do
-           (note-fns-in-form x ht)))))
+           (note-fns-in-form x ht nil)))))
 
 (defun note-fns-in-files (filenames ht loop-only-p)
 
@@ -7440,33 +7585,43 @@
 
 ; For each file in acl2-files we collect up all definitions of functions and
 ; macros, reading each file both with and without feature :acl2-loop-only.  We
-; return (mv macro-result program-mode-result logic-mode-result), where each of
-; macro-result, program-mode-result, and logic-mode-result is a list of
-; symbols.  Each symbol is the name of a macro, program-mode function, or
-; logic-mode function (respectively) defined with feature :acl2-loop-only,
+; return (mv when-pass-2-result macro-result program-mode-result
+; logic-mode-result), where each return value is a list of symbols unless debug
+; variable *check-built-in-constants-debug* is true.  Each symbol is the name
+; of a macro, program-mode function, or logic-mode function (respectively, for
+; results other than when-pass-2-result) defined with feature :acl2-loop-only,
 ; which has a different (or absent) definition without feature :acl2-loop-only.
+; However, when such a symbol has a definition (raw Lisp, logical, or both)
+; under when-pass-2, it is put into the list when-pass-2-result rather than the
+; other three.
 
 ; This function is typically called with acl2-files equal to *acl2-files*, in
 ; the build directory.  See the comment about redundant definitions in
 ; chk-acceptable-defuns-redundancy for a pertinent explanation.
 
-  (let ((logic-filenames (loop for x in acl2-files
-                               when (not (raw-source-name-p x))
+  (flet ((when-pass-2-p (val)
+                        (and (consp val)
+                             (if (eq (car val) :multiple)
+                                 (assoc-eq :when-pass-2-p (cdr val))
+                               (eq (car val) :when-pass-2-p)))))
+    (let ((logic-filenames (loop for x in acl2-files
+                                 when (not (raw-source-name-p x))
+                                 collect (concatenate 'string x ".lisp")))
+          (raw-filenames (loop for x in acl2-files
                                collect (concatenate 'string x ".lisp")))
-        (raw-filenames (loop for x in acl2-files
-                             collect (concatenate 'string x ".lisp")))
-        (ht-raw (make-hash-table :test 'eq))
-        (ht-logic (make-hash-table :test 'eq))
-        (macro-result nil)
-        (program-mode-result nil)
-        (logic-mode-result nil)
-        (wrld (w *the-live-state*)))
-    (note-fns-in-files raw-filenames ht-raw nil)
-    (note-fns-in-files logic-filenames ht-logic t)
-    (maphash (lambda (key logic-val)
-               (progn
-                 (assert (symbolp key))
-                 (let ((raw-val (gethash key ht-raw)))
+          (ht-raw (make-hash-table :test 'eq))
+          (ht-logic (make-hash-table :test 'eq))
+          (when-pass-2-result nil)
+          (macro-result nil)
+          (program-mode-result nil)
+          (logic-mode-result nil)
+          (wrld (w *the-live-state*)))
+      (note-fns-in-files raw-filenames ht-raw nil)
+      (note-fns-in-files logic-filenames ht-logic t)
+      (maphash (lambda (key logic-val)
+                 (progn
+                   (assert (symbolp key))
+                   (let ((raw-val (gethash key ht-raw)))
 
 ; We use equalp rather than equal below because in August, 2014 using SBCL
 ; 1.2.2 (and this might happen with other Lisps in the future), backquote was
@@ -7480,39 +7635,70 @@
 ; (SB-INT:QUASIQUOTE #S(SB-IMPL::COMMA :EXPR X :KIND 0))
 ; *
 
-                   (or (equalp logic-val raw-val)
-                       (let ((x
-                              (if *check-built-in-constants-debug*
-                                  (list key :logic logic-val :raw raw-val)
+                     (or (equalp logic-val raw-val)
+                         (let ((x (if *check-built-in-constants-debug*
+                                      (list key :logic logic-val :raw raw-val)
+                                    key))
+                               (when-pass-2-p
+                                (or (when-pass-2-p logic-val)
+                                    (when-pass-2-p raw-val))))
+                           (cond ((and when-pass-2-p
+
+; Our approach makes it impossible to recognize exactly those cases in which
+; #-acl2-loop-only code appears under a when-pass-2 call, which are the cases
+; that we want to catch (since such code is always ignored, because when-pass-2
+; calls expand to nil in raw Lisp).  A conservative approach is to cause an
+; error whenever there is a discrepancy between the logic and raw values, but
+; here we exempt one safe situation: there is no raw value inside when-pass-2.
+; In that exceptional case, we fall through to the other branches of this COND.
+
+                                       (not ; the exception is as follows:
+                                        (and
+                                         (eq (car logic-val) :when-pass-2-p)
+                                         (consp raw-val)
+                                         (if (eq (car raw-val) :multiple)
+                                             (loop for form in (cdr raw-val)
+                                                   always
+                                                   (not
+                                                    (and
+                                                     (consp (car form))
+                                                     (eq (car form)
+                                                         :when-pass-2-p))))
+                                           (not (eq (car raw-val)
+                                                    :when-pass-2-p))))))
+                                  (push x when-pass-2-result))
+                                 ((getpropc key 'macro-body nil wrld)
+                                  (push x macro-result))
+                                 ((eq (symbol-class key wrld)
+                                      :program)
+                                  (push x program-mode-result))
+                                 (t
+                                  (push x logic-mode-result))))))))
+               ht-logic)
+      (maphash (lambda (key raw-val)
+                 (progn
+                   (assert (symbolp key))
+                   (when (not (gethash key ht-logic))
+                     (let ((x (if *check-built-in-constants-debug*
+                                  (list key :raw raw-val)
                                 key)))
-                         (cond ((getpropc key 'macro-body nil wrld)
-                                (push x macro-result))
-                               ((eq (symbol-class key wrld)
-                                    :program)
-                                (push x program-mode-result))
-                               (t
-                                (push x logic-mode-result))))))))
-             ht-logic)
-    (maphash (lambda (key raw-val)
-               (progn
-                 (assert (symbolp key))
-                 (when (not (or (gethash key ht-logic)
-                                (assoc key *primitive-formals-and-guards* :test
-                                       'eq)))
-                   (cond ((getpropc key 'macro-body nil wrld)
-                          (push key macro-result))
-                         (t (let ((c ; avoid symbol-class (defaults to :program)
-                                   (getpropc key 'symbol-class nil wrld)))
-                              (when c
-                                (let ((x
-                                       (if *check-built-in-constants-debug*
-                                           (list key :raw raw-val)
-                                         key)))
-                                  (if (eq c :program)
-                                      (push x program-mode-result)
-                                    (push x logic-mode-result))))))))))
-             ht-raw)
-    (mv macro-result program-mode-result logic-mode-result)))
+                       (cond ((when-pass-2-p raw-val)
+                              (push x when-pass-2-result))
+                             ((assoc key *primitive-formals-and-guards*
+                                     :test 'eq))
+                             ((getpropc key 'macro-body nil wrld)
+                              (push x macro-result))
+                             (t (let ((c ; avoid symbol-class (defaults to :program)
+                                       (getpropc key 'symbol-class nil wrld)))
+                                  (when c
+                                    (if (eq c :program)
+                                        (push x program-mode-result)
+                                      (push x logic-mode-result))))))))))
+               ht-raw)
+      (mv when-pass-2-result
+          macro-result
+          program-mode-result
+          logic-mode-result))))
 
 (defun collect-monadic-booleans (fns ens wrld)
   (cond ((endp fns) nil)
@@ -7775,47 +7961,60 @@
             (merge-sort-lexorder
              (loop for f in *definition-minimal-theory* collect
                    (cons f (body f t (w *the-live-state*))))))))
-    (mv-let
-     (macros-found program-found logic-found)
-     (fns-different-wrt-acl2-loop-only *acl2-files*)
-     (flet ((my-diff (x y)
-                     (if *check-built-in-constants-debug*
-                         (loop for tuple in x
-                               when (not (member (car tuple) y :test 'eq))
-                               collect tuple)
-                       (set-difference-eq x y))))
-       (let ((bad-macros (my-diff macros-found
-                                  *initial-macros-with-raw-code*))
-             (bad-program (my-diff program-found
-                                   *initial-program-fns-with-raw-code*))
-             (bad-logic (my-diff logic-found
-                                 *initial-logic-fns-with-raw-code*)))
-         (when (or bad-macros bad-program bad-logic)
-           (format t "Failed check for coverage of functions with acl2-loop-only code
-differences!  Please send this error message to the ACL2 implementors.
-Missing functions (use *check-built-in-constants-debug* = t for verbose report):
-  ~s
-~s;
-  ~a
-~s:
-  ~a"
-
-; We need to update *initial-macros-with-raw-code*,
-; *initial-program-fns-with-raw-code*, or
-; *initial-logic-fns-with-raw-code*, respectively according to the non-nil
-; fields in the error message.
-
-                   (list (list '*initial-macros-with-raw-code*
-                               bad-macros)
-                         (list '*initial-program-fns-with-raw-code*
-                               bad-program)
-                         (list '*initial-logic-fns-with-raw-code*
-                               bad-logic))
-                   '(lisp-implementation-type)
-                   (lisp-implementation-type)
-                   '(lisp-implementation-version)
-                   (lisp-implementation-version))
-           (error "Check failed!")))))
+    (mv-let (when-pass-2-result macros-found program-found logic-found)
+      (fns-different-wrt-acl2-loop-only *acl2-files*)
+      (flet ((my-diff (x y)
+                      (if *check-built-in-constants-debug*
+                          (loop for tuple in x
+                                when (not (member (car tuple) y :test 'eq))
+                                collect tuple)
+                        (set-difference-eq x y))))
+        (let ((bad-macros (my-diff macros-found
+                                   *initial-macros-with-raw-code*))
+              (bad-program (my-diff program-found
+                                    *initial-program-fns-with-raw-code*))
+              (bad-logic (my-diff logic-found
+                                  *initial-logic-fns-with-raw-code*)))
+          (when (or when-pass-2-result bad-macros bad-program bad-logic)
+            (format t
+                    "~%ERROR: Failed check for coverage of functions with~%~
+                    acl2-loop-only code differences!  Please send this~%~
+                    error message to the ACL2 implementors. Problems are~%~
+                    as shown below; use *check-built-in-constants-debug* = t~%~
+                    for a verbose report.~%~
+                    Note: (lisp-implementation-type) =~%~
+                    ~6t~s~%~
+                    Note: (lisp-implementation-version) =~%~
+                    ~6t~s~%~%"
+                    (lisp-implementation-type)
+                    (lisp-implementation-version))
+            (when when-pass-2-result
+              (format t
+                      "The following have #-acl2-loop-only code within ~
+                       (when-pass-2 ...):~%~s~%~%"
+                      when-pass-2-result))
+            (when bad-macros
+              (format t
+                      "The following macros differ in their #+acl2-loop-only~%~
+                       and #-acl2-loop-only code:~%~s~%~
+                       They probably should be added to ~s.~%~%"
+                      bad-macros
+                      '*initial-macros-with-raw-code*))
+            (when bad-program
+              (format t
+                      "The following program-mode functions differ in their~%~
+                       #+acl2-loop-only and #-acl2-loop-only code:~%~s~%~
+                       They probably should be added to ~s.~%~%"
+                      bad-program
+                      '*initial-program-fns-with-raw-code*))
+            (when bad-logic
+              (format t
+                      "The following logic-mode functions differ in their~%~
+                       #+acl2-loop-only and #-acl2-loop-only code:~%~s~%~
+                       They probably should be added to ~s.~%~%"
+                      bad-logic
+                      '*initial-logic-fns-with-raw-code*))
+            (error "Check failed!")))))
 
 ; The following is a start on checking that we don't have superfluous symbols
 ; in the list values of certain constants.  But in fact there can be such
@@ -9658,21 +9857,15 @@ Missing functions (use *check-built-in-constants-debug* = t for verbose report):
             x)))
 
 (defun-one-output stobj-print-symbol (x user-stobj-alist-tail)
-
-; Finds the (first) name of a pair (name . val) in user-stobj-alist-tail such
-; that x is the symbol-value of that name's live var, and returns the symbol to
-; print when encountering x during tracing.
-
-  (and user-stobj-alist-tail
-       (let ((pair (car user-stobj-alist-tail)))
-         (if (eq x (symbol-value (the-live-var (car pair))))
-             (let ((name (stobj-print-name (car pair))))
-               (intern-in-package-of-symbol
-                (cond ((eq x (cdr pair)) name)
-                      (t (concatenate 'string name
-                                      "{instance}")))
-                (car pair)))
-           (stobj-print-symbol x (cdr user-stobj-alist-tail))))))
+  (and (live-stobjp x)
+       (loop for pair in user-stobj-alist-tail
+             when (eq x (cdr pair))
+             do (return (intern-in-package-of-symbol
+                         (stobj-print-name (car pair))
+                         (car pair)))
+             finally (return (intern "<some-stobj>"
+                                     (find-package-fast
+                                      (current-package *the-live-state*)))))))
 
 (defun-one-output trace-hide-world-and-state (l)
 
