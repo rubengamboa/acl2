@@ -28,10 +28,8 @@
 	   (real-polynomial-p (scale-polynomial poly c))))
 
 (defthm eval-scale-polynomial
-  (implies (and (real-polynomial-p poly)
-		(realp c))
-	   (equal (eval-polynomial (scale-polynomial poly c) x)
-		  (* c (eval-polynomial poly x)))))
+  (equal (eval-polynomial (scale-polynomial poly c) x)
+	 (* c (eval-polynomial poly x))))
 
 (defthm eval-scale-expt-polynomial
   (implies (and (real-polynomial-p poly)

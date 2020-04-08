@@ -8,12 +8,12 @@
 ;; Non-classical definition of limits
 
 (encapsulate
- ((rlfn (x) t)
-  (rlfn-limit (x) t)
+ ((rlfn (context x) t)
+  (rlfn-limit (context x) t)
   (rlfn-domain () t))
 
- (local (defun rlfn (x) (realfix x)))
- (local (defun rlfn-limit (x) (realfix x)))
+ (local (defun rlfn (context x) (declare (ignore context)) (realfix x)))
+ (local (defun rlfn-limit (context x) (declare (ignore context)) (realfix x)))
  (local (defun rlfn-domain () (interval nil nil)))
 
  (defthm intervalp-rlfn-domain
@@ -33,20 +33,21 @@
    :rule-classes nil)
 
  (defthm rlfn-real
-     (realp (rlfn x))
+     (realp (rlfn context x))
    :rule-classes (:rewrite :type-prescription))
 
  (defthm rlfn-limit-real
-     (realp (rlfn-limit x))
+     (realp (rlfn-limit context x))
    :rule-classes (:rewrite :type-prescription))
 
  (defthm rlfn-has-a-limit
-   (implies (and (standardp x0)
+   (implies (and (standardp context)
+                 (standardp x0)
 		 (inside-interval-p x0 (rlfn-domain))
 		 (i-close x x0)
 		 (inside-interval-p x (rlfn-domain))
 		 (not (equal x x0)))
-	    (i-close (rlfn x) (rlfn-limit x0))))
+	    (i-close (rlfn context x) (rlfn-limit context x0))))
  )
 
 ;; Now we show that this function also obeys the classical definition of limits
@@ -74,18 +75,19 @@
  (defthmd rlfn-has-classic-limits-step-1
    (implies (and (inside-interval-p x (rlfn-domain))
 		 (inside-interval-p x0 (rlfn-domain))
+                 (standardp context)
 		 (standardp x0)
 		 (i-close x x0)
 		 (not (equal x x0))
 		 (realp eps)
 		 (standardp eps)
 		 (< 0 eps))
-	    (< (abs (- (rlfn x) (rlfn-limit x0))) eps))
+	    (< (abs (- (rlfn context x) (rlfn-limit context x0))) eps))
    :hints (("Goal"
 	    :use ((:instance rlfn-has-a-limit)
 		  (:instance close-<-abs-small-eps
-			     (x (rlfn x))
-			     (y (rlfn-limit x0))
+			     (x (rlfn context x))
+			     (y (rlfn-limit context x0))
 			     (eps eps))
 		  )
 	    :in-theory (disable rlfn-has-a-limit
@@ -97,6 +99,7 @@
  (defthmd rlfn-has-classic-limits-step-2
    (implies (and (inside-interval-p x (rlfn-domain))
 		 (inside-interval-p x0 (rlfn-domain))
+                 (standardp context)
 		 (standardp x0)
 		 (realp delta)
 		 (i-small delta)
@@ -105,7 +108,7 @@
 		 (realp eps)
 		 (standardp eps)
 		 (< 0 eps))
-	    (< (abs (- (rlfn x) (rlfn-limit x0))) eps))
+	    (< (abs (- (rlfn context x) (rlfn-limit context x0))) eps))
    :hints (("Goal"
 	    :use ((:instance rlfn-has-classic-limits-step-1)
 		  (:instance small-if-<-small
@@ -114,7 +117,7 @@
 	    :in-theory (e/d (i-close)
 			    (small-if-<-small))))))
 
-(defun-sk forall-x-within-delta-of-x0-f-x-within-epsilon-of-limit (x0 eps delta)
+(defun-sk forall-x-within-delta-of-x0-f-x-within-epsilon-of-limit (context x0 eps delta)
   (forall (x)
 	  (implies (and (inside-interval-p x (rlfn-domain))
 			(inside-interval-p x0 (rlfn-domain))
@@ -124,29 +127,30 @@
 			(< 0 eps)
 			(< (abs (- x x0)) delta)
 			(not (equal x x0)))
-		   (< (abs (- (rlfn x) (rlfn-limit x0))) eps)))
+		   (< (abs (- (rlfn context x) (rlfn-limit context x0))) eps)))
   :rewrite :direct)
 
-(defun-sk exists-delta-for-x0-to-make-x-within-epsilon-of-limit (x0 eps)
+(defun-sk exists-delta-for-x0-to-make-x-within-epsilon-of-limit (context x0 eps)
   (exists (delta)
 	  (implies (and (inside-interval-p x0 (rlfn-domain))
 			(realp eps)
 			(< 0 eps))
 		   (and (realp delta)
 			(< 0 delta)
-			(forall-x-within-delta-of-x0-f-x-within-epsilon-of-limit x0 eps delta)))))
+			(forall-x-within-delta-of-x0-f-x-within-epsilon-of-limit context x0 eps delta)))))
 
 (local
  (defthmd rlfn-has-classic-limits-step-3
    (implies (and (inside-interval-p x0 (rlfn-domain))
+                 (standardp context)
 		 (standardp x0)
 		 (realp eps)
 		 (standardp eps)
 		 (< 0 eps))
-	    (exists-delta-for-x0-to-make-x-within-epsilon-of-limit x0 eps))
+	    (exists-delta-for-x0-to-make-x-within-epsilon-of-limit context x0 eps))
    :hints (("Goal"
 	    :use ((:instance rlfn-has-classic-limits-step-2
-			     (x (forall-x-within-delta-of-x0-f-x-within-epsilon-of-limit-witness x0 eps (/ (i-large-integer))))
+			     (x (forall-x-within-delta-of-x0-f-x-within-epsilon-of-limit-witness context x0 eps (/ (i-large-integer))))
 			     (delta (/ (i-large-integer))))
 		  (:instance exists-delta-for-x0-to-make-x-within-epsilon-of-limit-suff
 			     (delta (/ (i-large-integer)))))
@@ -155,12 +159,14 @@
 (local
  (defthm-std rlfn-has-classic-limits-step-4
    (implies (and (standardp x0)
-		 (standardp eps))
-	    (standardp (exists-delta-for-x0-to-make-x-within-epsilon-of-limit-witness x0 eps)))))
+		 (standardp eps)
+                 (standardp context))
+	    (standardp (exists-delta-for-x0-to-make-x-within-epsilon-of-limit-witness context x0 eps)))))
 
-(defun-sk exists-standard-delta-for-x0-to-make-x-within-epsilon-of-limit (x0 eps)
+(defun-sk exists-standard-delta-for-x0-to-make-x-within-epsilon-of-limit (context x0 eps)
   (exists (delta)
 	  (implies (and (inside-interval-p x0 (rlfn-domain))
+                        (standardp context)
 			(standardp x0)
 			(realp eps)
 			(standardp eps)
@@ -168,33 +174,34 @@
 		   (and (standardp delta)
 			(realp delta)
 			(< 0 delta)
-			(forall-x-within-delta-of-x0-f-x-within-epsilon-of-limit x0 eps delta))))
+			(forall-x-within-delta-of-x0-f-x-within-epsilon-of-limit context x0 eps delta))))
   :classicalp nil)
 
 (defthmd rlfn-classic-has-a-limit-using-classical-criterion
-   (implies (and (inside-interval-p x0 (rlfn-domain))
-		 (standardp x0)
-		 (realp eps)
-		 (standardp eps)
-		 (< 0 eps))
-	    (exists-standard-delta-for-x0-to-make-x-within-epsilon-of-limit x0 eps))
-   :hints (("Goal"
-	    :use ((:instance rlfn-has-classic-limits-step-3)
-		  (:instance rlfn-has-classic-limits-step-4)
-		  (:instance exists-delta-for-x0-to-make-x-within-epsilon-of-limit)
-		  (:instance exists-standard-delta-for-x0-to-make-x-within-epsilon-of-limit-suff
-			     (delta (exists-delta-for-x0-to-make-x-within-epsilon-of-limit-witness x0 eps))))
-	    )))
+  (implies (and (inside-interval-p x0 (rlfn-domain))
+                (standardp context)
+		(standardp x0)
+		(realp eps)
+		(standardp eps)
+		(< 0 eps))
+	   (exists-standard-delta-for-x0-to-make-x-within-epsilon-of-limit context x0 eps))
+  :hints (("Goal"
+	   :use ((:instance rlfn-has-classic-limits-step-3)
+		 (:instance rlfn-has-classic-limits-step-4)
+		 (:instance exists-delta-for-x0-to-make-x-within-epsilon-of-limit)
+		 (:instance exists-standard-delta-for-x0-to-make-x-within-epsilon-of-limit-suff
+			    (delta (exists-delta-for-x0-to-make-x-within-epsilon-of-limit-witness context x0 eps))))
+	   )))
 
 ;; Classical definition of limits
 
 (encapsulate
- ((rlfn-classical (x) t)
-  (rlfn-classical-limit (x) t)
+ ((rlfn-classical (context x) t)
+  (rlfn-classical-limit (context x) t)
   (rlfn-classical-domain () t))
 
- (local (defun rlfn-classical (x) (declare (ignore x)) 0))
- (local (defun rlfn-classical-limit (x) (declare (ignore x)) 0))
+ (local (defun rlfn-classical (context x) (declare (ignore context x)) 0))
+ (local (defun rlfn-classical-limit (context x) (declare (ignore context x)) 0))
  (local (defun rlfn-classical-domain () (interval nil nil)))
 
  (defthm intervalp-rlfn-classical-domain
@@ -214,14 +221,14 @@
    :rule-classes nil)
 
  (defthm rlfn-classical-real
-     (realp (rlfn-classical x))
+     (realp (rlfn-classical context x))
    :rule-classes (:rewrite :type-prescription))
 
  (defthm rlfn-classical-limit-real
-     (realp (rlfn-classical-limit x))
+     (realp (rlfn-classical-limit context x))
    :rule-classes (:rewrite :type-prescription))
 
- (defun-sk forall-x-within-delta-of-x0-f-x-within-epsilon-of-classical-limit (x0 eps delta)
+ (defun-sk forall-x-within-delta-of-x0-f-x-within-epsilon-of-classical-limit (context x0 eps delta)
    (forall (x)
 	   (implies (and (inside-interval-p x (rlfn-classical-domain))
 			 (inside-interval-p x0 (rlfn-classical-domain))
@@ -231,29 +238,31 @@
 			 (< 0 eps)
 			 (< (abs (- x x0)) delta)
 			 (not (equal x x0)))
-		    (< (abs (- (rlfn-classical x) (rlfn-classical-limit x0))) eps)))
+		    (< (abs (- (rlfn-classical context x) (rlfn-classical-limit context x0))) eps)))
    :rewrite :direct)
 
- (defun-sk exists-standard-delta-for-x0-to-make-x-within-epsilon-of-classical-limit (x0 eps)
+ (defun-sk exists-standard-delta-for-x0-to-make-x-within-epsilon-of-classical-limit (context x0 eps)
    (exists (delta)
-	  (implies (and (inside-interval-p x0 (rlfn-classical-domain))
-			(standardp x0)
-			(realp eps)
-			(standardp eps)
-			(< 0 eps))
-		   (and (standardp delta)
-			(realp delta)
-			(< 0 delta)
-			(forall-x-within-delta-of-x0-f-x-within-epsilon-of-classical-limit x0 eps delta))))
+	   (implies (and (standardp context)
+                         (inside-interval-p x0 (rlfn-classical-domain))
+			 (standardp x0)
+			 (realp eps)
+			 (standardp eps)
+			 (< 0 eps))
+		    (and (standardp delta)
+			 (realp delta)
+			 (< 0 delta)
+			 (forall-x-within-delta-of-x0-f-x-within-epsilon-of-classical-limit context x0 eps delta))))
    :classicalp nil)
 
  (defthmd rlfn-classic-has-a-limit
-   (implies (and (inside-interval-p x0 (rlfn-classical-domain))
+   (implies (and (standardp context)
+                 (inside-interval-p x0 (rlfn-classical-domain))
 		 (standardp x0)
 		 (realp eps)
 		 (standardp eps)
 		 (< 0 eps))
-	    (exists-standard-delta-for-x0-to-make-x-within-epsilon-of-classical-limit x0 eps))
+	    (exists-standard-delta-for-x0-to-make-x-within-epsilon-of-classical-limit context x0 eps))
    :hints (("Goal"
 	    :use ((:instance exists-standard-delta-for-x0-to-make-x-within-epsilon-of-classical-limit-suff
 			     (delta 1))
@@ -270,20 +279,21 @@
 
   (local
    (defthmd lemma-1
-     (implies (and (forall-x-within-delta-of-x0-f-x-within-epsilon-of-classical-limit x0 eps delta)
+     (implies (and (forall-x-within-delta-of-x0-f-x-within-epsilon-of-classical-limit context x0 eps delta)
 		   (realp delta)
 		   (realp gamma)
 		   (< 0 gamma)
 		   (< gamma delta))
-	      (forall-x-within-delta-of-x0-f-x-within-epsilon-of-classical-limit x0 eps gamma))
+	      (forall-x-within-delta-of-x0-f-x-within-epsilon-of-classical-limit context x0 eps gamma))
      :hints (("Goal"
 	      :use ((:instance forall-x-within-delta-of-x0-f-x-within-epsilon-of-classical-limit-necc
-			       (x (forall-x-within-delta-of-x0-f-x-within-epsilon-of-classical-limit-witness x0 eps gamma))))
+			       (x (forall-x-within-delta-of-x0-f-x-within-epsilon-of-classical-limit-witness context x0 eps gamma))))
 	      :in-theory (disable abs)))
      ))
 
   (defthm rlfn-classic-has-limits-step-1
-    (implies (and (inside-interval-p x0 (rlfn-classical-domain))
+    (implies (and (standardp context)
+                  (inside-interval-p x0 (rlfn-classical-domain))
 		  (standardp x0)
 		  (realp eps)
 		  (standardp eps)
@@ -291,23 +301,24 @@
 		  (i-small delta)
 		  (realp delta)
 		  (< 0 delta))
-	     (forall-x-within-delta-of-x0-f-x-within-epsilon-of-classical-limit x0 eps delta))
+	     (forall-x-within-delta-of-x0-f-x-within-epsilon-of-classical-limit context x0 eps delta))
     :hints (("Goal"
 	     :use ((:instance rlfn-classic-has-a-limit)
 		   (:instance lemma-1
-			      (delta (exists-standard-delta-for-x0-to-make-x-within-epsilon-of-classical-limit-witness x0 eps))
+			      (delta (exists-standard-delta-for-x0-to-make-x-within-epsilon-of-classical-limit-witness context x0 eps))
 			      (gamma delta))
 		   (:instance small-<-non-small
 			      (x delta)
-			      (y (exists-standard-delta-for-x0-to-make-x-within-epsilon-of-classical-limit-witness x0 eps)))
+			      (y (exists-standard-delta-for-x0-to-make-x-within-epsilon-of-classical-limit-witness context x0 eps)))
 		   (:instance standard-small-is-zero
-			      (x (exists-standard-delta-for-x0-to-make-x-within-epsilon-of-classical-limit-witness x0 eps))))
+			      (x (exists-standard-delta-for-x0-to-make-x-within-epsilon-of-classical-limit-witness context x0 eps))))
 	     :in-theory (disable rlfn-classic-has-a-limit
 				 small-<-non-small))))))
 
 (local
  (defthmd rlfn-classic-has-limits-step-2
-   (implies (and (inside-interval-p x0 (rlfn-classical-domain))
+   (implies (and (standardp context)
+                 (inside-interval-p x0 (rlfn-classical-domain))
 		 (standardp x0)
 		 (inside-interval-p x (rlfn-classical-domain))
 		 (< (abs (- x x0)) delta)
@@ -318,7 +329,7 @@
 		 (i-small delta)
 		 (realp delta)
 		 (< 0 delta))
-	    (< (abs (- (rlfn-classical x) (rlfn-classical-limit x0))) eps))
+	    (< (abs (- (rlfn-classical context x) (rlfn-classical-limit context x0))) eps))
    :hints (("Goal"
 	    :use ((:instance rlfn-classic-has-limits-step-1)
 		  (:instance forall-x-within-delta-of-x0-f-x-within-epsilon-of-classical-limit-necc)
@@ -413,13 +424,15 @@
 
 (local
  (defthm-std standard-rlfn-classical
-   (implies (standardp x)
-	    (standardp (rlfn-classical x)))))
+   (implies (and (standardp x)
+                 (standardp context))
+	    (standardp (rlfn-classical context x)))))
 
 (local
  (defthm-std standard-rlfn-classical-limit
-   (implies (standardp x)
-	    (standardp (rlfn-classical-limit x)))))
+   (implies (and (standardp x)
+                 (standardp context))
+	    (standardp (rlfn-classical-limit context x)))))
 
 (local
  (defthm large-abs
@@ -447,20 +460,21 @@
 			    (small*limited->small))))))
 
 (defthm rlfn-classical-has-a-limit-using-nonstandard-criterion
-  (implies (and (standardp x0)
+  (implies (and (standardp context)
+                (standardp x0)
 		(inside-interval-p x0 (rlfn-classical-domain))
 		(i-close x x0)
 		(inside-interval-p x (rlfn-classical-domain))
 		(not (equal x x0)))
-	   (i-close (rlfn-classical x) (rlfn-classical-limit x0)))
+	   (i-close (rlfn-classical context x) (rlfn-classical-limit context x0)))
   :hints (("Goal"
 	   :use ((:instance rlfn-classic-has-limits-step-2
-			    (eps (standard-lower-bound-of-diff (rlfn-classical-limit x0)
-							       (rlfn-classical x)))
+			    (eps (standard-lower-bound-of-diff (rlfn-classical-limit context x0)
+							       (rlfn-classical context x)))
 			    (delta (* 2 (abs (- x x0)))))
 		 (:instance rlfn-classic-has-limits-step-3
-			    (x (rlfn-classical-limit x0))
-			    (y (rlfn-classical x))))
+			    (x (rlfn-classical-limit context x0))
+			    (y (rlfn-classical context x))))
 	   :in-theory (disable standard-lower-bound-of-diff
 			       abs))
 	  ("Subgoal 5"

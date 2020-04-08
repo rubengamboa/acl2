@@ -487,7 +487,7 @@
 		  (i-small eps))
 	     (i-close x (+ x eps))))
 
-(defthm i-close-small
+(defthm i-close-small 
   (implies (and (i-small x)
 		(i-close x y))
 	   (i-small y))

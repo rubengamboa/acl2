@@ -7,46 +7,46 @@
 (local (include-book "integration-composition"))
 
 (encapsulate
- ( ((rifn-classical-small *) => *)
-   ((strict-int-rifn-classical-small * *) => *)
-   ((rifn-classical-big *) => *)
-   ((strict-int-rifn-classical-big * *) => *)
+ ( ((rifn-classical-small * *) => *)
+   ((strict-int-rifn-classical-small * * *) => *)
+   ((rifn-classical-big * *) => *)
+   ((strict-int-rifn-classical-big * * *) => *)
    ((domain-rifn-classical-cmp) => *)
    )
 
  (local
-  (defun rifn-classical-small (x)
-    (declare (ignore x))
+  (defun rifn-classical-small (context x)
+    (declare (ignore context x))
     0))
 
  (local
-  (defun rifn-classical-big (x)
-    (declare (ignore x))
+  (defun rifn-classical-big (context x)
+    (declare (ignore context x))
     0))
 
  (defthm rifn-classical-small-real
    (implies (realp x)
-	    (realp (rifn-classical-small x))))
+	    (realp (rifn-classical-small context x))))
  (defthm rifn-classical-big-real
    (implies (realp x)
-	    (realp (rifn-classical-big x))))
+	    (realp (rifn-classical-big context x))))
 
  (local
-  (defun strict-int-rifn-classical-small (a b)
-    (declare (ignore a b))
+  (defun strict-int-rifn-classical-small (context a b)
+    (declare (ignore context a b))
     0))
  (local
-  (defun strict-int-rifn-classical-big (a b)
-    (declare (ignore a b))
+  (defun strict-int-rifn-classical-big (context a b)
+    (declare (ignore context a b))
     0))
  (defthm strict-int-rifn-classical-small-real
    (implies (and (realp a)
 		 (realp b))
-	    (realp (strict-int-rifn-classical-small a b))))
+	    (realp (strict-int-rifn-classical-small context a b))))
  (defthm strict-int-rifn-classical-big-real
    (implies (and (realp a)
 		 (realp b))
-	    (realp (strict-int-rifn-classical-big a b))))
+	    (realp (strict-int-rifn-classical-big context a b))))
 
  (local
   (defun domain-rifn-classical-cmp ()
@@ -59,83 +59,83 @@
 		 (not (equal (interval-left-endpoint (domain-rifn-classical-cmp))
 			     (interval-right-endpoint (domain-rifn-classical-cmp)))))))
 
- (defun map-rifn-classical-small (p)
+ (defun map-rifn-classical-small (context p)
    ;; map rifn-classical over the list p
    (if (consp p)
-       (cons (rifn-classical-small (car p))
-	     (map-rifn-classical-small (cdr p)))
+       (cons (rifn-classical-small context (car p))
+	     (map-rifn-classical-small context (cdr p)))
      nil))
-  (defun map-rifn-classical-big (p)
+  (defun map-rifn-classical-big (context p)
    ;; map rifn-classical over the list p
    (if (consp p)
-       (cons (rifn-classical-big (car p))
-	     (map-rifn-classical-big (cdr p)))
+       (cons (rifn-classical-big context (car p))
+	     (map-rifn-classical-big context (cdr p)))
      nil))
 
-  (defun riemann-rifn-classical-small (p)
+  (defun riemann-rifn-classical-small (context p)
    ;; for partition p, take the Riemann sum of rifn-classical over p using right
    ;; endpoints
    (dotprod (deltas p)
-	    (map-rifn-classical-small (cdr p))))
-  (defun riemann-rifn-classical-big (p)
+	    (map-rifn-classical-small context (cdr p))))
+  (defun riemann-rifn-classical-big (context p)
    ;; for partition p, take the Riemann sum of rifn-classical over p using right
    ;; endpoints
    (dotprod (deltas p)
-	    (map-rifn-classical-big (cdr p))))
+	    (map-rifn-classical-big context (cdr p))))
 
- (defun int-rifn-classical-small (a b)
+ (defun int-rifn-classical-small (context a b)
    (if (<= a b)
-       (strict-int-rifn-classical-small a b)
-     (- (strict-int-rifn-classical-small b a))))
+       (strict-int-rifn-classical-small context a b)
+     (- (strict-int-rifn-classical-small context b a))))
 
- (defun int-rifn-classical-big (a b)
+ (defun int-rifn-classical-big (context a b)
    (if (<= a b)
-       (strict-int-rifn-classical-big a b)
-     (- (strict-int-rifn-classical-big b a))))
+       (strict-int-rifn-classical-big context a b)
+     (- (strict-int-rifn-classical-big context b a))))
 
  (local
   (defthm map-rifn-classical-small-zero
     (implies (consp p)
-	     (equal (car (map-rifn-classical-small p)) 0))))
+	     (equal (car (map-rifn-classical-small context p)) 0))))
  (local
   (defthm map-rifn-classical-big-zero
     (implies (consp p)
-	     (equal (car (map-rifn-classical-big p)) 0))))
+	     (equal (car (map-rifn-classical-big context p)) 0))))
 
  (local
   (defthm riemann-rifn-classical-small-zero
     (implies (partitionp p)
-	     (equal (riemann-rifn-classical-small p) 0))))
+	     (equal (riemann-rifn-classical-small context p) 0))))
  (local
   (defthm riemann-rifn-classical-big-zero
     (implies (partitionp p)
-	     (equal (riemann-rifn-classical-big p) 0))))
+	     (equal (riemann-rifn-classical-big context p) 0))))
 
-  (defun-sk forall-partitions-riemann-sum-is-close-to-int-rifn-classical-small (a b eps delta)
+  (defun-sk forall-partitions-riemann-sum-is-close-to-int-rifn-classical-small (context a b eps delta)
    (forall (p)
 	   (implies (and (<= a b)
 			 (partitionp p)
 			 (equal (car p) a)
 			 (equal (car (last p)) b)
 			 (< (mesh p) delta))
-		    (< (abs (- (riemann-rifn-classical-small p)
-			       (strict-int-rifn-classical-small a b)))
+		    (< (abs (- (riemann-rifn-classical-small context p)
+			       (strict-int-rifn-classical-small context a b)))
 		       eps)))
    :rewrite :direct)
 
-  (defun-sk forall-partitions-riemann-sum-is-close-to-int-rifn-classical-big (a b eps delta)
+  (defun-sk forall-partitions-riemann-sum-is-close-to-int-rifn-classical-big (context a b eps delta)
     (forall (p)
 	    (implies (and (<= a b)
 			  (partitionp p)
 			  (equal (car p) a)
 			  (equal (car (last p)) b)
 			  (< (mesh p) delta))
-		     (< (abs (- (riemann-rifn-classical-big p)
-				(strict-int-rifn-classical-big a b)))
+		     (< (abs (- (riemann-rifn-classical-big context p)
+				(strict-int-rifn-classical-big context a b)))
 			eps)))
     :rewrite :direct)
 
- (defun-sk exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-small (a b eps)
+ (defun-sk exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-small (context a b eps)
    (exists (delta)
 	   (implies (and (inside-interval-p a (domain-rifn-classical-cmp))
 			 (inside-interval-p b (domain-rifn-classical-cmp))
@@ -144,9 +144,9 @@
 			 (< 0 eps))
 		    (and (realp delta)
 			 (< 0 delta)
-			 (forall-partitions-riemann-sum-is-close-to-int-rifn-classical-small a b eps delta)))))
+			 (forall-partitions-riemann-sum-is-close-to-int-rifn-classical-small context a b eps delta)))))
 
- (defun-sk exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-big (a b eps)
+ (defun-sk exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-big (context a b eps)
    (exists (delta)
 	   (implies (and (inside-interval-p a (domain-rifn-classical-cmp))
 			 (inside-interval-p b (domain-rifn-classical-cmp))
@@ -155,7 +155,7 @@
 			 (< 0 eps))
 		    (and (realp delta)
 			 (< 0 delta)
-			 (forall-partitions-riemann-sum-is-close-to-int-rifn-classical-big a b eps delta)))))
+			 (forall-partitions-riemann-sum-is-close-to-int-rifn-classical-big context a b eps delta)))))
 
  (defthm strict-int-rifn-classical-small-is-integral-of-rifn-classical-small
    (implies (and (inside-interval-p a (domain-rifn-classical-cmp))
@@ -163,7 +163,7 @@
 		 (<= a b)
 		 (realp eps)
 		 (< 0 eps))
-	    (exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-small a b eps))
+	    (exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-small context a b eps))
    :hints (("Goal"
 	    :use ((:instance exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-small-suff
 			     (delta 1)))))
@@ -175,7 +175,7 @@
 		 (<= a b)
 		 (realp eps)
 		 (< 0 eps))
-	    (exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-big a b eps))
+	    (exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-big context a b eps))
    :hints (("Goal"
 	    :use ((:instance exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-big-suff
 			     (delta 1)))))
@@ -183,96 +183,98 @@
 
  (defthm rifn-classical-small-<=-rifn-classical-big
    (implies (inside-interval-p x (domain-rifn-classical-cmp))
-	    (<= (rifn-classical-small x)
-		(rifn-classical-big x))))
+	    (<= (rifn-classical-small context x)
+		(rifn-classical-big context x))))
  )
 
 (defthm strict-int-rifn-classical-small-is-integral-of-rifn-classical-small-using-nonstandard-criterion
-   (implies (and (standardp a)
-		 (standardp b)
-		 (<= a b)
-		 (inside-interval-p a (domain-rifn-classical-cmp))
-		 (inside-interval-p b (domain-rifn-classical-cmp))
-		 (partitionp p)
-		 (equal (car p) a)
-		 (equal (car (last p)) b)
-		 (i-small (mesh p)))
-	    (i-close (riemann-rifn-classical-small p)
-		     (strict-int-rifn-classical-small a b)))
-   :hints (("Goal" :do-not-induct t
-	    :by (:functional-instance strict-int-rifn-classical-is-integral-of-rifn-classical-using-nonstandard-criterion
-				      (riemann-rifn-classical riemann-rifn-classical-small)
-				      (strict-int-rifn-classical strict-int-rifn-classical-small)
-				      (domain-rifn-classical domain-rifn-classical-cmp)
-				      (exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical
-				       exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-small)
-				      (exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-witness
-				       exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-small-witness)
-				      (forall-partitions-riemann-sum-is-close-to-int-rifn-classical
-				       forall-partitions-riemann-sum-is-close-to-int-rifn-classical-small)
-				      (forall-partitions-riemann-sum-is-close-to-int-rifn-classical-witness
-				       forall-partitions-riemann-sum-is-close-to-int-rifn-classical-small-witness)
-				      (map-rifn-classical map-rifn-classical-small)
-				      (rifn-classical rifn-classical-small)
-				      )
-	    )
-	   ("Subgoal 6"
-	    :use ((:instance strict-int-rifn-classical-small-is-integral-of-rifn-classical-small)))
-	   ("Subgoal 4"
-	    :use ((:instance forall-partitions-riemann-sum-is-close-to-int-rifn-classical-small-necc)))
-	   ))
+  (implies (and (standardp context)
+                (standardp a)
+		(standardp b)
+		(<= a b)
+		(inside-interval-p a (domain-rifn-classical-cmp))
+		(inside-interval-p b (domain-rifn-classical-cmp))
+		(partitionp p)
+		(equal (car p) a)
+		(equal (car (last p)) b)
+		(i-small (mesh p)))
+	   (i-close (riemann-rifn-classical-small context p)
+		    (strict-int-rifn-classical-small context a b)))
+  :hints (("Goal" :do-not-induct t
+	   :by (:functional-instance strict-int-rifn-classical-is-integral-of-rifn-classical-using-nonstandard-criterion
+				     (riemann-rifn-classical riemann-rifn-classical-small)
+				     (strict-int-rifn-classical strict-int-rifn-classical-small)
+				     (domain-rifn-classical domain-rifn-classical-cmp)
+				     (exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical
+				      exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-small)
+				     (exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-witness
+				      exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-small-witness)
+				     (forall-partitions-riemann-sum-is-close-to-int-rifn-classical
+				      forall-partitions-riemann-sum-is-close-to-int-rifn-classical-small)
+				     (forall-partitions-riemann-sum-is-close-to-int-rifn-classical-witness
+				      forall-partitions-riemann-sum-is-close-to-int-rifn-classical-small-witness)
+				     (map-rifn-classical map-rifn-classical-small)
+				     (rifn-classical rifn-classical-small)
+				     )
+	   )
+	  ("Subgoal 6"
+	   :use ((:instance strict-int-rifn-classical-small-is-integral-of-rifn-classical-small)))
+	  ("Subgoal 4"
+	   :use ((:instance forall-partitions-riemann-sum-is-close-to-int-rifn-classical-small-necc)))
+	  ))
 
 (defthm strict-int-rifn-classical-big-is-integral-of-rifn-classical-big-using-nonstandard-criterion
-   (implies (and (standardp a)
-		 (standardp b)
-		 (<= a b)
-		 (inside-interval-p a (domain-rifn-classical-cmp))
-		 (inside-interval-p b (domain-rifn-classical-cmp))
-		 (partitionp p)
-		 (equal (car p) a)
-		 (equal (car (last p)) b)
-		 (i-small (mesh p)))
-	    (i-close (riemann-rifn-classical-big p)
-		     (strict-int-rifn-classical-big a b)))
-   :hints (("Goal" :do-not-induct t
-	    :by (:functional-instance strict-int-rifn-classical-is-integral-of-rifn-classical-using-nonstandard-criterion
-				      (riemann-rifn-classical riemann-rifn-classical-big)
-				      (strict-int-rifn-classical strict-int-rifn-classical-big)
-				      (domain-rifn-classical domain-rifn-classical-cmp)
-				      (exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical
-				       exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-big)
-				      (exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-witness
-				       exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-big-witness)
-				      (forall-partitions-riemann-sum-is-close-to-int-rifn-classical
-				       forall-partitions-riemann-sum-is-close-to-int-rifn-classical-big)
-				      (forall-partitions-riemann-sum-is-close-to-int-rifn-classical-witness
-				       forall-partitions-riemann-sum-is-close-to-int-rifn-classical-big-witness)
-				      (map-rifn-classical map-rifn-classical-big)
-				      (rifn-classical rifn-classical-big)
-				      )
-	    )
-	   ("Subgoal 6"
-	    :use ((:instance strict-int-rifn-classical-big-is-integral-of-rifn-classical-big)))
-	   ("Subgoal 4"
-	    :use ((:instance forall-partitions-riemann-sum-is-close-to-int-rifn-classical-big-necc)))
-	   ))
+  (implies (and (standardp context)
+                (standardp a)
+		(standardp b)
+		(<= a b)
+		(inside-interval-p a (domain-rifn-classical-cmp))
+		(inside-interval-p b (domain-rifn-classical-cmp))
+		(partitionp p)
+		(equal (car p) a)
+		(equal (car (last p)) b)
+		(i-small (mesh p)))
+	   (i-close (riemann-rifn-classical-big context p)
+		    (strict-int-rifn-classical-big context a b)))
+  :hints (("Goal" :do-not-induct t
+	   :by (:functional-instance strict-int-rifn-classical-is-integral-of-rifn-classical-using-nonstandard-criterion
+				     (riemann-rifn-classical riemann-rifn-classical-big)
+				     (strict-int-rifn-classical strict-int-rifn-classical-big)
+				     (domain-rifn-classical domain-rifn-classical-cmp)
+				     (exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical
+				      exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-big)
+				     (exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-witness
+				      exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-big-witness)
+				     (forall-partitions-riemann-sum-is-close-to-int-rifn-classical
+				      forall-partitions-riemann-sum-is-close-to-int-rifn-classical-big)
+				     (forall-partitions-riemann-sum-is-close-to-int-rifn-classical-witness
+				      forall-partitions-riemann-sum-is-close-to-int-rifn-classical-big-witness)
+				     (map-rifn-classical map-rifn-classical-big)
+				     (rifn-classical rifn-classical-big)
+				     )
+	   )
+	  ("Subgoal 6"
+	   :use ((:instance strict-int-rifn-classical-big-is-integral-of-rifn-classical-big)))
+	  ("Subgoal 4"
+	   :use ((:instance forall-partitions-riemann-sum-is-close-to-int-rifn-classical-big-necc)))
+	  ))
 
 
 (defthm realp-riemann-rifn-classical-small
   (implies (partitionp p)
-	   (realp (riemann-rifn-classical-small p))))
+	   (realp (riemann-rifn-classical-small context p))))
 
 (defthm realp-riemann-rifn-classical-big
   (implies (partitionp p)
-	   (realp (riemann-rifn-classical-big p))))
+	   (realp (riemann-rifn-classical-big context p))))
 
 (defthm integral-rifn-classical-small-<=-integral-rifn-classical-big
   (implies (and (inside-interval-p a (domain-rifn-classical-cmp))
 		(inside-interval-p b (domain-rifn-classical-cmp))
 		(<= a b)
 		)
-	   (<= (int-rifn-classical-small a b)
-	       (int-rifn-classical-big a b)
+	   (<= (int-rifn-classical-small context a b)
+	       (int-rifn-classical-big context a b)
 	       ))
   :hints (("Goal"
 	   :by (:functional-instance integral-rifn-small-<=-integral-rifn-big
@@ -312,8 +314,8 @@
 
 (encapsulate
  ( ((rifn-classical-const) => *)
-   ((rifn-classical-const-fn *) => *)
-   ((strict-int-rifn-classical-const-fn * *) => *)
+   ((rifn-classical-const-fn * *) => *)
+   ((strict-int-rifn-classical-const-fn * * *) => *)
    ((domain-rifn-classical-const-fn) => *)
    )
 
@@ -322,8 +324,8 @@
     0))
 
  (local
-  (defun rifn-classical-const-fn (x)
-    (declare (ignore x))
+  (defun rifn-classical-const-fn (context x)
+    (declare (ignore context x))
     0))
 
  (defthm rifn-classical-const-real
@@ -331,7 +333,7 @@
 
  (defthm rifn-classical-const-fn-real
    (implies (realp x)
-	    (realp (rifn-classical-const-fn x))))
+	    (realp (rifn-classical-const-fn context x))))
 
  (local
   (defun domain-rifn-classical-const-fn ()
@@ -344,78 +346,78 @@
 		 (not (equal (interval-left-endpoint (domain-rifn-classical-const-fn))
 			     (interval-right-endpoint (domain-rifn-classical-const-fn)))))))
 
- (defun map-rifn-classical-const-fn (p)
+ (defun map-rifn-classical-const-fn (context p)
    ;; map rifn over the list p
    (if (consp p)
-       (cons (rifn-classical-const-fn (car p))
-	     (map-rifn-classical-const-fn (cdr p)))
+       (cons (rifn-classical-const-fn context (car p))
+	     (map-rifn-classical-const-fn context (cdr p)))
      nil))
 
  (local
   (defthm map-rifn-classical-const-fn-zero
     (implies (consp p)
-	     (equal (car (map-rifn-classical-const-fn p)) 0))))
+	     (equal (car (map-rifn-classical-const-fn context p)) 0))))
 
- (defun riemann-rifn-classical-const-fn (p)
+ (defun riemann-rifn-classical-const-fn (context p)
    ;; for partition p, take the Riemann sum of rifn over p using right
    ;; endpoints
    (dotprod (deltas p)
-	    (map-rifn-classical-const-fn (cdr p))))
+	    (map-rifn-classical-const-fn context (cdr p))))
 
  (local
   (defthm riemann-rifn-classical-const-fn-zero
     (implies (partitionp p)
-	     (equal (riemann-rifn-classical-const-fn p) 0))))
+	     (equal (riemann-rifn-classical-const-fn context p) 0))))
 
  (local
-  (defun-std strict-int-rifn-classical-const-fn (a b)
+  (defun-std strict-int-rifn-classical-const-fn (context a b)
     (if (and (realp a)
 	     (realp b)
 	     (inside-interval-p a (domain-rifn-classical-const-fn))
 	     (inside-interval-p b (domain-rifn-classical-const-fn))
 	     (< a b))
-	(standard-part (riemann-rifn-classical-const-fn (make-small-partition a b)))
+	(standard-part (riemann-rifn-classical-const-fn context (make-small-partition a b)))
       0)))
 
  (defthm-std strict-int-rifn-classical-const-fn-real
    (implies (and (realp a)
 		 (realp b))
-	    (realp (strict-int-rifn-classical-const-fn a b))))
+	    (realp (strict-int-rifn-classical-const-fn context a b))))
 
- (defun int-rifn-classical-const-fn (a b)
+ (defun int-rifn-classical-const-fn (context a b)
    (if (<= a b)
-       (strict-int-rifn-classical-const-fn a b)
-     (- (strict-int-rifn-classical-const-fn b a))))
+       (strict-int-rifn-classical-const-fn context a b)
+     (- (strict-int-rifn-classical-const-fn context b a))))
 
  (local
   (defthm map-rifn-classical-const-fn-zero
     (implies (consp p)
-	     (equal (car (map-rifn-classical-const-fn p)) 0))))
+	     (equal (car (map-rifn-classical-const-fn context p)) 0))))
 
  (local
   (defthm riemann-rifn-classical-const-fn-zero
     (implies (partitionp p)
-	     (equal (riemann-rifn-classical-const-fn p) 0))))
+	     (equal (riemann-rifn-classical-const-fn context p) 0))))
 
  (local
   (defthm-std strict-int-rifn-classical-const-fn-zero
     (implies (partitionp p)
-	     (equal (strict-int-rifn-classical-const-fn a b) 0))))
+	     (equal (strict-int-rifn-classical-const-fn context a b) 0))))
 
- (defun-sk forall-partitions-riemann-sum-is-close-to-int-rifn-classical-const-fn (a b eps delta)
+ (defun-sk forall-partitions-riemann-sum-is-close-to-int-rifn-classical-const-fn (context a b eps delta)
    (forall (p)
 	   (implies (and (<= a b)
 			 (partitionp p)
 			 (equal (car p) a)
 			 (equal (car (last p)) b)
 			 (< (mesh p) delta))
-		    (< (abs (- (riemann-rifn-classical-const-fn p)
-			       (strict-int-rifn-classical-const-fn a b)))
+		    (< (abs (- (riemann-rifn-classical-const-fn context p)
+			       (strict-int-rifn-classical-const-fn context a b)))
 		       eps)))
    :rewrite :direct)
 
 
- (defun-sk exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-const-fn (a b eps)
+ (defun-sk exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-const-fn (context a b eps)
    (exists (delta)
 	   (implies (and (inside-interval-p a (domain-rifn-classical-const-fn))
 			 (inside-interval-p b (domain-rifn-classical-const-fn))
@@ -424,7 +426,7 @@
 			 (< 0 eps))
 		    (and (realp delta)
 			 (< 0 delta)
-			 (forall-partitions-riemann-sum-is-close-to-int-rifn-classical-const-fn a b eps delta)))))
+			 (forall-partitions-riemann-sum-is-close-to-int-rifn-classical-const-fn context a b eps delta)))))
 
  (defthm strict-int-rifn-classical-const-fn-is-integral-of-rifn-classical-const-fn
    (implies (and (inside-interval-p a (domain-rifn-classical-const-fn))
@@ -432,7 +434,7 @@
 		 (<= a b)
 		 (realp eps)
 		 (< 0 eps))
-	    (exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-const-fn a b eps))
+	    (exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-const-fn context a b eps))
    :hints (("Goal"
 	    :use ((:instance exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-const-fn-suff
 			     (delta 1)))))
@@ -441,7 +443,8 @@
 
 
 (defthm strict-int-rifn-classical-const-fn-is-integral-of-rifn-classical-const-fn-using-nonstandard-criterion
-   (implies (and (standardp a)
+  (implies (and (standardp context)
+                (standardp a)
 		 (standardp b)
 		 (<= a b)
 		 (inside-interval-p a (domain-rifn-classical-const-fn))
@@ -450,8 +453,8 @@
 		 (equal (car p) a)
 		 (equal (car (last p)) b)
 		 (i-small (mesh p)))
-	    (i-close (riemann-rifn-classical-const-fn p)
-		     (strict-int-rifn-classical-const-fn a b)))
+	    (i-close (riemann-rifn-classical-const-fn context p)
+		     (strict-int-rifn-classical-const-fn context a b)))
    :hints (("Goal" :do-not-induct t
 	    :by (:functional-instance strict-int-rifn-classical-is-integral-of-rifn-classical-using-nonstandard-criterion
 				      (riemann-rifn-classical riemann-rifn-classical-const-fn)
@@ -475,27 +478,27 @@
 	    :use ((:instance forall-partitions-riemann-sum-is-close-to-int-rifn-classical-const-fn-necc)))
 	   ))
 
-(defun rifn-classical-const*const-fn (x)
+(defun rifn-classical-const*const-fn (context x)
   (* (rifn-classical-const)
-     (rifn-classical-const-fn x)))
+     (rifn-classical-const-fn context x)))
 
 (defthm realp-rifn-classical-const*const-fn
   (implies (realp x)
-           (realp (rifn-classical-const*const-fn x))))
+           (realp (rifn-classical-const*const-fn context x))))
 
-(defun map-rifn-classical-const*const-fn (p)
+(defun map-rifn-classical-const*const-fn (context p)
   (if (consp p)
-      (cons (rifn-classical-const*const-fn (car p))
-	    (map-rifn-classical-const*const-fn (cdr p)))
+      (cons (rifn-classical-const*const-fn context (car p))
+	    (map-rifn-classical-const*const-fn context (cdr p)))
     nil))
 
 (defthm realp-map-rifn-classical-const*const-fn
   (implies (partitionp p)
-           (real-listp (map-rifn-classical-const*const-fn p))))
+           (real-listp (map-rifn-classical-const*const-fn context p))))
 
-(defun riemann-rifn-classical-const*const-fn (p)
+(defun riemann-rifn-classical-const*const-fn (context p)
   (dotprod (deltas p)
-	   (map-rifn-classical-const*const-fn (cdr p))))
+	   (map-rifn-classical-const*const-fn context (cdr p))))
 
 (defthm real-listp-deltas
   (implies (partitionp p)
@@ -508,18 +511,19 @@
 
 (defthm realp-riemann-rifn-classical-const*const-fn
   (implies (partitionp p)
-           (realp (riemann-rifn-classical-const*const-fn p)))
+           (realp (riemann-rifn-classical-const*const-fn context p)))
   :hints (("Goal" :do-not-induct t
            :in-theory (disable dotprod)))
   )
 
 (defthm limited-riemann-rifn-classical-const*const-fn
-  (implies (and (standardp a)
+  (implies (and (standardp context)
+                (standardp a)
 		(standardp b)
 		(< a b)
 		(inside-interval-p a (domain-rifn-classical-const-fn))
 		(inside-interval-p b (domain-rifn-classical-const-fn)))
-	   (i-limited (riemann-rifn-classical-const*const-fn (make-small-partition a b))))
+	   (i-limited (riemann-rifn-classical-const*const-fn context (make-small-partition a b))))
   :hints (("Goal"
 	   :by (:functional-instance limited-riemann-rifn-const*const-fn
 				     (domain-rifn-const-fn domain-rifn-classical-const-fn)
@@ -542,13 +546,13 @@
 
  (local (in-theory (disable riemann-rifn-classical-const*const-fn)))
 
- (defun-std strict-int-rifn-classical-const*const-fn (a b)
+ (defun-std strict-int-rifn-classical-const*const-fn (context a b)
    (if (and (realp a)
 	    (realp b)
 	    (inside-interval-p a (domain-rifn-classical-const-fn))
 	    (inside-interval-p b (domain-rifn-classical-const-fn))
 	    (< a b))
-       (standard-part (riemann-rifn-classical-const*const-fn (make-small-partition a b)))
+       (standard-part (riemann-rifn-classical-const*const-fn context (make-small-partition a b)))
      0))
 
   )
@@ -556,24 +560,24 @@
 
 (defthm-std realp-strict-int-rifn-classical-const*const-fn
   (implies (and (realp a) (realp b))
-           (realp (strict-int-rifn-classical-const*const-fn a b)))
+           (realp (strict-int-rifn-classical-const*const-fn context a b)))
   :hints (("Goal"
            :use ((:instance realp-riemann-rifn-classical-const*const-fn
                             (p (make-small-partition a b))))
            :in-theory (disable riemann-rifn-classical-const*const-fn))))
 
 
-(defun int-rifn-classical-const*const-fn (a b)
+(defun int-rifn-classical-const*const-fn (context a b)
   (if (<= a b)
-      (strict-int-rifn-classical-const*const-fn a b)
-    (- (strict-int-rifn-classical-const*const-fn b a))))
+      (strict-int-rifn-classical-const*const-fn context a b)
+    (- (strict-int-rifn-classical-const*const-fn context b a))))
 
 (defthm reduce-integral-rifn-classical-const*const-fn
   (implies (and (inside-interval-p a (domain-rifn-classical-const-fn))
 		(inside-interval-p b (domain-rifn-classical-const-fn)))
-	   (equal (int-rifn-classical-const*const-fn a b)
+	   (equal (int-rifn-classical-const*const-fn context a b)
 		  (* (rifn-classical-const)
-		     (int-rifn-classical-const-fn a b))))
+		     (int-rifn-classical-const-fn context a b))))
   :hints (("Goal"
 	   :by (:functional-instance reduce-integral-rifn-const*const-fn
 				     (domain-rifn-const-fn domain-rifn-classical-const-fn)
@@ -592,19 +596,19 @@
 	   )))
 
 
-(defun-sk forall-partitions-riemann-sum-is-close-to-int-rifn-classical-const*const-fn (a b eps delta)
+(defun-sk forall-partitions-riemann-sum-is-close-to-int-rifn-classical-const*const-fn (context a b eps delta)
    (forall (p)
 	   (implies (and (<= a b)
 			 (partitionp p)
 			 (equal (car p) a)
 			 (equal (car (last p)) b)
 			 (< (mesh p) delta))
-		    (< (abs (- (riemann-rifn-classical-const*const-fn p)
-			       (strict-int-rifn-classical-const*const-fn a b)))
+		    (< (abs (- (riemann-rifn-classical-const*const-fn context p)
+			       (strict-int-rifn-classical-const*const-fn context a b)))
 		       eps)))
    :rewrite :direct)
 
-(defun-sk exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-const-*const-fn (a b eps)
+(defun-sk exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-const-*const-fn (context a b eps)
   (exists (delta)
           (implies (and (inside-interval-p a (domain-rifn-classical-const-fn))
                         (inside-interval-p b (domain-rifn-classical-const-fn))
@@ -613,10 +617,11 @@
                         (< 0 eps))
                    (and (realp delta)
                         (< 0 delta)
-                        (forall-partitions-riemann-sum-is-close-to-int-rifn-classical-const*const-fn a b eps delta)))))
+                        (forall-partitions-riemann-sum-is-close-to-int-rifn-classical-const*const-fn context a b eps delta)))))
 
 (defthm strict-int-rifn-classical-const*const-fn-is-integral-of-rifn-classical-const*const-fn-using-nonstandard-criterion
-   (implies (and (standardp a)
+  (implies (and (standardp context)
+                (standardp a)
 		 (standardp b)
 		 (<= a b)
 		 (inside-interval-p a (domain-rifn-classical-const-fn))
@@ -625,8 +630,8 @@
 		 (equal (car p) a)
 		 (equal (car (last p)) b)
 		 (i-small (mesh p)))
-	    (i-close (riemann-rifn-classical-const*const-fn p)
-		     (strict-int-rifn-classical-const*const-fn a b)))
+	    (i-close (riemann-rifn-classical-const*const-fn context p)
+		     (strict-int-rifn-classical-const*const-fn context a b)))
    :hints (("Goal" :do-not-induct t
 	    :by (:functional-instance
    strict-int-rifn-const*const-fn-is-integral-of-rifn-const*const-fn
@@ -651,12 +656,11 @@
                 (<= a b)
                 (realp eps)
                 (< 0 eps))
-	    (exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-const-*const-fn a b eps))
+	    (exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-const-*const-fn context a b eps))
    :hints (("Goal"
             :by (:functional-instance rifn-is-integrable-hyperreal
                                       (rifn rifn-classical-const*const-fn)
-                                      (strict-int-rifn
-  strict-int-rifn-classical-const*const-fn)
+                                      (strict-int-rifn strict-int-rifn-classical-const*const-fn)
                                       (int-rifn int-rifn-classical-const*const-fn)
                                       (domain-rifn domain-rifn-classical-const-fn)
                                       (riemann-rifn riemann-rifn-classical-const*const-fn)
@@ -688,46 +692,46 @@
 ;--------------------
 
 (encapsulate
- ( ((rifn-classical-left *) => *)
-   ((strict-int-rifn-classical-left * *) => *)
-   ((rifn-classical-right *) => *)
-   ((strict-int-rifn-classical-right * *) => *)
+ ( ((rifn-classical-left * *) => *)
+   ((strict-int-rifn-classical-left * * *) => *)
+   ((rifn-classical-right * *) => *)
+   ((strict-int-rifn-classical-right * * *) => *)
    ((domain-rifn-classical-op) => *)
    )
 
  (local
-  (defun rifn-classical-left (x)
-    (declare (ignore x))
+  (defun rifn-classical-left (context x)
+    (declare (ignore context x))
     0))
 
  (local
-  (defun rifn-classical-right (x)
-    (declare (ignore x))
+  (defun rifn-classical-right (context x)
+    (declare (ignore context x))
     0))
 
  (defthm rifn-classical-left-real
    (implies (realp x)
-	    (realp (rifn-classical-left x))))
+	    (realp (rifn-classical-left context x))))
  (defthm rifn-classical-right-real
    (implies (realp x)
-	    (realp (rifn-classical-right x))))
+	    (realp (rifn-classical-right context x))))
 
  (local
-  (defun strict-int-rifn-classical-left (a b)
-    (declare (ignore a b))
+  (defun strict-int-rifn-classical-left (context a b)
+    (declare (ignore context a b))
     0))
  (local
-  (defun strict-int-rifn-classical-right (a b)
-    (declare (ignore a b))
+  (defun strict-int-rifn-classical-right (context a b)
+    (declare (ignore context a b))
     0))
  (defthm strict-int-rifn-classical-left-real
    (implies (and (realp a)
 		 (realp b))
-	    (realp (strict-int-rifn-classical-left a b))))
+	    (realp (strict-int-rifn-classical-left context a b))))
  (defthm strict-int-rifn-classical-right-real
    (implies (and (realp a)
 		 (realp b))
-	    (realp (strict-int-rifn-classical-right a b))))
+	    (realp (strict-int-rifn-classical-right context a b))))
 
  (local
   (defun domain-rifn-classical-op ()
@@ -740,83 +744,83 @@
 		 (not (equal (interval-left-endpoint (domain-rifn-classical-op))
 			     (interval-right-endpoint (domain-rifn-classical-op)))))))
 
- (defun map-rifn-classical-left (p)
+ (defun map-rifn-classical-left (context p)
    ;; map rifn-classical over the list p
    (if (consp p)
-       (cons (rifn-classical-left (car p))
-	     (map-rifn-classical-left (cdr p)))
+       (cons (rifn-classical-left context (car p))
+	     (map-rifn-classical-left context (cdr p)))
      nil))
-  (defun map-rifn-classical-right (p)
+  (defun map-rifn-classical-right (context p)
    ;; map rifn-classical over the list p
    (if (consp p)
-       (cons (rifn-classical-right (car p))
-	     (map-rifn-classical-right (cdr p)))
+       (cons (rifn-classical-right context (car p))
+	     (map-rifn-classical-right context (cdr p)))
      nil))
 
-  (defun riemann-rifn-classical-left (p)
+  (defun riemann-rifn-classical-left (context p)
    ;; for partition p, take the Riemann sum of rifn-classical over p using right
    ;; endpoints
    (dotprod (deltas p)
-	    (map-rifn-classical-left (cdr p))))
-  (defun riemann-rifn-classical-right (p)
+	    (map-rifn-classical-left context (cdr p))))
+  (defun riemann-rifn-classical-right (context p)
    ;; for partition p, take the Riemann sum of rifn-classical over p using right
    ;; endpoints
    (dotprod (deltas p)
-	    (map-rifn-classical-right (cdr p))))
+	    (map-rifn-classical-right context (cdr p))))
 
- (defun int-rifn-classical-left (a b)
+ (defun int-rifn-classical-left (context a b)
    (if (<= a b)
-       (strict-int-rifn-classical-left a b)
-     (- (strict-int-rifn-classical-left b a))))
+       (strict-int-rifn-classical-left context a b)
+     (- (strict-int-rifn-classical-left context b a))))
 
- (defun int-rifn-classical-right (a b)
+ (defun int-rifn-classical-right (context a b)
    (if (<= a b)
-       (strict-int-rifn-classical-right a b)
-     (- (strict-int-rifn-classical-right b a))))
+       (strict-int-rifn-classical-right context a b)
+     (- (strict-int-rifn-classical-right context b a))))
 
  (local
   (defthm map-rifn-classical-left-zero
     (implies (consp p)
-	     (equal (car (map-rifn-classical-left p)) 0))))
+	     (equal (car (map-rifn-classical-left context p)) 0))))
  (local
   (defthm map-rifn-classical-right-zero
     (implies (consp p)
-	     (equal (car (map-rifn-classical-right p)) 0))))
+	     (equal (car (map-rifn-classical-right context p)) 0))))
 
  (local
   (defthm riemann-rifn-classical-left-zero
     (implies (partitionp p)
-	     (equal (riemann-rifn-classical-left p) 0))))
+	     (equal (riemann-rifn-classical-left context p) 0))))
  (local
   (defthm riemann-rifn-classical-right-zero
     (implies (partitionp p)
-	     (equal (riemann-rifn-classical-right p) 0))))
+	     (equal (riemann-rifn-classical-right context p) 0))))
 
-  (defun-sk forall-partitions-riemann-sum-is-close-to-int-rifn-classical-left (a b eps delta)
+  (defun-sk forall-partitions-riemann-sum-is-close-to-int-rifn-classical-left (context a b eps delta)
    (forall (p)
 	   (implies (and (<= a b)
 			 (partitionp p)
 			 (equal (car p) a)
 			 (equal (car (last p)) b)
 			 (< (mesh p) delta))
-		    (< (abs (- (riemann-rifn-classical-left p)
-			       (strict-int-rifn-classical-left a b)))
+		    (< (abs (- (riemann-rifn-classical-left context p)
+			       (strict-int-rifn-classical-left context a b)))
 		       eps)))
    :rewrite :direct)
 
-  (defun-sk forall-partitions-riemann-sum-is-close-to-int-rifn-classical-right (a b eps delta)
+  (defun-sk forall-partitions-riemann-sum-is-close-to-int-rifn-classical-right (context a b eps delta)
     (forall (p)
 	    (implies (and (<= a b)
 			  (partitionp p)
 			  (equal (car p) a)
 			  (equal (car (last p)) b)
 			  (< (mesh p) delta))
-		     (< (abs (- (riemann-rifn-classical-right p)
-				(strict-int-rifn-classical-right a b)))
+		     (< (abs (- (riemann-rifn-classical-right context p)
+				(strict-int-rifn-classical-right context a b)))
 			eps)))
     :rewrite :direct)
 
- (defun-sk exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-left (a b eps)
+ (defun-sk exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-left (context a b eps)
    (exists (delta)
 	   (implies (and (inside-interval-p a (domain-rifn-classical-op))
 			 (inside-interval-p b (domain-rifn-classical-op))
@@ -825,9 +829,9 @@
 			 (< 0 eps))
 		    (and (realp delta)
 			 (< 0 delta)
-			 (forall-partitions-riemann-sum-is-close-to-int-rifn-classical-left a b eps delta)))))
+			 (forall-partitions-riemann-sum-is-close-to-int-rifn-classical-left context a b eps delta)))))
 
- (defun-sk exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-right (a b eps)
+ (defun-sk exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-right (context a b eps)
    (exists (delta)
 	   (implies (and (inside-interval-p a (domain-rifn-classical-op))
 			 (inside-interval-p b (domain-rifn-classical-op))
@@ -836,7 +840,7 @@
 			 (< 0 eps))
 		    (and (realp delta)
 			 (< 0 delta)
-			 (forall-partitions-riemann-sum-is-close-to-int-rifn-classical-right a b eps delta)))))
+			 (forall-partitions-riemann-sum-is-close-to-int-rifn-classical-right context a b eps delta)))))
 
  (defthm strict-int-rifn-classical-left-is-integral-of-rifn-classical-left
    (implies (and (inside-interval-p a (domain-rifn-classical-op))
@@ -844,7 +848,7 @@
 		 (<= a b)
 		 (realp eps)
 		 (< 0 eps))
-	    (exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-left a b eps))
+	    (exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-left context a b eps))
    :hints (("Goal"
 	    :use ((:instance exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-left-suff
 			     (delta 1)))))
@@ -856,7 +860,7 @@
 		 (<= a b)
 		 (realp eps)
 		 (< 0 eps))
-	    (exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-right a b eps))
+	    (exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-right context a b eps))
    :hints (("Goal"
 	    :use ((:instance exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-right-suff
 			     (delta 1)))))
@@ -865,120 +869,123 @@
  )
 
 (defthm strict-int-rifn-classical-left-is-integral-of-rifn-classical-left-using-nonstandard-criterion
-   (implies (and (standardp a)
-		 (standardp b)
-		 (<= a b)
-		 (inside-interval-p a (domain-rifn-classical-op))
-		 (inside-interval-p b (domain-rifn-classical-op))
-		 (partitionp p)
-		 (equal (car p) a)
-		 (equal (car (last p)) b)
-		 (i-small (mesh p)))
-	    (i-close (riemann-rifn-classical-left p)
-		     (strict-int-rifn-classical-left a b)))
-   :hints (("Goal" :do-not-induct t
-	    :by (:functional-instance strict-int-rifn-classical-is-integral-of-rifn-classical-using-nonstandard-criterion
-				      (riemann-rifn-classical riemann-rifn-classical-left)
-				      (strict-int-rifn-classical strict-int-rifn-classical-left)
-				      (domain-rifn-classical domain-rifn-classical-op)
-				      (exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical
-				       exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-left)
-				      (exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-witness
-				       exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-left-witness)
-				      (forall-partitions-riemann-sum-is-close-to-int-rifn-classical
-				       forall-partitions-riemann-sum-is-close-to-int-rifn-classical-left)
-				      (forall-partitions-riemann-sum-is-close-to-int-rifn-classical-witness
-				       forall-partitions-riemann-sum-is-close-to-int-rifn-classical-left-witness)
-				      (map-rifn-classical map-rifn-classical-left)
-				      (rifn-classical rifn-classical-left)
-				      )
-	    )
-	   ("Subgoal 6"
-	    :use ((:instance strict-int-rifn-classical-left-is-integral-of-rifn-classical-left)))
-	   ("Subgoal 4"
-	    :use ((:instance forall-partitions-riemann-sum-is-close-to-int-rifn-classical-left-necc)))
-	   ))
+  (implies (and (standardp context)
+                (standardp a)
+		(standardp b)
+		(<= a b)
+		(inside-interval-p a (domain-rifn-classical-op))
+		(inside-interval-p b (domain-rifn-classical-op))
+		(partitionp p)
+		(equal (car p) a)
+		(equal (car (last p)) b)
+		(i-small (mesh p)))
+	   (i-close (riemann-rifn-classical-left context p)
+		    (strict-int-rifn-classical-left context a b)))
+  :hints (("Goal" :do-not-induct t
+	   :by (:functional-instance strict-int-rifn-classical-is-integral-of-rifn-classical-using-nonstandard-criterion
+				     (riemann-rifn-classical riemann-rifn-classical-left)
+				     (strict-int-rifn-classical strict-int-rifn-classical-left)
+				     (domain-rifn-classical domain-rifn-classical-op)
+				     (exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical
+				      exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-left)
+				     (exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-witness
+				      exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-left-witness)
+				     (forall-partitions-riemann-sum-is-close-to-int-rifn-classical
+				      forall-partitions-riemann-sum-is-close-to-int-rifn-classical-left)
+				     (forall-partitions-riemann-sum-is-close-to-int-rifn-classical-witness
+				      forall-partitions-riemann-sum-is-close-to-int-rifn-classical-left-witness)
+				     (map-rifn-classical map-rifn-classical-left)
+				     (rifn-classical rifn-classical-left)
+				     )
+	   )
+	  ("Subgoal 6"
+	   :use ((:instance strict-int-rifn-classical-left-is-integral-of-rifn-classical-left)))
+	  ("Subgoal 4"
+	   :use ((:instance forall-partitions-riemann-sum-is-close-to-int-rifn-classical-left-necc)))
+	  ))
 
 (defthm strict-int-rifn-classical-right-is-integral-of-rifn-classical-right-using-nonstandard-criterion
-   (implies (and (standardp a)
-		 (standardp b)
-		 (<= a b)
-		 (inside-interval-p a (domain-rifn-classical-op))
-		 (inside-interval-p b (domain-rifn-classical-op))
-		 (partitionp p)
-		 (equal (car p) a)
-		 (equal (car (last p)) b)
-		 (i-small (mesh p)))
-	    (i-close (riemann-rifn-classical-right p)
-		     (strict-int-rifn-classical-right a b)))
-   :hints (("Goal" :do-not-induct t
-	    :by (:functional-instance strict-int-rifn-classical-is-integral-of-rifn-classical-using-nonstandard-criterion
-				      (riemann-rifn-classical riemann-rifn-classical-right)
-				      (strict-int-rifn-classical strict-int-rifn-classical-right)
-				      (domain-rifn-classical domain-rifn-classical-op)
-				      (exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical
-				       exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-right)
-				      (exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-witness
-				       exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-right-witness)
-				      (forall-partitions-riemann-sum-is-close-to-int-rifn-classical
-				       forall-partitions-riemann-sum-is-close-to-int-rifn-classical-right)
-				      (forall-partitions-riemann-sum-is-close-to-int-rifn-classical-witness
-				       forall-partitions-riemann-sum-is-close-to-int-rifn-classical-right-witness)
-				      (map-rifn-classical map-rifn-classical-right)
-				      (rifn-classical rifn-classical-right)
-				      )
-	    )
-	   ("Subgoal 6"
-	    :use ((:instance strict-int-rifn-classical-right-is-integral-of-rifn-classical-right)))
-	   ("Subgoal 4"
-	    :use ((:instance forall-partitions-riemann-sum-is-close-to-int-rifn-classical-right-necc)))
-	   ))
+  (implies (and (standardp context)
+                (standardp a)
+		(standardp b)
+		(<= a b)
+		(inside-interval-p a (domain-rifn-classical-op))
+		(inside-interval-p b (domain-rifn-classical-op))
+		(partitionp p)
+		(equal (car p) a)
+		(equal (car (last p)) b)
+		(i-small (mesh p)))
+	   (i-close (riemann-rifn-classical-right context p)
+		    (strict-int-rifn-classical-right context a b)))
+  :hints (("Goal" :do-not-induct t
+	   :by (:functional-instance strict-int-rifn-classical-is-integral-of-rifn-classical-using-nonstandard-criterion
+				     (riemann-rifn-classical riemann-rifn-classical-right)
+				     (strict-int-rifn-classical strict-int-rifn-classical-right)
+				     (domain-rifn-classical domain-rifn-classical-op)
+				     (exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical
+				      exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-right)
+				     (exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-witness
+				      exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-right-witness)
+				     (forall-partitions-riemann-sum-is-close-to-int-rifn-classical
+				      forall-partitions-riemann-sum-is-close-to-int-rifn-classical-right)
+				     (forall-partitions-riemann-sum-is-close-to-int-rifn-classical-witness
+				      forall-partitions-riemann-sum-is-close-to-int-rifn-classical-right-witness)
+				     (map-rifn-classical map-rifn-classical-right)
+				     (rifn-classical rifn-classical-right)
+				     )
+	   )
+	  ("Subgoal 6"
+	   :use ((:instance strict-int-rifn-classical-right-is-integral-of-rifn-classical-right)))
+	  ("Subgoal 4"
+	   :use ((:instance forall-partitions-riemann-sum-is-close-to-int-rifn-classical-right-necc)))
+	  ))
 
-(defun rifn-classical-left+right (x)
-  (+ (rifn-classical-left x)
-     (rifn-classical-right x)))
+(defun rifn-classical-left+right (context x)
+  (+ (rifn-classical-left context x)
+     (rifn-classical-right context x)))
 
 (defthm realp-rifn-classical-left+right
   (implies (realp x)
-           (realp (rifn-classical-left+right x))))
+           (realp (rifn-classical-left+right context x))))
 
-(defun map-rifn-classical-left+right (p)
+(defun map-rifn-classical-left+right (context p)
   (if (consp p)
-      (cons (rifn-classical-left+right (car p))
-	    (map-rifn-classical-left+right (cdr p)))
+      (cons (rifn-classical-left+right context (car p))
+	    (map-rifn-classical-left+right context (cdr p)))
     nil))
 
 (defthm real-listp-map-rifn-classical-left+right
   (implies (partitionp p)
-           (real-listp (map-rifn-classical-left+right p))))
+           (real-listp (map-rifn-classical-left+right context p))))
 
-(defun riemann-rifn-classical-left+right (p)
+(defun riemann-rifn-classical-left+right (context p)
   (dotprod (deltas p)
-	   (map-rifn-classical-left+right (cdr p))))
+	   (map-rifn-classical-left+right context (cdr p))))
 
 (defthm real-riemann-rifn-classical-left
   (implies (partitionp p)
-           (realp (riemann-rifn-classical-left p)))
+           (realp (riemann-rifn-classical-left context p)))
   )
 
 (defthm real-riemann-rifn-classical-right
   (implies (partitionp p)
-         (realp (riemann-rifn-classical-right p))))
+         (realp (riemann-rifn-classical-right context p))))
 
 (defthm real-riemann-rifn-classical-left+right
   (implies (partitionp p)
-         (realp (riemann-rifn-classical-left+right p)))
+         (realp (riemann-rifn-classical-left+right context p)))
   :hints (("Goal" :do-not-induct t
            :in-theory (disable dotprod)))
   )
 
 (defthm limited-riemann-rifn-classical-left+right
-  (implies (and (standardp a)
+  (implies (and (standardp context)
+                (standardp a)
 		(standardp b)
 		(< a b)
 		(inside-interval-p a (domain-rifn-classical-op))
 		(inside-interval-p b (domain-rifn-classical-op)))
-	   (i-limited (riemann-rifn-classical-left+right (make-small-partition a b))))
+	   (i-limited (riemann-rifn-classical-left+right context (make-small-partition a b))))
   :hints (("Goal"
 	   :by (:functional-instance limited-riemann-rifn-left+right
 				     (domain-rifn-op domain-rifn-classical-op)
@@ -1005,22 +1012,22 @@
 
  (local (in-theory (disable riemann-rifn-classical-left+right)))
 
- (defun-std strict-int-rifn-classical-left+right (a b)
+ (defun-std strict-int-rifn-classical-left+right (context a b)
    (if (and (realp a)
 	    (realp b)
 	    (inside-interval-p a (domain-rifn-classical-op))
 	    (inside-interval-p b (domain-rifn-classical-op))
 	    (< a b))
-       (standard-part (riemann-rifn-classical-left+right (make-small-partition a b)))
+       (standard-part (riemann-rifn-classical-left+right context (make-small-partition a b)))
      0)))
 
  (defthm reduce-strict-integral-rifn-classical-left+right
   (implies (and (inside-interval-p a (domain-rifn-classical-op))
 		(inside-interval-p b (domain-rifn-classical-op))
 		(<= a b))
-	   (equal (strict-int-rifn-classical-left+right a b)
-		  (+ (strict-int-rifn-classical-left a b)
-		     (strict-int-rifn-classical-right a b))))
+	   (equal (strict-int-rifn-classical-left+right context a b)
+		  (+ (strict-int-rifn-classical-left context a b)
+		     (strict-int-rifn-classical-right context a b))))
   :hints (("Goal"
 	   :by (:functional-instance reduce-strict-integral-rifn-left+right
 				     (domain-rifn-op domain-rifn-classical-op)
@@ -1042,7 +1049,7 @@
 (defthm-std realp-strict-int-rifn-classical-left+right
    (implies (and (realp a)
 		 (realp b))
-	    (realp (strict-int-rifn-classical-left+right a b)))
+	    (realp (strict-int-rifn-classical-left+right context a b)))
   :hints (("Goal"
            :use ((:instance real-riemann-rifn-classical-left+right
                             (p (make-small-partition a b))))
@@ -1050,17 +1057,17 @@
                                real-riemann-rifn-classical-left+right)))
    )
 
-(defun int-rifn-classical-left+right (a b)
+(defun int-rifn-classical-left+right (context a b)
   (if (<= a b)
-      (strict-int-rifn-classical-left+right a b)
-    (- (strict-int-rifn-classical-left+right b a))))
+      (strict-int-rifn-classical-left+right context a b)
+    (- (strict-int-rifn-classical-left+right context b a))))
 
 (defthm reduce-integral-rifn-classical-left+right
   (implies (and (inside-interval-p a (domain-rifn-classical-op))
 		(inside-interval-p b (domain-rifn-classical-op)))
-	   (equal (int-rifn-classical-left+right a b)
-		  (+ (int-rifn-classical-left a b)
-		     (int-rifn-classical-right a b))))
+	   (equal (int-rifn-classical-left+right context a b)
+		  (+ (int-rifn-classical-left context a b)
+		     (int-rifn-classical-right context a b))))
     :hints (("Goal"
 	   :by (:functional-instance reduce-integral-rifn-left+right
 				     (domain-rifn-op domain-rifn-classical-op)
@@ -1083,52 +1090,53 @@
 	   )))
 
 (defthm strict-int-rifn-classical-left+right-is-integral-of-rifn-classical-left+right-using-nonstandard-criterion
-   (implies (and (standardp a)
-		 (standardp b)
-		 (<= a b)
-		 (inside-interval-p a (domain-rifn-classical-op))
-		 (inside-interval-p b (domain-rifn-classical-op))
-		 (partitionp p)
-		 (equal (car p) a)
-		 (equal (car (last p)) b)
-		 (i-small (mesh p)))
-	    (i-close (riemann-rifn-classical-left+right p)
-		     (strict-int-rifn-classical-left+right a b)))
-   :hints (("Goal" :do-not-induct t
-	    :by (:functional-instance strict-int-rifn-left+right-is-integral-of-rifn-left+right
-                                      (domain-rifn-op domain-rifn-classical-op)
-                                      (int-rifn-left+right int-rifn-classical-left+right)
-                                      (map-rifn-left+right map-rifn-classical-left+right)
-                                      (map-rifn-left map-rifn-classical-left)
-                                      (map-rifn-right map-rifn-classical-right)
-                                      (riemann-rifn-left+right riemann-rifn-classical-left+right)
-                                      (riemann-rifn-left riemann-rifn-classical-left)
-                                      (riemann-rifn-right riemann-rifn-classical-right)
-                                      (rifn-left+right rifn-classical-left+right)
-                                      (rifn-left rifn-classical-left)
-                                      (rifn-right rifn-classical-right)
-                                      (strict-int-rifn-left+right strict-int-rifn-classical-left+right)
-                                      (strict-int-rifn-left strict-int-rifn-classical-left)
-                                      (strict-int-rifn-right strict-int-rifn-classical-right)
-                                      (int-rifn-const-fn int-rifn-classical-const-fn)
-                                      (int-rifn-left int-rifn-classical-left)
-                                      (int-rifn-right int-rifn-classical-right)
-                                      )
+  (implies (and (standardp context)
+                (standardp a)
+		(standardp b)
+		(<= a b)
+		(inside-interval-p a (domain-rifn-classical-op))
+		(inside-interval-p b (domain-rifn-classical-op))
+		(partitionp p)
+		(equal (car p) a)
+		(equal (car (last p)) b)
+		(i-small (mesh p)))
+	   (i-close (riemann-rifn-classical-left+right context p)
+		    (strict-int-rifn-classical-left+right context a b)))
+  :hints (("Goal" :do-not-induct t
+	   :by (:functional-instance strict-int-rifn-left+right-is-integral-of-rifn-left+right
+                                     (domain-rifn-op domain-rifn-classical-op)
+                                     (int-rifn-left+right int-rifn-classical-left+right)
+                                     (map-rifn-left+right map-rifn-classical-left+right)
+                                     (map-rifn-left map-rifn-classical-left)
+                                     (map-rifn-right map-rifn-classical-right)
+                                     (riemann-rifn-left+right riemann-rifn-classical-left+right)
+                                     (riemann-rifn-left riemann-rifn-classical-left)
+                                     (riemann-rifn-right riemann-rifn-classical-right)
+                                     (rifn-left+right rifn-classical-left+right)
+                                     (rifn-left rifn-classical-left)
+                                     (rifn-right rifn-classical-right)
+                                     (strict-int-rifn-left+right strict-int-rifn-classical-left+right)
+                                     (strict-int-rifn-left strict-int-rifn-classical-left)
+                                     (strict-int-rifn-right strict-int-rifn-classical-right)
+                                     (int-rifn-const-fn int-rifn-classical-const-fn)
+                                     (int-rifn-left int-rifn-classical-left)
+                                     (int-rifn-right int-rifn-classical-right)
+                                     )
 	   )))
 
-(defun-sk forall-partitions-riemann-sum-is-close-to-int-rifn-classical-left+right (a b eps delta)
+(defun-sk forall-partitions-riemann-sum-is-close-to-int-rifn-classical-left+right (context a b eps delta)
    (forall (p)
 	   (implies (and (<= a b)
 			 (partitionp p)
 			 (equal (car p) a)
 			 (equal (car (last p)) b)
 			 (< (mesh p) delta))
-		    (< (abs (- (riemann-rifn-classical-left+right p)
-			       (strict-int-rifn-classical-left+right a b)))
+		    (< (abs (- (riemann-rifn-classical-left+right context p)
+			       (strict-int-rifn-classical-left+right context a b)))
 		       eps)))
    :rewrite :direct)
 
-(defun-sk exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-left+right (a b eps)
+(defun-sk exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-left+right (context a b eps)
   (exists (delta)
           (implies (and (inside-interval-p a (domain-rifn-classical-op))
                         (inside-interval-p b (domain-rifn-classical-op))
@@ -1137,7 +1145,7 @@
                         (< 0 eps))
                    (and (realp delta)
                         (< 0 delta)
-                        (forall-partitions-riemann-sum-is-close-to-int-rifn-classical-left+right a b eps delta)))))
+                        (forall-partitions-riemann-sum-is-close-to-int-rifn-classical-left+right context a b eps delta)))))
 
 (defthm strict-int-rifn-classical-left+right-is-integral-of-rifn-classical-left+right
   (implies (and (inside-interval-p a (domain-rifn-classical-op))
@@ -1145,7 +1153,7 @@
                 (<= a b)
                 (realp eps)
                 (< 0 eps))
-	    (exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-left+right a b eps))
+	    (exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-left+right context a b eps))
    :hints (("Goal"
             :by (:functional-instance rifn-is-integrable-hyperreal
                                       (rifn rifn-classical-left+right)
@@ -1167,64 +1175,65 @@
                                 STRICT-INT-RIFN-CLASSICAL-LEFT+RIGHT))
            ("Subgoal 8"
             :use ((:instance
-  EXISTS-DELTA-SO-THAT-RIEMANN-SUM-IS-CLOSE-TO-INT-RIFN-CLASSICAL-left+right-suff)))
+                   EXISTS-DELTA-SO-THAT-RIEMANN-SUM-IS-CLOSE-TO-INT-RIFN-CLASSICAL-left+right-suff)))
            ("Subgoal 6"
             :use ((:instance
-  forall-partitions-riemann-sum-is-close-to-int-rifn-classical-left+right-necc)))
+                   forall-partitions-riemann-sum-is-close-to-int-rifn-classical-left+right-necc)))
            ("Subgoal 4"
             :use ((:instance
-  strict-int-rifn-classical-left+right-is-integral-of-rifn-classical-left+right-using-nonstandard-criterion)))
+                   strict-int-rifn-classical-left+right-is-integral-of-rifn-classical-left+right-using-nonstandard-criterion)))
            ("Subgoal 2"
             :in-theory (enable riemann-rifn-classical-left+right))
 	    ))
 
 ;----------------
 
-(defun rifn-classical-left-right (x)
-  (- (rifn-classical-left x)
-     (rifn-classical-right x)))
+(defun rifn-classical-left-right (context x)
+  (- (rifn-classical-left context x)
+     (rifn-classical-right context x)))
 
 (defthm realp-rifn-classical-left-right
   (implies (realp x)
-           (realp (rifn-classical-left-right x))))
+           (realp (rifn-classical-left-right context x))))
 
-(defun map-rifn-classical-left-right (p)
+(defun map-rifn-classical-left-right (context p)
   (if (consp p)
-      (cons (rifn-classical-left-right (car p))
-	    (map-rifn-classical-left-right (cdr p)))
+      (cons (rifn-classical-left-right context (car p))
+	    (map-rifn-classical-left-right context (cdr p)))
     nil))
 
 (defthm real-listp-map-rifn-classical-left-right
   (implies (partitionp p)
-           (real-listp (map-rifn-classical-left-right p))))
+           (real-listp (map-rifn-classical-left-right context p))))
 
-(defun riemann-rifn-classical-left-right (p)
+(defun riemann-rifn-classical-left-right (context p)
   (dotprod (deltas p)
-	   (map-rifn-classical-left-right (cdr p))))
+	   (map-rifn-classical-left-right context (cdr p))))
 
 (defthm real-riemann-rifn-classical-left
   (implies (partitionp p)
-           (realp (riemann-rifn-classical-left p)))
+           (realp (riemann-rifn-classical-left context p)))
   )
 
 (defthm real-riemann-rifn-classical-right
   (implies (partitionp p)
-         (realp (riemann-rifn-classical-right p))))
+         (realp (riemann-rifn-classical-right context p))))
 
 (defthm real-riemann-rifn-classical-left-right
   (implies (partitionp p)
-         (realp (riemann-rifn-classical-left-right p)))
+           (realp (riemann-rifn-classical-left-right context p)))
   :hints (("Goal" :do-not-induct t
            :in-theory (disable dotprod)))
   )
 
 (defthm limited-riemann-rifn-classical-left-right
-  (implies (and (standardp a)
+  (implies (and (standardp context)
+                (standardp a)
 		(standardp b)
 		(< a b)
 		(inside-interval-p a (domain-rifn-classical-op))
 		(inside-interval-p b (domain-rifn-classical-op)))
-	   (i-limited (riemann-rifn-classical-left-right (make-small-partition a b))))
+	   (i-limited (riemann-rifn-classical-left-right context (make-small-partition a b))))
   :hints (("Goal"
 	   :by (:functional-instance limited-riemann-rifn-left-right
 				     (domain-rifn-op domain-rifn-classical-op)
@@ -1251,22 +1260,22 @@
 
  (local (in-theory (disable riemann-rifn-classical-left-right)))
 
- (defun-std strict-int-rifn-classical-left-right (a b)
+ (defun-std strict-int-rifn-classical-left-right (context a b)
    (if (and (realp a)
 	    (realp b)
 	    (inside-interval-p a (domain-rifn-classical-op))
 	    (inside-interval-p b (domain-rifn-classical-op))
 	    (< a b))
-       (standard-part (riemann-rifn-classical-left-right (make-small-partition a b)))
+       (standard-part (riemann-rifn-classical-left-right context (make-small-partition a b)))
      0)))
 
  (defthm reduce-strict-integral-rifn-classical-left-right
   (implies (and (inside-interval-p a (domain-rifn-classical-op))
 		(inside-interval-p b (domain-rifn-classical-op))
 		(<= a b))
-	   (equal (strict-int-rifn-classical-left-right a b)
-		  (- (strict-int-rifn-classical-left a b)
-		     (strict-int-rifn-classical-right a b))))
+	   (equal (strict-int-rifn-classical-left-right context a b)
+		  (- (strict-int-rifn-classical-left context a b)
+		     (strict-int-rifn-classical-right context a b))))
   :hints (("Goal"
 	   :by (:functional-instance reduce-strict-integral-rifn-left-right
 				     (domain-rifn-op domain-rifn-classical-op)
@@ -1288,7 +1297,7 @@
 (defthm-std realp-strict-int-rifn-classical-left-right
    (implies (and (realp a)
 		 (realp b))
-	    (realp (strict-int-rifn-classical-left-right a b)))
+	    (realp (strict-int-rifn-classical-left-right context a b)))
   :hints (("Goal"
            :use ((:instance real-riemann-rifn-classical-left-right
                             (p (make-small-partition a b))))
@@ -1296,17 +1305,17 @@
                                real-riemann-rifn-classical-left-right)))
    )
 
-(defun int-rifn-classical-left-right (a b)
+(defun int-rifn-classical-left-right (context a b)
   (if (<= a b)
-      (strict-int-rifn-classical-left-right a b)
-    (- (strict-int-rifn-classical-left-right b a))))
+      (strict-int-rifn-classical-left-right context a b)
+    (- (strict-int-rifn-classical-left-right context b a))))
 
 (defthm reduce-integral-rifn-classical-left-right
   (implies (and (inside-interval-p a (domain-rifn-classical-op))
 		(inside-interval-p b (domain-rifn-classical-op)))
-	   (equal (int-rifn-classical-left-right a b)
-		  (- (int-rifn-classical-left a b)
-		     (int-rifn-classical-right a b))))
+	   (equal (int-rifn-classical-left-right context a b)
+		  (- (int-rifn-classical-left context a b)
+		     (int-rifn-classical-right context a b))))
     :hints (("Goal"
 	   :by (:functional-instance reduce-integral-rifn-left-right
 				     (domain-rifn-op domain-rifn-classical-op)
@@ -1329,52 +1338,53 @@
 	   )))
 
 (defthm strict-int-rifn-classical-left-right-is-integral-of-rifn-classical-left-right-using-nonstandard-criterion
-   (implies (and (standardp a)
-		 (standardp b)
-		 (<= a b)
-		 (inside-interval-p a (domain-rifn-classical-op))
-		 (inside-interval-p b (domain-rifn-classical-op))
-		 (partitionp p)
-		 (equal (car p) a)
-		 (equal (car (last p)) b)
-		 (i-small (mesh p)))
-	    (i-close (riemann-rifn-classical-left-right p)
-		     (strict-int-rifn-classical-left-right a b)))
-   :hints (("Goal" :do-not-induct t
-	    :by (:functional-instance strict-int-rifn-left-right-is-integral-of-rifn-left-right
-                                      (domain-rifn-op domain-rifn-classical-op)
-                                      (int-rifn-left-right int-rifn-classical-left-right)
-                                      (map-rifn-left-right map-rifn-classical-left-right)
-                                      (map-rifn-left map-rifn-classical-left)
-                                      (map-rifn-right map-rifn-classical-right)
-                                      (riemann-rifn-left-right riemann-rifn-classical-left-right)
-                                      (riemann-rifn-left riemann-rifn-classical-left)
-                                      (riemann-rifn-right riemann-rifn-classical-right)
-                                      (rifn-left-right rifn-classical-left-right)
-                                      (rifn-left rifn-classical-left)
-                                      (rifn-right rifn-classical-right)
-                                      (strict-int-rifn-left-right strict-int-rifn-classical-left-right)
-                                      (strict-int-rifn-left strict-int-rifn-classical-left)
-                                      (strict-int-rifn-right strict-int-rifn-classical-right)
-                                      (int-rifn-const-fn int-rifn-classical-const-fn)
-                                      (int-rifn-left int-rifn-classical-left)
-                                      (int-rifn-right int-rifn-classical-right)
-                                      )
+  (implies (and (standardp context)
+                (standardp a)
+		(standardp b)
+		(<= a b)
+		(inside-interval-p a (domain-rifn-classical-op))
+		(inside-interval-p b (domain-rifn-classical-op))
+		(partitionp p)
+		(equal (car p) a)
+		(equal (car (last p)) b)
+		(i-small (mesh p)))
+	   (i-close (riemann-rifn-classical-left-right context p)
+		    (strict-int-rifn-classical-left-right context a b)))
+  :hints (("Goal" :do-not-induct t
+	   :by (:functional-instance strict-int-rifn-left-right-is-integral-of-rifn-left-right
+                                     (domain-rifn-op domain-rifn-classical-op)
+                                     (int-rifn-left-right int-rifn-classical-left-right)
+                                     (map-rifn-left-right map-rifn-classical-left-right)
+                                     (map-rifn-left map-rifn-classical-left)
+                                     (map-rifn-right map-rifn-classical-right)
+                                     (riemann-rifn-left-right riemann-rifn-classical-left-right)
+                                     (riemann-rifn-left riemann-rifn-classical-left)
+                                     (riemann-rifn-right riemann-rifn-classical-right)
+                                     (rifn-left-right rifn-classical-left-right)
+                                     (rifn-left rifn-classical-left)
+                                     (rifn-right rifn-classical-right)
+                                     (strict-int-rifn-left-right strict-int-rifn-classical-left-right)
+                                     (strict-int-rifn-left strict-int-rifn-classical-left)
+                                     (strict-int-rifn-right strict-int-rifn-classical-right)
+                                     (int-rifn-const-fn int-rifn-classical-const-fn)
+                                     (int-rifn-left int-rifn-classical-left)
+                                     (int-rifn-right int-rifn-classical-right)
+                                     )
 	   )))
 
-(defun-sk forall-partitions-riemann-sum-is-close-to-int-rifn-classical-left-right (a b eps delta)
+(defun-sk forall-partitions-riemann-sum-is-close-to-int-rifn-classical-left-right (context a b eps delta)
    (forall (p)
 	   (implies (and (<= a b)
 			 (partitionp p)
 			 (equal (car p) a)
 			 (equal (car (last p)) b)
 			 (< (mesh p) delta))
-		    (< (abs (- (riemann-rifn-classical-left-right p)
-			       (strict-int-rifn-classical-left-right a b)))
+		    (< (abs (- (riemann-rifn-classical-left-right context p)
+			       (strict-int-rifn-classical-left-right context a b)))
 		       eps)))
    :rewrite :direct)
 
-(defun-sk exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-left-right (a b eps)
+(defun-sk exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-left-right (context a b eps)
   (exists (delta)
           (implies (and (inside-interval-p a (domain-rifn-classical-op))
                         (inside-interval-p b (domain-rifn-classical-op))
@@ -1383,7 +1393,7 @@
                         (< 0 eps))
                    (and (realp delta)
                         (< 0 delta)
-                        (forall-partitions-riemann-sum-is-close-to-int-rifn-classical-left-right a b eps delta)))))
+                        (forall-partitions-riemann-sum-is-close-to-int-rifn-classical-left-right context a b eps delta)))))
 
 (defthm strict-int-rifn-classical-left-right-is-integral-of-rifn-classical-left-right
   (implies (and (inside-interval-p a (domain-rifn-classical-op))
@@ -1391,7 +1401,7 @@
                 (<= a b)
                 (realp eps)
                 (< 0 eps))
-	    (exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-left-right a b eps))
+	    (exists-delta-so-that-riemann-sum-is-close-to-int-rifn-classical-left-right context a b eps))
    :hints (("Goal"
             :by (:functional-instance rifn-is-integrable-hyperreal
                                       (rifn rifn-classical-left-right)

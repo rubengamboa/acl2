@@ -33,6 +33,19 @@
   |#
 
 
+;; Defining these functions using the older type-checking hypotheses on poly, x, and n
+(defun eval-polynomial-expt-aux0 (poly x n)
+  (if (and (real-polynomial-p poly)
+	   (realp x)
+	   (natp n)
+	   (consp poly))
+      (+ (* (car poly) (expt x n))
+	 (eval-polynomial-expt-aux0 (cdr poly) x (1+ n)))
+    0))
+
+(defun eval-polynomial-expt0 (poly x)
+  (eval-polynomial-expt-aux0 poly x 0))
+
 
 (defun derivative-polynomial-aux (poly n)
   (if (and (real-polynomial-p poly)
@@ -204,18 +217,18 @@
            :in-theory (disable integral-of-derivative-polynomial-aux)))
   )
 
-(defthm realp-eval-polynomial-expt-aux
+(defthm realp-eval-polynomial-expt-aux0
   (implies (and (real-polynomial-p poly)
 		(realp x)
 		(realp n))
-	   (realp (eval-polynomial-expt-aux poly x n))))
+	   (realp (eval-polynomial-expt-aux0 poly x n))))
 
 (defthm realp-eval-cdr-polynomial-expt-aux
   (implies (and (real-polynomial-p poly)
 		(consp poly)
 		(realp x)
 		(realp n))
-	   (realp (eval-polynomial-expt-aux (cdr poly) x n))))
+	   (realp (eval-polynomial-expt-aux0 (cdr poly) x n))))
 
 
 (defun-sk forall-x-eps-delta-in-range-deriv-poly-expt-aux-works (poly x n eps delta)
@@ -228,10 +241,10 @@
 			(< 0 eps)
 			(not (equal x x1))
 			(< (abs (- x x1)) delta))
-		   (< (abs (- (/ (- (eval-polynomial-expt-aux poly x n)
-				    (eval-polynomial-expt-aux poly x1 n))
+		   (< (abs (- (/ (- (eval-polynomial-expt-aux0 poly x n)
+				    (eval-polynomial-expt-aux0 poly x1 n))
 				 (- x x1))
-			      (eval-polynomial-expt-aux
+			      (eval-polynomial-expt-aux0
 			       (derivative-polynomial-aux poly n)
 			       x
 			       (if (zp n) n (1- n))
@@ -260,13 +273,13 @@
 		  (realp x1)
 		  (natp n)
 		  (consp poly))
-	     (equal (- (eval-polynomial-expt-aux poly x n)
-		       (eval-polynomial-expt-aux poly x1 n))
+	     (equal (- (eval-polynomial-expt-aux0 poly x n)
+		       (eval-polynomial-expt-aux0 poly x1 n))
 		    (+ (* (car poly)
 			  (- (expt x n)
 			     (expt x1 n)))
-		       (- (eval-polynomial-expt-aux (cdr poly) x (1+ n))
-			  (eval-polynomial-expt-aux (cdr poly) x1 (1+ n))))))
+		       (- (eval-polynomial-expt-aux0 (cdr poly) x (1+ n))
+			  (eval-polynomial-expt-aux0 (cdr poly) x1 (1+ n))))))
     ))
 
  (local
@@ -276,15 +289,15 @@
 		  (realp x1)
 		  (natp n)
 		  (consp poly))
-	     (equal (/ (- (eval-polynomial-expt-aux poly x n)
-			  (eval-polynomial-expt-aux poly x1 n))
+	     (equal (/ (- (eval-polynomial-expt-aux0 poly x n)
+			  (eval-polynomial-expt-aux0 poly x1 n))
 		       (- x x1))
 		    (+ (/ (* (car poly)
 			     (- (expt x n)
 				(expt x1 n)))
 			  (- x x1))
-		       (/ (- (eval-polynomial-expt-aux (cdr poly) x (1+ n))
-			     (eval-polynomial-expt-aux (cdr poly) x1 (1+ n)))
+		       (/ (- (eval-polynomial-expt-aux0 (cdr poly) x (1+ n))
+			     (eval-polynomial-expt-aux0 (cdr poly) x1 (1+ n)))
 			  (- x x1)))))
     :hints (("Goal"
 	     :in-theory (enable lemma-1)))
@@ -349,15 +362,15 @@
 		  (integerp n)
 		  (= 0 n)
 		  )
-	     (equal (/ (- (eval-polynomial-expt-aux poly x n)
-			  (eval-polynomial-expt-aux poly x1 n))
+	     (equal (/ (- (eval-polynomial-expt-aux0 poly x n)
+			  (eval-polynomial-expt-aux0 poly x1 n))
 		       (- x x1))
-		    (/ (- (eval-polynomial-expt-aux (cdr poly) x (1+ n))
-			  (eval-polynomial-expt-aux (cdr poly) x1 (1+ n)))
+		    (/ (- (eval-polynomial-expt-aux0 (cdr poly) x (1+ n))
+			  (eval-polynomial-expt-aux0 (cdr poly) x1 (1+ n)))
 		       (- x x1))))
     :hints (("Goal" :do-not-induct t
 	     :use ((:instance lemma-2))
-	     :in-theory (disable abs eval-polynomial-expt-aux real-polynomial-p)))))
+	     :in-theory (disable abs eval-polynomial-expt-aux0 real-polynomial-p)))))
 
  (local
   (defthmd lemma-7
@@ -367,13 +380,13 @@
 		  (integerp n)
 		  (= 0 n)
 		  )
-	     (equal (eval-polynomial-expt-aux
+	     (equal (eval-polynomial-expt-aux0
 		     (derivative-polynomial-aux poly n) x n)
-		    (eval-polynomial-expt-aux
+		    (eval-polynomial-expt-aux0
 		     (derivative-polynomial-aux (cdr poly) (1+ n)) x n)))
     :hints (("Goal" :do-not-induct t
 	     :in-theory (disable abs
-				 eval-polynomial-expt-aux
+				 eval-polynomial-expt-aux0
 				 real-polynomial-p)))))
 
  (local
@@ -398,17 +411,17 @@
 		  (= 0 n)
 		  (realp eps)
 		  (< 0 eps)
-		  (< (abs (- (/ (- (eval-polynomial-expt-aux (cdr poly) x (1+ n))
-				   (eval-polynomial-expt-aux (cdr poly) x1 (1+ n)))
+		  (< (abs (- (/ (- (eval-polynomial-expt-aux0 (cdr poly) x (1+ n))
+				   (eval-polynomial-expt-aux0 (cdr poly) x1 (1+ n)))
 				(- x x1))
-			     (eval-polynomial-expt-aux
+			     (eval-polynomial-expt-aux0
 			      (derivative-polynomial-aux (cdr poly) (1+ n)) x n)))
 		     (/ eps 2))
 		  )
-	     (< (abs (- (/ (- (eval-polynomial-expt-aux poly x n)
-			      (eval-polynomial-expt-aux poly x1 n))
+	     (< (abs (- (/ (- (eval-polynomial-expt-aux0 poly x n)
+			      (eval-polynomial-expt-aux0 poly x1 n))
 			   (- x x1))
-			(eval-polynomial-expt-aux
+			(eval-polynomial-expt-aux0
 			 (derivative-polynomial-aux poly n) x n)))
 		eps))
     :hints (("Goal" :do-not-induct t
@@ -425,17 +438,17 @@
 						      )
 						 (hide (equal (+ a (/ b1 d) (/ b2 d))
 							      (+ a (/ c1 d) (/ c2 d))))))
-			      (a (- (EVAL-POLYNOMIAL-EXPT-AUX (DERIVATIVE-POLYNOMIAL-AUX POLY 0)
+			      (a (- (EVAL-POLYNOMIAL-EXPT-AUX0 (DERIVATIVE-POLYNOMIAL-AUX POLY 0)
 							      X 0)))
-			      (b1 (EVAL-POLYNOMIAL-EXPT-AUX POLY X 0))
-			      (b2 (- (EVAL-POLYNOMIAL-EXPT-AUX POLY X1 0)))
-			      (c1 (EVAL-POLYNOMIAL-EXPT-AUX (CDR POLY)
+			      (b1 (EVAL-POLYNOMIAL-EXPT-AUX0 POLY X 0))
+			      (b2 (- (EVAL-POLYNOMIAL-EXPT-AUX0 POLY X1 0)))
+			      (c1 (EVAL-POLYNOMIAL-EXPT-AUX0 (CDR POLY)
 							    X 1))
-			      (c2 (- (EVAL-POLYNOMIAL-EXPT-AUX (CDR POLY)
+			      (c2 (- (EVAL-POLYNOMIAL-EXPT-AUX0 (CDR POLY)
 							       X1 1)))
 			      (d (+ X (- X1)))))
 	     :in-theory (disable abs
-				 eval-polynomial-expt-aux
+				 eval-polynomial-expt-aux0
 				 real-polynomial-p
 				 derivative-polynomial-aux))
 	    ("Subgoal 2.1"
@@ -456,15 +469,15 @@
 		  (< 0 n)
 		  (equal (car poly) 0)
 		  )
-	     (equal (/ (- (eval-polynomial-expt-aux poly x n)
-			  (eval-polynomial-expt-aux poly x1 n))
+	     (equal (/ (- (eval-polynomial-expt-aux0 poly x n)
+			  (eval-polynomial-expt-aux0 poly x1 n))
 		       (- x x1))
-		    (/ (- (eval-polynomial-expt-aux (cdr poly) x (1+ n))
-			  (eval-polynomial-expt-aux (cdr poly) x1 (1+ n)))
+		    (/ (- (eval-polynomial-expt-aux0 (cdr poly) x (1+ n))
+			  (eval-polynomial-expt-aux0 (cdr poly) x1 (1+ n)))
 		       (- x x1))))
     :hints (("Goal" :do-not-induct t
 	     :use ((:instance lemma-2))
-	     :in-theory (disable abs eval-polynomial-expt-aux real-polynomial-p)))))
+	     :in-theory (disable abs eval-polynomial-expt-aux0 real-polynomial-p)))))
 
  (local
   (defthmd lemma-12
@@ -475,9 +488,9 @@
 		  (< 0 n)
 		  (equal (car poly) 0)
 		  )
-	     (equal (eval-polynomial-expt-aux
+	     (equal (eval-polynomial-expt-aux0
 		     (derivative-polynomial-aux poly n) x (1- n))
-		    (eval-polynomial-expt-aux
+		    (eval-polynomial-expt-aux0
 		     (derivative-polynomial-aux (cdr poly) (1+ n)) x n)))
     :hints (("Goal" :do-not-induct t
 	     :in-theory (disable abs)))))
@@ -493,17 +506,17 @@
 		  (realp eps)
 		  (< 0 eps)
 		  (equal (car poly) 0)
-		  (< (abs (- (/ (- (eval-polynomial-expt-aux (cdr poly) x (1+ n))
-				   (eval-polynomial-expt-aux (cdr poly) x1 (1+ n)))
+		  (< (abs (- (/ (- (eval-polynomial-expt-aux0 (cdr poly) x (1+ n))
+				   (eval-polynomial-expt-aux0 (cdr poly) x1 (1+ n)))
 				(- x x1))
-			     (eval-polynomial-expt-aux
+			     (eval-polynomial-expt-aux0
 			      (derivative-polynomial-aux (cdr poly) (1+ n)) x n)))
 		     (/ eps 2))
 		  )
-	     (< (abs (- (/ (- (eval-polynomial-expt-aux poly x n)
-			      (eval-polynomial-expt-aux poly x1 n))
+	     (< (abs (- (/ (- (eval-polynomial-expt-aux0 poly x n)
+			      (eval-polynomial-expt-aux0 poly x1 n))
 			   (- x x1))
-			(eval-polynomial-expt-aux
+			(eval-polynomial-expt-aux0
 			 (derivative-polynomial-aux poly n) x (1- n))))
 		eps))
     :hints (("Goal" :do-not-induct t
@@ -520,17 +533,17 @@
 						      )
 						 (hide (equal (+ a (/ b1 d) (/ b2 d))
 							      (+ a (/ c1 d) (/ c2 d))))))
-			      (a (- (EVAL-POLYNOMIAL-EXPT-AUX (DERIVATIVE-POLYNOMIAL-AUX POLY N)
+			      (a (- (EVAL-POLYNOMIAL-EXPT-AUX0 (DERIVATIVE-POLYNOMIAL-AUX POLY N)
 							      X (+ -1 N))))
-			      (b1 (EVAL-POLYNOMIAL-EXPT-AUX POLY X N))
-			      (b2 (- (EVAL-POLYNOMIAL-EXPT-AUX POLY X1 N)))
-			      (c1 (EVAL-POLYNOMIAL-EXPT-AUX (CDR POLY)
+			      (b1 (EVAL-POLYNOMIAL-EXPT-AUX0 POLY X N))
+			      (b2 (- (EVAL-POLYNOMIAL-EXPT-AUX0 POLY X1 N)))
+			      (c1 (EVAL-POLYNOMIAL-EXPT-AUX0 (CDR POLY)
 							    X (+ 1 N)))
-			      (c2 (- (EVAL-POLYNOMIAL-EXPT-AUX (CDR POLY)
+			      (c2 (- (EVAL-POLYNOMIAL-EXPT-AUX0 (CDR POLY)
 							       X1 (+ 1 N))))
 			      (d (+ X (- X1)))))
 	     :in-theory (disable abs
-				 eval-polynomial-expt-aux
+				 eval-polynomial-expt-aux0
 				 real-polynomial-p
 				 derivative-polynomial-aux))
 	    ("Subgoal 2.1"
@@ -577,20 +590,20 @@
 		  (natp n)
 		  (< 0 n)
 		  (consp poly))
-	     (equal (- (/ (- (eval-polynomial-expt-aux poly x n)
-			     (eval-polynomial-expt-aux poly x1 n))
+	     (equal (- (/ (- (eval-polynomial-expt-aux0 poly x n)
+			     (eval-polynomial-expt-aux0 poly x1 n))
 			  (- x x1))
-		       (eval-polynomial-expt-aux
+		       (eval-polynomial-expt-aux0
 			(derivative-polynomial-aux poly n) x (1- n)))
 		    (+ (- (/ (* (car poly)
 				(- (expt x n)
 				   (expt x1 n)))
 			     (- x x1))
 			  (* n (car poly) (expt x (1- n))))
-		       (- (/ (- (eval-polynomial-expt-aux (cdr poly) x (1+ n))
-				(eval-polynomial-expt-aux (cdr poly) x1 (1+ n)))
+		       (- (/ (- (eval-polynomial-expt-aux0 (cdr poly) x (1+ n))
+				(eval-polynomial-expt-aux0 (cdr poly) x1 (1+ n)))
 			     (- x x1))
-			  (eval-polynomial-expt-aux
+			  (eval-polynomial-expt-aux0
 			   (derivative-polynomial-aux (cdr poly) (1+ n)) x n)))))
     :hints (("Goal"
 	     :do-not-induct t
@@ -605,20 +618,20 @@
 		  (natp n)
 		  (< 0 n)
 		  (consp poly))
-	     (equal (abs (- (/ (- (eval-polynomial-expt-aux poly x n)
-				  (eval-polynomial-expt-aux poly x1 n))
+	     (equal (abs (- (/ (- (eval-polynomial-expt-aux0 poly x n)
+				  (eval-polynomial-expt-aux0 poly x1 n))
 			       (- x x1))
-			    (eval-polynomial-expt-aux
+			    (eval-polynomial-expt-aux0
 			     (derivative-polynomial-aux poly n) x (1- n))))
 		    (abs (+ (- (/ (* (car poly)
 				     (- (expt x n)
 					(expt x1 n)))
 				  (- x x1))
 			       (* n (car poly) (expt x (1- n))))
-			    (- (/ (- (eval-polynomial-expt-aux (cdr poly) x (1+ n))
-				     (eval-polynomial-expt-aux (cdr poly) x1 (1+ n)))
+			    (- (/ (- (eval-polynomial-expt-aux0 (cdr poly) x (1+ n))
+				     (eval-polynomial-expt-aux0 (cdr poly) x1 (1+ n)))
 				  (- x x1))
-			       (eval-polynomial-expt-aux
+			       (eval-polynomial-expt-aux0
 				(derivative-polynomial-aux (cdr poly) (1+ n)) x n))))))
     :hints (("Goal"
 	     :do-not-induct t
@@ -634,20 +647,20 @@
 		  (natp n)
 		  (< 0 n)
 		  (consp poly))
-	     (<= (abs (- (/ (- (eval-polynomial-expt-aux poly x n)
-			       (eval-polynomial-expt-aux poly x1 n))
+	     (<= (abs (- (/ (- (eval-polynomial-expt-aux0 poly x n)
+			       (eval-polynomial-expt-aux0 poly x1 n))
 			    (- x x1))
-			 (eval-polynomial-expt-aux
+			 (eval-polynomial-expt-aux0
 			  (derivative-polynomial-aux poly n) x (1- n))))
 		 (+ (abs (- (/ (* (car poly)
 				  (- (expt x n)
 				     (expt x1 n)))
 			       (- x x1))
 			    (* n (car poly) (expt x (1- n)))))
-		    (abs (- (/ (- (eval-polynomial-expt-aux (cdr poly) x (1+ n))
-				  (eval-polynomial-expt-aux (cdr poly) x1 (1+ n)))
+		    (abs (- (/ (- (eval-polynomial-expt-aux0 (cdr poly) x (1+ n))
+				  (eval-polynomial-expt-aux0 (cdr poly) x1 (1+ n)))
 			       (- x x1))
-			    (eval-polynomial-expt-aux
+			    (eval-polynomial-expt-aux0
 			     (derivative-polynomial-aux (cdr poly) (1+ n)) x n))))))
     :hints (("Goal"
 	     :do-not-induct t
@@ -658,13 +671,13 @@
 					     (expt x1 n)))
 				       (- x x1))
 				    (* n (car poly) (expt x (1- n)))))
-			      (y (- (/ (- (eval-polynomial-expt-aux (cdr poly) x (1+ n))
-					  (eval-polynomial-expt-aux (cdr poly) x1 (1+ n)))
+			      (y (- (/ (- (eval-polynomial-expt-aux0 (cdr poly) x (1+ n))
+					  (eval-polynomial-expt-aux0 (cdr poly) x1 (1+ n)))
 				       (- x x1))
-				    (eval-polynomial-expt-aux
+				    (eval-polynomial-expt-aux0
 				     (derivative-polynomial-aux (cdr poly) (1+ n)) x n))))
 		   )
-	     :in-theory (disable abs eval-polynomial-expt-aux derivative-polynomial-aux)))))
+	     :in-theory (disable abs eval-polynomial-expt-aux0 derivative-polynomial-aux)))))
 
 
  (local
@@ -683,24 +696,24 @@
 				(- x x1))
 			     (* n (car poly) (expt x (1- n)))))
 		     (/ eps 2))
-		  (< (abs (- (/ (- (eval-polynomial-expt-aux (cdr poly) x (1+ n))
-				   (eval-polynomial-expt-aux (cdr poly) x1 (1+ n)))
+		  (< (abs (- (/ (- (eval-polynomial-expt-aux0 (cdr poly) x (1+ n))
+				   (eval-polynomial-expt-aux0 (cdr poly) x1 (1+ n)))
 				(- x x1))
-			     (eval-polynomial-expt-aux
+			     (eval-polynomial-expt-aux0
 			      (derivative-polynomial-aux (cdr poly) (1+ n)) x n)))
 		     (/ eps 2))
 		  )
-	     (< (abs (- (/ (- (eval-polynomial-expt-aux poly x n)
-			      (eval-polynomial-expt-aux poly x1 n))
+	     (< (abs (- (/ (- (eval-polynomial-expt-aux0 poly x n)
+			      (eval-polynomial-expt-aux0 poly x1 n))
 			   (- x x1))
-			(eval-polynomial-expt-aux
+			(eval-polynomial-expt-aux0
 			 (derivative-polynomial-aux poly n) x (1- n))))
 		eps))
     :hints (("Goal" :do-not-induct t
 	     :use ((:instance lemma-20))
 	     :in-theory (disable abs
 				 derivative-polynomial-aux
-				 eval-polynomial-expt-aux)))
+				 eval-polynomial-expt-aux0)))
     ))
 
  (local
@@ -719,17 +732,17 @@
 				(- x x1))
 			     (* n (car poly) (expt x (1- n)))))
 		     (/ eps 2))
-		  (< (abs (- (/ (- (eval-polynomial-expt-aux (cdr poly) x (1+ n))
-				   (eval-polynomial-expt-aux (cdr poly) x1 (1+ n)))
+		  (< (abs (- (/ (- (eval-polynomial-expt-aux0 (cdr poly) x (1+ n))
+				   (eval-polynomial-expt-aux0 (cdr poly) x1 (1+ n)))
 				(- x x1))
-			     (eval-polynomial-expt-aux
+			     (eval-polynomial-expt-aux0
 			      (derivative-polynomial-aux (cdr poly) (1+ n)) x n)))
 		     (/ eps 2))
 		  )
-	     (< (abs (- (/ (- (eval-polynomial-expt-aux poly x n)
-			      (eval-polynomial-expt-aux poly x1 n))
+	     (< (abs (- (/ (- (eval-polynomial-expt-aux0 poly x n)
+			      (eval-polynomial-expt-aux0 poly x1 n))
 			   (- x x1))
-			(eval-polynomial-expt-aux
+			(eval-polynomial-expt-aux0
 			 (derivative-polynomial-aux poly n)
 			 x
 			 (if (zp n) n (1- n))
@@ -740,7 +753,7 @@
 		   (:instance lemma-21))
 	     :in-theory (disable abs
 				 derivative-polynomial-aux
-				 eval-polynomial-expt-aux))
+				 eval-polynomial-expt-aux0))
 	    )
     ))
 
@@ -871,17 +884,17 @@
 		      (< delta (exists-delta-for-x-and-eps-so-deriv-expt-works-witness
 				x n (/ eps (* 2 (abs (car poly)))))))
 		  (< (abs (- x x1)) delta)
-		  (< (abs (- (/ (- (eval-polynomial-expt-aux (cdr poly) x (1+ n))
-				   (eval-polynomial-expt-aux (cdr poly) x1 (1+ n)))
+		  (< (abs (- (/ (- (eval-polynomial-expt-aux0 (cdr poly) x (1+ n))
+				   (eval-polynomial-expt-aux0 (cdr poly) x1 (1+ n)))
 				(- x x1))
-			     (eval-polynomial-expt-aux
+			     (eval-polynomial-expt-aux0
 			      (derivative-polynomial-aux (cdr poly) (1+ n)) x n)))
 		     (/ eps 2))
 		  )
-	     (< (abs (- (/ (- (eval-polynomial-expt-aux poly x n)
-			      (eval-polynomial-expt-aux poly x1 n))
+	     (< (abs (- (/ (- (eval-polynomial-expt-aux0 poly x n)
+			      (eval-polynomial-expt-aux0 poly x1 n))
 			   (- x x1))
-			(eval-polynomial-expt-aux
+			(eval-polynomial-expt-aux0
 			 (derivative-polynomial-aux poly n)
 			 x
 			 (if (zp n) n (1- n))
@@ -892,7 +905,7 @@
 		   (:instance lemma-29))
 	     :in-theory (disable abs
 				 derivative-polynomial-aux
-				 eval-polynomial-expt-aux))
+				 eval-polynomial-expt-aux0))
 	    )
     ))
 
@@ -913,10 +926,10 @@
 		  (< (abs (- x x1)) delta)
 		  (forall-x-eps-delta-in-range-deriv-poly-expt-aux-works (cdr poly) x (1+ n) (/ eps 2) delta)
 		  )
-	     (< (abs (- (/ (- (eval-polynomial-expt-aux (cdr poly) x (1+ n))
-			      (eval-polynomial-expt-aux (cdr poly) x1 (1+ n)))
+	     (< (abs (- (/ (- (eval-polynomial-expt-aux0 (cdr poly) x (1+ n))
+			      (eval-polynomial-expt-aux0 (cdr poly) x1 (1+ n)))
 			   (- x x1))
-			(eval-polynomial-expt-aux
+			(eval-polynomial-expt-aux0
 			 (derivative-polynomial-aux (cdr poly) (1+ n)) x n)))
 		(/ eps 2)))
     :hints (("Goal" :do-not-induct t
@@ -928,7 +941,7 @@
 			      (delta delta)))
 	     :in-theory (disable abs
 				 derivative-polynomial-aux
-				 eval-polynomial-expt-aux
+				 eval-polynomial-expt-aux0
 				 forall-x-eps-delta-in-range-deriv-poly-expt-aux-works-necc))
 	    )
     ))
@@ -952,10 +965,10 @@
 		  (< (abs (- x x1)) delta)
 		  (forall-x-eps-delta-in-range-deriv-poly-expt-aux-works (cdr poly) x (1+ n) (/ eps 2) delta)
 		  )
-	     (< (abs (- (/ (- (eval-polynomial-expt-aux poly x n)
-			      (eval-polynomial-expt-aux poly x1 n))
+	     (< (abs (- (/ (- (eval-polynomial-expt-aux0 poly x n)
+			      (eval-polynomial-expt-aux0 poly x1 n))
 			   (- x x1))
-			(eval-polynomial-expt-aux
+			(eval-polynomial-expt-aux0
 			 (derivative-polynomial-aux poly n)
 			 x
 			 (if (zp n) n (1- n))
@@ -966,7 +979,7 @@
 		   (:instance lemma-31))
 	     :in-theory (disable abs
 				 derivative-polynomial-aux
-				 eval-polynomial-expt-aux))
+				 eval-polynomial-expt-aux0))
 	    )
     ))
 
@@ -994,7 +1007,7 @@
 			      ))
 	     :in-theory (disable abs
 				 derivative-polynomial-aux
-				 eval-polynomial-expt-aux))
+				 eval-polynomial-expt-aux0))
 	    )
     ))
 
@@ -1030,7 +1043,7 @@
 		   )
 	     :in-theory (disable abs
 				 derivative-polynomial-aux
-				 eval-polynomial-expt-aux
+				 eval-polynomial-expt-aux0
 				 forall-x-eps-delta-in-range-deriv-poly-expt-aux-works))
 	    )
     ))
@@ -1102,7 +1115,7 @@
 			      (delta (fix-delta poly x n eps))))
 	     :in-theory (disable abs
 				 derivative-polynomial-aux
-				 eval-polynomial-expt-aux
+				 eval-polynomial-expt-aux0
 				 fix-delta
 				 exists-delta-for-x-and-eps-so-deriv-poly-expt-aux-works
 				 forall-x-eps-delta-in-range-deriv-poly-expt-aux-works)))))
@@ -1124,14 +1137,16 @@
 	    ("Subgoal *1/1"
 	     :use ((:instance lemma-37))))))
 
+ #| This is not true anymore, since eval-polynomial-expt-aux0 does not check for x real
  (local
   (defthm lemma-38
     (implies (not (and (real-polynomial-p poly)
 			(realp x)
 			(integerp n)
 			(<= 0 n)))
-	     (equal (eval-polynomial-expt-aux poly x n) 0))
+	     (equal (eval-polynomial-expt-aux0 poly x n) 0))
     ))
+ |#
 
  (local
   (defthm lemma-39
@@ -1185,8 +1200,8 @@
 			   (< 0 eps)
 			   (< (abs (- x x0)) delta)
 			   (not (equal x x0)))
-		      (< (abs (- (eval-polynomial-expt-aux poly x n)
-				 (eval-polynomial-expt-aux poly x0 n)))
+		      (< (abs (- (eval-polynomial-expt-aux0 poly x n)
+				 (eval-polynomial-expt-aux0 poly x0 n)))
 			 eps)))
      :rewrite :direct)
 
@@ -1208,13 +1223,10 @@
 
 (local
  (defthm real-eval-polynomial-expt
-   (realp (eval-polynomial-expt-aux poly x n))))
+   (realp (eval-polynomial-expt-aux0 poly x n))))
 
 (defthmd poly-expt-and-prime-are-continuous
-   (implies (and ;(real-polynomial-p poly)
-		 (realp x0)
-		 ;(integerp n)
-		 ;(<= 0 n)
+   (implies (and (realp x0)
 		 (realp epsilon)
 		 (< 0 epsilon))
 	    (exists-delta-for-x0-to-make-x-within-epsilon-of-poly-expt-aux poly x0 n epsilon))
@@ -1222,57 +1234,66 @@
 	   :use ((:instance
 		  (:functional-instance rdfn-classic-is-continuous-hyperreals
 					(rdfn-classical
-					 (lambda (x)
-					   (eval-polynomial-expt-aux poly x n)))
+					 (lambda (context x)
+					   (eval-polynomial-expt-aux0 (first context) x (second context))))
 					(derivative-rdfn-classical
-					 (lambda (x)
-					   (eval-polynomial-expt-aux (derivative-polynomial-aux poly n) x (if (zp n) n (1- n)))))
+					 (lambda (context x)
+					   (eval-polynomial-expt-aux0 (derivative-polynomial-aux (first context) (second context)) x (if (zp (second context)) (second context) (1- (second context))))))
 					(rdfn-classical-domain
 					 (lambda () (interval nil nil)))
 					(exists-delta-for-x0-to-make-x-within-epsilon-of-classical-rdfn
-					 (lambda (x eps)
-					   (exists-delta-for-x0-to-make-x-within-epsilon-of-poly-expt-aux poly x n eps)))
+					 (lambda (context x eps)
+					   (exists-delta-for-x0-to-make-x-within-epsilon-of-poly-expt-aux (first context) x (second context) eps)))
 					(exists-delta-for-x0-to-make-x-within-epsilon-of-classical-rdfn-witness
-					 (lambda (x eps)
-					   (exists-delta-for-x0-to-make-x-within-epsilon-of-poly-expt-aux-witness poly x n eps)))
+					 (lambda (context x eps)
+					   (exists-delta-for-x0-to-make-x-within-epsilon-of-poly-expt-aux-witness (first context) x (second context) eps)))
 					(forall-x-within-delta-of-x0-f-x-within-epsilon-of-classical-rdfn
-					 (lambda (x eps delta)
-					   (forall-x-within-delta-of-x0-f-x-within-epsilon-of-poly-expt-aux poly x n eps delta)))
+					 (lambda (context x eps delta)
+					   (forall-x-within-delta-of-x0-f-x-within-epsilon-of-poly-expt-aux (first context) x (second context) eps delta)))
 					(forall-x-within-delta-of-x0-f-x-within-epsilon-of-classical-rdfn-witness
-					 (lambda (x eps delta)
-					   (forall-x-within-delta-of-x0-f-x-within-epsilon-of-poly-expt-aux-witness poly x n eps delta)))
+					 (lambda (context x eps delta)
+					   (forall-x-within-delta-of-x0-f-x-within-epsilon-of-poly-expt-aux-witness (first context) x (second context) eps delta)))
 					(forall-x-eps-delta-in-range-deriv-classical-works
-					 (lambda (x eps delta)
-					   (forall-x-eps-delta-in-range-deriv-poly-expt-aux-works poly x n eps delta)))
+					 (lambda (context x eps delta)
+					   (forall-x-eps-delta-in-range-deriv-poly-expt-aux-works (first context) x (second context) eps delta)))
 					(forall-x-eps-delta-in-range-deriv-classical-works-witness
-					 (lambda (x eps delta)
-					   (forall-x-eps-delta-in-range-deriv-poly-expt-aux-works-witness poly x n eps delta)))
+					 (lambda (context x eps delta)
+					   (forall-x-eps-delta-in-range-deriv-poly-expt-aux-works-witness (first context) x (second context) eps delta)))
 					(exists-delta-for-x-and-eps-so-deriv-classical-works
-					 (lambda (x eps)
-					   (exists-delta-for-x-and-eps-so-deriv-poly-expt-aux-works poly x n eps)))
+					 (lambda (context x eps)
+					   (exists-delta-for-x-and-eps-so-deriv-poly-expt-aux-works (first context) x (second context) eps)))
 					(exists-delta-for-x-and-eps-so-deriv-classical-works-witness
-					 (lambda (x eps)
-					   (exists-delta-for-x-and-eps-so-deriv-poly-expt-aux-works-witness poly x n eps)))
+					 (lambda (context x eps)
+					   (exists-delta-for-x-and-eps-so-deriv-poly-expt-aux-works-witness (first context) x (second context) eps)))
 					)
+                  (context (list poly n))
 		  (eps epsilon))))
 	  ("Subgoal 10"
-	   :use ((:instance exists-delta-for-x0-to-make-x-within-epsilon-of-poly-expt-aux-suff))
+	   :use ((:instance exists-delta-for-x0-to-make-x-within-epsilon-of-poly-expt-aux-suff
+                            (poly (first context))
+                            (n (second context))))
 	   :in-theory (disable FORALL-X-WITHIN-DELTA-OF-X0-F-X-WITHIN-EPSILON-OF-POLY-EXPT-AUX))
 	  ("Subgoal 8"
-	   :use ((:instance FORALL-X-WITHIN-DELTA-OF-X0-F-X-WITHIN-EPSILON-OF-POLY-EXPT-AUX-necc))
+	   :use ((:instance FORALL-X-WITHIN-DELTA-OF-X0-F-X-WITHIN-EPSILON-OF-POLY-EXPT-AUX-necc
+                            (poly (first context))
+                            (n (second context))))
 	   :in-theory (disable FORALL-X-WITHIN-DELTA-OF-X0-F-X-WITHIN-EPSILON-OF-POLY-EXPT-AUX-necc
 			       FORALL-X-WITHIN-DELTA-OF-X0-F-X-WITHIN-EPSILON-OF-POLY-EXPT-AUX))
 	  ("Subgoal 4"
-	   :use ((:instance EXISTS-DELTA-FOR-X-AND-EPS-SO-DERIV-POLY-EXPT-AUX-WORKS-suff))
+	   :use ((:instance EXISTS-DELTA-FOR-X-AND-EPS-SO-DERIV-POLY-EXPT-AUX-WORKS-suff
+                            (poly (first context))
+                            (n (second context))))
 	   :in-theory (disable FORALL-X-EPS-DELTA-IN-RANGE-DERIV-POLY-EXPT-AUX-WORKS))
 	  ("Subgoal 2"
-	   :use ((:instance FORALL-X-EPS-DELTA-IN-RANGE-DERIV-POLY-EXPT-AUX-WORKS-necc)))
+	   :use ((:instance FORALL-X-EPS-DELTA-IN-RANGE-DERIV-POLY-EXPT-AUX-WORKS-necc
+                            (poly (first context))
+                            (n (second context)))))
 	  )
   )
 
 (defun map-poly-expt-classical (poly p n)
   (if (consp p)
-      (cons (eval-polynomial-expt-aux poly (car p) n)
+      (cons (eval-polynomial-expt-aux0 poly (car p) n)
 	    (map-poly-expt-classical poly (cdr p) n))
     nil))
 
@@ -1285,7 +1306,7 @@
 	 (if (and (consp p) (consp (cdr p)))
 	     (+ (riemann-poly-expt-classical poly (cdr p) n)
 		(* (- (cadr p) (car p))
-		   (eval-polynomial-expt-aux poly (cadr p) n)))
+		   (eval-polynomial-expt-aux0 poly (cadr p) n)))
 	   0))
   :rule-classes :definition)
 
@@ -1298,8 +1319,8 @@
 	  (implies (and (realp x)
 			(<= a x)
 			(<= x b))
-		   (<= (eval-polynomial-expt-aux poly x n)
-		       (eval-polynomial-expt-aux poly max n)))))
+		   (<= (eval-polynomial-expt-aux0 poly x n)
+		       (eval-polynomial-expt-aux0 poly max n)))))
 
 (defun-sk poly-expt-classical-achieves-maximum-point (poly a b n)
   (exists (max)
@@ -1315,57 +1336,68 @@
   (implies (and (realp a)
 		(realp b)
 		(< a b)
-					;(real-polynomial-p poly)
-					;(natp n)
 		)
 	   (poly-expt-classical-achieves-maximum-point poly a b n))
   :hints (("Goal" :do-not-induct t
-	   :use ((:functional-instance maximum-point-theorem-hyper-sk
+	   :use ((:instance (:functional-instance maximum-point-theorem-hyper-sk
 				       (rcfn-hyper
-					(lambda (x)
-					  (eval-polynomial-expt-aux poly x n)))
+					(lambda (context x)
+					  (eval-polynomial-expt-aux0 (first context) x (second context))))
 				       (rcfn-hyper-domain
 					(lambda () (interval nil nil)))
 				       (is-maximum-point-of-rcfn-hyper
-					(lambda (a b max)
-					  (is-maximum-point-of-poly-expt-classical poly a b n max)))
+					(lambda (context a b max)
+					  (is-maximum-point-of-poly-expt-classical (first context) a b (second context) max)))
 				       (is-maximum-point-of-rcfn-hyper-witness
-					(lambda (a b max)
-					  (is-maximum-point-of-poly-expt-classical-witness poly a b n max)))
+					(lambda (context a b max)
+					  (is-maximum-point-of-poly-expt-classical-witness (first context) a b (second context) max)))
 				       (rcfn-hyper-achieves-maximum-point
-					(lambda (a b)
-					  (poly-expt-classical-achieves-maximum-point poly a b n)))
+					(lambda (context a b)
+					  (poly-expt-classical-achieves-maximum-point (first context) a b (second context))))
 				       (rcfn-hyper-achieves-maximum-point-witness
-					(lambda (a b)
-					  (poly-expt-classical-achieves-maximum-point-witness poly a b n)))
+					(lambda (context a b)
+					  (poly-expt-classical-achieves-maximum-point-witness (first context) a b (second context))))
 				       (exists-delta-for-x0-to-make-x-within-epsilon-of-hyper-f
-					(lambda (x eps)
-					  (exists-delta-for-x0-to-make-x-within-epsilon-of-poly-expt-aux poly x n eps)))
+					(lambda (context x eps)
+					  (exists-delta-for-x0-to-make-x-within-epsilon-of-poly-expt-aux (first context) x (second context) eps)))
 				       (exists-delta-for-x0-to-make-x-within-epsilon-of-hyper-f-witness
-					(lambda (x eps)
-					  (exists-delta-for-x0-to-make-x-within-epsilon-of-poly-expt-aux-witness poly x n eps)))
+					(lambda (context x eps)
+					  (exists-delta-for-x0-to-make-x-within-epsilon-of-poly-expt-aux-witness (first context) x (second context) eps)))
 				       (forall-x-within-delta-of-x0-f-x-within-epsilon-of-hyper-f
-					(lambda (x eps delta)
-					  (forall-x-within-delta-of-x0-f-x-within-epsilon-of-poly-expt-aux poly x n eps delta)))
+					(lambda (context x eps delta)
+					  (forall-x-within-delta-of-x0-f-x-within-epsilon-of-poly-expt-aux (first context) x (second context) eps delta)))
 				       (forall-x-within-delta-of-x0-f-x-within-epsilon-of-hyper-f-witness
-					(lambda (x eps delta)
-					  (forall-x-within-delta-of-x0-f-x-within-epsilon-of-poly-expt-aux-witness poly x n eps delta)))
-				       ))
+					(lambda (context x eps delta)
+					  (forall-x-within-delta-of-x0-f-x-within-epsilon-of-poly-expt-aux-witness (first context) x (second context) eps delta)))
+				       )
+                            (context (list poly n))))
 	   )
 	  ("Subgoal 10"
-	   :use ((:instance poly-expt-classical-achieves-maximum-point-suff))
+	   :use ((:instance poly-expt-classical-achieves-maximum-point-suff
+                            (poly (first context))
+                            (n (second context))))
 	   )
 	  ("Subgoal 8"
-	   :use ((:instance is-maximum-point-of-poly-expt-classical-necc)))
+	   :use ((:instance is-maximum-point-of-poly-expt-classical-necc
+                            (poly (first context))
+                            (n (second context)))))
 	  ("Subgoal 6"
 	   :use ((:instance poly-expt-and-prime-are-continuous
-			    (epsilon eps))))
+			    (poly (first context))
+                            (n (second context))
+                            (epsilon eps))))
 	  ("Subgoal 4"
-	   :use ((:instance exists-delta-for-x0-to-make-x-within-epsilon-of-poly-expt-aux-suff)))
+	   :use ((:instance exists-delta-for-x0-to-make-x-within-epsilon-of-poly-expt-aux-suff
+                            (poly (first context))
+                            (n (second context)))))
 	  ("Subgoal 2"
-	   :use ((:instance forall-x-within-delta-of-x0-f-x-within-epsilon-of-poly-expt-aux-necc)))
+	   :use ((:instance forall-x-within-delta-of-x0-f-x-within-epsilon-of-poly-expt-aux-necc
+                            (poly (first context))
+                            (n (second context)))))
 	  ("Subgoal 1"
-	   :use ((:instance FORALL-X-WITHIN-DELTA-OF-X0-F-X-WITHIN-EPSILON-OF-POLY-EXPT-AUX-necc)))
+	   :use ((:instance FORALL-X-WITHIN-DELTA-OF-X0-F-X-WITHIN-EPSILON-OF-POLY-EXPT-AUX-necc
+                            (poly (first context))
+                            (n (second context)))))
 	  ))
 
 (defun-sk is-minimum-point-of-poly-expt-classical (poly a b n min)
@@ -1373,8 +1405,8 @@
 	  (implies (and (realp x)
 			(<= a x)
 			(<= x b))
-		   (<= (eval-polynomial-expt-aux poly min n)
-		       (eval-polynomial-expt-aux poly x n)))))
+		   (<= (eval-polynomial-expt-aux0 poly min n)
+		       (eval-polynomial-expt-aux0 poly x n)))))
 
 (defun-sk poly-expt-classical-achieves-minimum-point (poly a b n)
   (exists (min)
@@ -1390,48 +1422,52 @@
   (implies (and (realp a)
 		(realp b)
 		(< a b)
-					;(real-polynomial-p poly)
-					;(natp n)
 		)
 	   (poly-expt-classical-achieves-minimum-point poly a b n))
   :hints (("Goal" :do-not-induct t
-	   :use ((:functional-instance minimum-point-theorem-hyper-sk
-				       (rcfn-hyper
-					(lambda (x)
-					  (eval-polynomial-expt-aux poly x n)))
-				       (rcfn-hyper-domain
-					(lambda () (interval nil nil)))
-				       (is-minimum-point-of-rcfn-hyper
-					(lambda (a b min)
-					  (is-minimum-point-of-poly-expt-classical poly a b n min)))
-				       (is-minimum-point-of-rcfn-hyper-witness
-					(lambda (a b min)
-					  (is-minimum-point-of-poly-expt-classical-witness poly a b n min)))
-				       (rcfn-hyper-achieves-minimum-point
-					(lambda (a b)
-					  (poly-expt-classical-achieves-minimum-point poly a b n)))
-				       (rcfn-hyper-achieves-minimum-point-witness
-					(lambda (a b)
-					  (poly-expt-classical-achieves-minimum-point-witness poly a b n)))
-				       (exists-delta-for-x0-to-make-x-within-epsilon-of-hyper-f
-					(lambda (x eps)
-					  (exists-delta-for-x0-to-make-x-within-epsilon-of-poly-expt-aux poly x n eps)))
-				       (exists-delta-for-x0-to-make-x-within-epsilon-of-hyper-f-witness
-					(lambda (x eps)
-					  (exists-delta-for-x0-to-make-x-within-epsilon-of-poly-expt-aux-witness poly x n eps)))
-				       (forall-x-within-delta-of-x0-f-x-within-epsilon-of-hyper-f
-					(lambda (x eps delta)
-					  (forall-x-within-delta-of-x0-f-x-within-epsilon-of-poly-expt-aux poly x n eps delta)))
-				       (forall-x-within-delta-of-x0-f-x-within-epsilon-of-hyper-f-witness
-					(lambda (x eps delta)
-					  (forall-x-within-delta-of-x0-f-x-within-epsilon-of-poly-expt-aux-witness poly x n eps delta)))
-				       ))
+	   :use ((:instance
+                  (:functional-instance minimum-point-theorem-hyper-sk
+				        (rcfn-hyper
+					 (lambda (context x)
+					   (eval-polynomial-expt-aux0 (first context) x (second context))))
+				        (rcfn-hyper-domain
+					 (lambda () (interval nil nil)))
+				        (is-minimum-point-of-rcfn-hyper
+					 (lambda (context a b min)
+					   (is-minimum-point-of-poly-expt-classical (first context) a b (second context) min)))
+				        (is-minimum-point-of-rcfn-hyper-witness
+					 (lambda (context a b min)
+					   (is-minimum-point-of-poly-expt-classical-witness (first context) a b (second context) min)))
+				        (rcfn-hyper-achieves-minimum-point
+					 (lambda (context a b)
+					   (poly-expt-classical-achieves-minimum-point (first context) a b (second context))))
+				        (rcfn-hyper-achieves-minimum-point-witness
+					 (lambda (context a b)
+					   (poly-expt-classical-achieves-minimum-point-witness (first context) a b (second context))))
+				        (exists-delta-for-x0-to-make-x-within-epsilon-of-hyper-f
+					 (lambda (context x eps)
+					   (exists-delta-for-x0-to-make-x-within-epsilon-of-poly-expt-aux (first context) x (second context) eps)))
+				        (exists-delta-for-x0-to-make-x-within-epsilon-of-hyper-f-witness
+					 (lambda (context x eps)
+					   (exists-delta-for-x0-to-make-x-within-epsilon-of-poly-expt-aux-witness (first context) x (second context) eps)))
+				        (forall-x-within-delta-of-x0-f-x-within-epsilon-of-hyper-f
+					 (lambda (context x eps delta)
+					   (forall-x-within-delta-of-x0-f-x-within-epsilon-of-poly-expt-aux (first context) x (second context) eps delta)))
+				        (forall-x-within-delta-of-x0-f-x-within-epsilon-of-hyper-f-witness
+					 (lambda (context x eps delta)
+					   (forall-x-within-delta-of-x0-f-x-within-epsilon-of-poly-expt-aux-witness (first context) x (second context) eps delta)))
+				        )
+                  (context (list poly n))))
 	   )
 	  ("Subgoal 4"
-	   :use ((:instance poly-expt-classical-achieves-minimum-point-suff))
+	   :use ((:instance poly-expt-classical-achieves-minimum-point-suff
+                            (poly (first context))
+                            (n (second context))))
 	   )
 	  ("Subgoal 2"
-	   :use ((:instance is-minimum-point-of-poly-expt-classical-necc)))
+	   :use ((:instance is-minimum-point-of-poly-expt-classical-necc
+                            (poly (first context))
+                            (n (second context)))))
 	  ))
 
 
@@ -1496,14 +1532,14 @@
 		 (< a x)
 		 (<= x b)
 		 )
-	    (<= (eval-polynomial-expt-aux poly x n)
-		(eval-polynomial-expt-aux poly (poly-expt-classical-achieves-maximum-point-witness poly a b n) n)))
+	    (<= (eval-polynomial-expt-aux0 poly x n)
+		(eval-polynomial-expt-aux0 poly (poly-expt-classical-achieves-maximum-point-witness poly a b n) n)))
    :hints (("Goal" :do-not-induct t
 	    :use ((:instance is-maximum-point-of-poly-expt-classical-necc
 			     (max (poly-expt-classical-achieves-maximum-point-witness poly a b n))
 			     )
 		  (:instance maximum-point-theorem-poly-expt-classical-sk))
-	    :in-theory (disable eval-polynomial-expt-aux
+	    :in-theory (disable eval-polynomial-expt-aux0
 				IS-MAXIMUM-POINT-OF-POLY-EXPT-CLASSICAL
 				MAXIMUM-POINT-THEOREM-POLY-EXPT-CLASSICAL-SK)))))
 
@@ -1514,16 +1550,15 @@
 		 (realp x)
 		 (< a x)
 		 (<= x b)
-                 ;(natp n)
 		 )
-	    (<= (eval-polynomial-expt-aux poly (poly-expt-classical-achieves-minimum-point-witness poly a b n) n)
-		(eval-polynomial-expt-aux poly x n)))
+	    (<= (eval-polynomial-expt-aux0 poly (poly-expt-classical-achieves-minimum-point-witness poly a b n) n)
+		(eval-polynomial-expt-aux0 poly x n)))
    :hints (("Goal" :do-not-induct t
 	    :use ((:instance is-minimum-point-of-poly-expt-classical-necc
 			     (min (poly-expt-classical-achieves-minimum-point-witness poly a b n))
 			     )
 		  (:instance minimum-point-theorem-poly-expt-classical-sk))
-	    :in-theory (disable eval-polynomial-expt-aux
+	    :in-theory (disable eval-polynomial-expt-aux0
 				is-minimum-point-of-poly-expt-classical
 				minimum-point-theorem-poly-expt-classical-sk)))))
 
@@ -1593,12 +1628,12 @@
 		  (= b (car (last p))))
 	     (<=
 	      (* (+ (CADR P) (- (CAR P)))
-		 (EVAL-POLYNOMIAL-EXPT-AUX
+		 (EVAL-POLYNOMIAL-EXPT-AUX0
 		  POLY
 		  (POLY-EXPT-CLASSICAL-ACHIEVES-MINIMUM-POINT-WITNESS POLY A B N)
 		  N))
 	      (* (+ (CADR P) (- (CAR P)))
-		 (EVAL-POLYNOMIAL-EXPT-AUX POLY (CADR P)
+		 (EVAL-POLYNOMIAL-EXPT-AUX0 POLY (CADR P)
 					   N))))
     :hints (("Goal"
 	     :do-not-induct t
@@ -1610,12 +1645,12 @@
 						      (< 0 z)
 						      (<= x y))
 						 (<= (* z x) (* z y))))
-			      (x (EVAL-POLYNOMIAL-EXPT-AUX POLY
+			      (x (EVAL-POLYNOMIAL-EXPT-AUX0 POLY
 							   (POLY-EXPT-CLASSICAL-ACHIEVES-MINIMUM-POINT-WITNESS
 							    POLY A (CAR (LAST (CDR P)))
 							    N)
 							   N))
-			      (y (EVAL-POLYNOMIAL-EXPT-AUX POLY (CADR P) N))
+			      (y (EVAL-POLYNOMIAL-EXPT-AUX0 POLY (CADR P) N))
 			      (z (- (cadr p) (car p)))))
 	     )
 	    ("Subgoal 2"
@@ -1643,10 +1678,10 @@
 		  (= b (car (last p))))
 	     (<=
 	      (* (+ (CADR P) (- (CAR P)))
-		 (EVAL-POLYNOMIAL-EXPT-AUX POLY (CADR P)
+		 (EVAL-POLYNOMIAL-EXPT-AUX0 POLY (CADR P)
 					   N))
 	      (* (+ (CADR P) (- (CAR P)))
-		 (EVAL-POLYNOMIAL-EXPT-AUX
+		 (EVAL-POLYNOMIAL-EXPT-AUX0
 		  POLY
 		  (POLY-EXPT-CLASSICAL-ACHIEVES-MAXIMUM-POINT-WITNESS POLY A B N)
 		  N))))
@@ -1660,8 +1695,8 @@
 						      (< 0 z)
 						      (<= x y))
 						 (<= (* z x) (* z y))))
-			      (x (EVAL-POLYNOMIAL-EXPT-AUX POLY (CADR P) N))
-			      (y (EVAL-POLYNOMIAL-EXPT-AUX POLY
+			      (x (EVAL-POLYNOMIAL-EXPT-AUX0 POLY (CADR P) N))
+			      (y (EVAL-POLYNOMIAL-EXPT-AUX0 POLY
 							   (POLY-EXPT-CLASSICAL-ACHIEVES-MAXIMUM-POINT-WITNESS
 							    POLY A (CAR (LAST (CDR P)))
 							    N)
@@ -1691,7 +1726,7 @@
 		 (= b (car (last p))))
 	    (<= (riemann-poly-expt-classical poly p n)
 		(riemann-m-poly-expt-classical
-		 (eval-polynomial-expt-aux poly (poly-expt-classical-achieves-maximum-point-witness poly a b n) n)
+		 (eval-polynomial-expt-aux0 poly (poly-expt-classical-achieves-maximum-point-witness poly a b n) n)
 		 p)))
    :INSTRUCTIONS
    ((:IN-THEORY
@@ -1701,7 +1736,7 @@
       (RIEMANN-POLY-EXPT-CLASSICAL RIEMANN-M-POLY-EXPT-CLASSICAL
                                    MAP-POLY-EXPT-CLASSICAL
                                    MAP-M-POLY-EXPT-CLASSICAL
-                                   EVAL-POLYNOMIAL-EXPT-AUX)))
+                                   EVAL-POLYNOMIAL-EXPT-AUX0)))
     (:INDUCT (PARTITIONP P))
     :BASH
     :BASH :BASH :BASH (:CHANGE-GOAL NIL T)
@@ -1711,13 +1746,13 @@
     (:=
      (+
       (RIEMANN-M-POLY-EXPT-CLASSICAL
-       (EVAL-POLYNOMIAL-EXPT-AUX
+       (EVAL-POLYNOMIAL-EXPT-AUX0
 	POLY
 	(POLY-EXPT-CLASSICAL-ACHIEVES-MAXIMUM-POINT-WITNESS POLY A B N)
 	N)
        (CDR P))
       (* (+ (CADR P) (- (CAR P)))
-	 (EVAL-POLYNOMIAL-EXPT-AUX
+	 (EVAL-POLYNOMIAL-EXPT-AUX0
 	  POLY
 	  (POLY-EXPT-CLASSICAL-ACHIEVES-MAXIMUM-POINT-WITNESS POLY A B N)
 	  N))))
@@ -1726,7 +1761,7 @@
     (:= (+ (RIEMANN-POLY-EXPT-CLASSICAL POLY (CDR P)
                                         N)
 	   (* (+ (CADR P) (- (CAR P)))
-	      (EVAL-POLYNOMIAL-EXPT-AUX POLY (CADR P)
+	      (EVAL-POLYNOMIAL-EXPT-AUX0 POLY (CADR P)
 					N))))
     :UP :TOP (:USE (:INSTANCE LEMMA-8))
     :BASH)
@@ -1740,7 +1775,7 @@
 		 (<= a (car p))
 		 (= b (car (last p))))
 	    (<= (riemann-m-poly-expt-classical
-		 (eval-polynomial-expt-aux poly (poly-expt-classical-achieves-minimum-point-witness poly a b n) n)
+		 (eval-polynomial-expt-aux0 poly (poly-expt-classical-achieves-minimum-point-witness poly a b n) n)
 		 p)
 		(riemann-poly-expt-classical poly p n)))
    :INSTRUCTIONS
@@ -1751,7 +1786,7 @@
       (RIEMANN-POLY-EXPT-CLASSICAL RIEMANN-M-POLY-EXPT-CLASSICAL
                                    MAP-POLY-EXPT-CLASSICAL
                                    MAP-M-POLY-EXPT-CLASSICAL
-                                   EVAL-POLYNOMIAL-EXPT-AUX)))
+                                   EVAL-POLYNOMIAL-EXPT-AUX0)))
     (:INDUCT (PARTITIONP P))
     :BASH
     :BASH :BASH :BASH (:CHANGE-GOAL NIL T)
@@ -1761,13 +1796,13 @@
     (:=
      (+
       (RIEMANN-M-POLY-EXPT-CLASSICAL
-       (EVAL-POLYNOMIAL-EXPT-AUX
+       (EVAL-POLYNOMIAL-EXPT-AUX0
 	POLY
 	(POLY-EXPT-CLASSICAL-ACHIEVES-MINIMUM-POINT-WITNESS POLY A B N)
 	N)
        (CDR P))
       (* (+ (CADR P) (- (CAR P)))
-	 (EVAL-POLYNOMIAL-EXPT-AUX
+	 (EVAL-POLYNOMIAL-EXPT-AUX0
 	  POLY
 	  (POLY-EXPT-CLASSICAL-ACHIEVES-MINIMUM-POINT-WITNESS POLY A B N)
 	  N))))
@@ -1776,7 +1811,7 @@
     (:= (+ (RIEMANN-POLY-EXPT-CLASSICAL POLY (CDR P)
                                         N)
 	   (* (+ (CADR P) (- (CAR P)))
-	      (EVAL-POLYNOMIAL-EXPT-AUX POLY (CADR P)
+	      (EVAL-POLYNOMIAL-EXPT-AUX0 POLY (CADR P)
 					N))))
     :TOP (:USE (:INSTANCE LEMMA-7))
     :BASH)
@@ -1793,7 +1828,7 @@
 		 (standardp b)
 		 (standardp poly)
 		 (standardp n))
-	    (standardp (eval-polynomial-expt-aux poly (poly-expt-classical-achieves-maximum-point-witness poly a b n) n)))))
+	    (standardp (eval-polynomial-expt-aux0 poly (poly-expt-classical-achieves-maximum-point-witness poly a b n) n)))))
 
  (defthm standard-upper-bound
    (implies (and (realp a)
@@ -1804,12 +1839,12 @@
 		 (standardp poly)
 		 (standardp n))
 	    (standardp (riemann-m-poly-expt-classical
-			(eval-polynomial-expt-aux poly (poly-expt-classical-achieves-maximum-point-witness poly a b n) n)
+			(eval-polynomial-expt-aux0 poly (poly-expt-classical-achieves-maximum-point-witness poly a b n) n)
 			(make-small-partition a b))))
    :hints (("Goal" :do-not-induct t
 	    :use ((:instance lemma-1)
 		  (:instance standard-riemann-m-poly-expt-classical-better-alternative
-			     (m (eval-polynomial-expt-aux poly (poly-expt-classical-achieves-maximum-point-witness poly a b n) n))))
+			     (m (eval-polynomial-expt-aux0 poly (poly-expt-classical-achieves-maximum-point-witness poly a b n) n))))
 	    :in-theory (disable lemma-1 standard-riemann-m-poly-expt-classical-better-alternative)
 	    )))
 
@@ -1819,7 +1854,7 @@
 		 (standardp b)
 		 (standardp poly)
 		 (standardp n))
-	    (standardp (eval-polynomial-expt-aux poly (poly-expt-classical-achieves-minimum-point-witness poly a b n) n)))))
+	    (standardp (eval-polynomial-expt-aux0 poly (poly-expt-classical-achieves-minimum-point-witness poly a b n) n)))))
 
  (defthm standard-lower-bound
    (implies (and (realp a)
@@ -1830,12 +1865,12 @@
 		 (standardp poly)
 		 (standardp n))
 	    (standardp (riemann-m-poly-expt-classical
-			(eval-polynomial-expt-aux poly (poly-expt-classical-achieves-minimum-point-witness poly a b n) n)
+			(eval-polynomial-expt-aux0 poly (poly-expt-classical-achieves-minimum-point-witness poly a b n) n)
 			(make-small-partition a b))))
    :hints (("Goal" :do-not-induct t
 	    :use ((:instance lemma-2)
 		  (:instance standard-riemann-m-poly-expt-classical-better-alternative
-			     (m (eval-polynomial-expt-aux poly (poly-expt-classical-achieves-minimum-point-witness poly a b n) n))))
+			     (m (eval-polynomial-expt-aux0 poly (poly-expt-classical-achieves-minimum-point-witness poly a b n) n))))
 	    :in-theory (disable lemma-2 standard-riemann-m-poly-expt-classical-better-alternative)
 	    )))
 
@@ -1863,10 +1898,10 @@
 		 (= b (car (last p))))
 	    (<= (abs (riemann-poly-expt-classical poly p n))
 		(abs (max (abs (riemann-m-poly-expt-classical
-				(eval-polynomial-expt-aux poly (poly-expt-classical-achieves-maximum-point-witness poly a b n) n)
+				(eval-polynomial-expt-aux0 poly (poly-expt-classical-achieves-maximum-point-witness poly a b n) n)
 				p))
 			  (abs (riemann-m-poly-expt-classical
-				(eval-polynomial-expt-aux poly (poly-expt-classical-achieves-minimum-point-witness poly a b n) n)
+				(eval-polynomial-expt-aux0 poly (poly-expt-classical-achieves-minimum-point-witness poly a b n) n)
 				p))))))
    :hints (("Goal"
 	    :use ((:instance riemann-poly-expt-classical-bounded-from-below)
@@ -1885,16 +1920,16 @@
 		  (standardp poly)
 		  (standardp n))
 	     (standardp (max (abs (riemann-m-poly-expt-classical
-				   (eval-polynomial-expt-aux poly (poly-expt-classical-achieves-maximum-point-witness poly a b n) n)
+				   (eval-polynomial-expt-aux0 poly (poly-expt-classical-achieves-maximum-point-witness poly a b n) n)
 				   (make-small-partition a b)))
 			     (abs (riemann-m-poly-expt-classical
-				   (eval-polynomial-expt-aux poly (poly-expt-classical-achieves-minimum-point-witness poly a b n) n)
+				   (eval-polynomial-expt-aux0 poly (poly-expt-classical-achieves-minimum-point-witness poly a b n) n)
 				   (make-small-partition a b))))))
     :hints (("Goal"
 	     :use ((:instance standard-lower-bound)
 		   (:instance standard-upper-bound))
 	     :in-theory (disable riemann-m-poly-expt-classical
-				 eval-polynomial-expt-aux
+				 eval-polynomial-expt-aux0
 				 standard-lower-bound
 				 standard-upper-bound)
 	     ))))
@@ -1909,14 +1944,14 @@
 		  (standardp poly)
 		  (standardp n))
 	     (realp (max (abs (riemann-m-poly-expt-classical
-			       (eval-polynomial-expt-aux poly (poly-expt-classical-achieves-maximum-point-witness poly a b n) n)
+			       (eval-polynomial-expt-aux0 poly (poly-expt-classical-achieves-maximum-point-witness poly a b n) n)
 			       (make-small-partition a b)))
 			 (abs (riemann-m-poly-expt-classical
-			       (eval-polynomial-expt-aux poly (poly-expt-classical-achieves-minimum-point-witness poly a b n) n)
+			       (eval-polynomial-expt-aux0 poly (poly-expt-classical-achieves-minimum-point-witness poly a b n) n)
 			       (make-small-partition a b))))))
     :hints (("Goal"
 	     :in-theory (disable riemann-m-poly-expt-classical
-				 eval-polynomial-expt-aux)))
+				 eval-polynomial-expt-aux0)))
     ))
 
  (local
@@ -1929,22 +1964,22 @@
 		  (standardp poly)
 		  (standardp n))
 	     (i-limited (max (abs (riemann-m-poly-expt-classical
-				   (eval-polynomial-expt-aux poly (poly-expt-classical-achieves-maximum-point-witness poly a b n) n)
+				   (eval-polynomial-expt-aux0 poly (poly-expt-classical-achieves-maximum-point-witness poly a b n) n)
 				   (make-small-partition a b)))
 			     (abs (riemann-m-poly-expt-classical
-				   (eval-polynomial-expt-aux poly (poly-expt-classical-achieves-minimum-point-witness poly a b n) n)
+				   (eval-polynomial-expt-aux0 poly (poly-expt-classical-achieves-minimum-point-witness poly a b n) n)
 				   (make-small-partition a b))))))
     :hints (("Goal"
 	     :use ((:instance lemma-3)
 		   (:instance standards-are-limited
 			      (x (max (abs (riemann-m-poly-expt-classical
-					    (eval-polynomial-expt-aux poly (poly-expt-classical-achieves-maximum-point-witness poly a b n) n)
+					    (eval-polynomial-expt-aux0 poly (poly-expt-classical-achieves-maximum-point-witness poly a b n) n)
 					    (make-small-partition a b)))
 				      (abs (riemann-m-poly-expt-classical
-					    (eval-polynomial-expt-aux poly (poly-expt-classical-achieves-minimum-point-witness poly a b n) n)
+					    (eval-polynomial-expt-aux0 poly (poly-expt-classical-achieves-minimum-point-witness poly a b n) n)
 					    (make-small-partition a b)))))))
 	     :in-theory (disable riemann-m-poly-expt-classical
-				 eval-polynomial-expt-aux
+				 eval-polynomial-expt-aux0
 				 standard-lower-bound
 				 standard-upper-bound)
 	     ))))
@@ -1962,10 +1997,10 @@
 	    :use ((:instance large-if->-large
 			     (x (riemann-poly-expt-classical poly (make-small-partition a b) n))
 			     (y (max (abs (riemann-m-poly-expt-classical
-					   (eval-polynomial-expt-aux poly (poly-expt-classical-achieves-maximum-point-witness poly a b n) n)
+					   (eval-polynomial-expt-aux0 poly (poly-expt-classical-achieves-maximum-point-witness poly a b n) n)
 					   (make-small-partition a b)))
 				     (abs (riemann-m-poly-expt-classical
-					   (eval-polynomial-expt-aux poly (poly-expt-classical-achieves-minimum-point-witness poly a b n) n)
+					   (eval-polynomial-expt-aux0 poly (poly-expt-classical-achieves-minimum-point-witness poly a b n) n)
 					   (make-small-partition a b))))))
 		  (:instance lemma-2
 			     (p (make-small-partition a b)))
@@ -1974,7 +2009,7 @@
 				abs
 				riemann-m-poly-expt-classical
 				riemann-poly-expt-classical
-				eval-polynomial-expt-aux
+				eval-polynomial-expt-aux0
 				lemma-2
 				lemma-3
 				large-if->-large

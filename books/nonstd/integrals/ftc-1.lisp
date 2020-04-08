@@ -19,12 +19,12 @@
    (implies (and (inside-interval-p a (rcfn-domain))
 		 (inside-interval-p b (rcfn-domain))
 		 (< a b))
-	    (and (<= (rcfn (rcfn-min-x a b))
-		     (/ (int-rcfn a b)
+	    (and (<= (rcfn context (rcfn-min-x context a b))
+		     (/ (int-rcfn context a b)
 			(- b a)))
-		 (<= (/ (int-rcfn a b)
+		 (<= (/ (int-rcfn context a b)
 			(- b a))
-		     (rcfn (rcfn-max-x a b)))))
+		     (rcfn context (rcfn-max-x context a b)))))
    :hints (("Goal"
 	    :use ((:instance int-rcfn-bounded))
 	    :in-theory (disable int-rcfn-bounded
@@ -33,15 +33,15 @@
 				))
 	   ("Subgoal 2"
 	    :use ((:instance multiply-inequalities-by-positive
-			     (a (* (rcfn (rcfn-min-x a b))
+			     (a (* (rcfn context (rcfn-min-x context a b))
 				   (- b a)))
-			     (b (int-rcfn a b))
+			     (b (int-rcfn context a b))
 			     (c (/ (- b a)))))
 	    :in-theory (disable |(* (+ x y) z)|))
 	   ("Subgoal 1"
 	    :use ((:instance multiply-inequalities-by-positive
-			     (a (int-rcfn a b))
-			     (b (* (rcfn (rcfn-max-x a b))
+			     (a (int-rcfn context a b))
+			     (b (* (rcfn context (rcfn-max-x context a b))
 				   (- b a)))
 			     (c (/ (- b a)))))
 	    :in-theory (disable |(* (+ x y) z)|))
@@ -49,8 +49,8 @@
 
 (defthm int-rcfn-b-a
   (implies (< b a)
-	   (equal (int-rcfn a b)
-		  (- (int-rcfn b a))))
+	   (equal (int-rcfn context a b)
+		  (- (int-rcfn context b a))))
   :hints (("Goal"
 	   :in-theory (enable int-rcfn)))
   )
@@ -70,35 +70,56 @@
    ))
 
 (local
- (defthmd differential-int-rcfn-bounded-2
-   (implies (and (inside-interval-p a (rcfn-domain))
-		 (inside-interval-p b (rcfn-domain))
-		 (< b a))
-	    (and (<= (rcfn (rcfn-min-x a b))
-		     (/ (int-rcfn a b)
-			(- b a)))
-		 (<= (/ (int-rcfn a b)
-			(- b a))
-		     (rcfn (rcfn-max-x a b)))))
-   :hints (("Goal"
-	    :use ((:instance differential-int-rcfn-bounded-1 (a b) (b a))
-		  )
-	    :in-theory (disable differential-int-rcfn-bounded-1
-				int-rcfn
-				))
-	   )))
+ (encapsulate
+   nil
+
+   (local
+    (defthm lemma-1
+      (implies (and (inside-interval-p a (rcfn-domain))
+		    (inside-interval-p b (rcfn-domain))
+		    (< b a))
+               (equal (* (INT-RCFN CONTEXT B A)
+                         (/ (+ A (- B))))
+                      (* (int-rcfn context a b)
+                         (/ (+ B (- A))))))
+      :hints (("Goal"
+               :use ((:instance push-sign-to-denominator
+                                (c (int-rcfn context a b))
+                                (a b)
+                                (b a)))
+               :in-theory (disable push-sign-to-denominator)))
+      ))
+
+   (defthmd differential-int-rcfn-bounded-2
+     (implies (and (inside-interval-p a (rcfn-domain))
+		   (inside-interval-p b (rcfn-domain))
+		   (< b a))
+	      (and (<= (rcfn context (rcfn-min-x context a b))
+		       (/ (int-rcfn context a b)
+			  (- b a)))
+		   (<= (/ (int-rcfn context a b)
+			  (- b a))
+		       (rcfn context (rcfn-max-x context a b)))))
+     :hints (("Goal"
+	      :use ((:instance differential-int-rcfn-bounded-1 (a b) (b a))
+		    )
+	      :in-theory (disable differential-int-rcfn-bounded-1
+				  int-rcfn
+				  ))
+	     ))
+   ))
 
 (local
  (defthmd differential-int-rcfn-bounded
    (implies (and (inside-interval-p a (rcfn-domain))
 		 (inside-interval-p b (rcfn-domain))
 		 (not (equal a b)))
-	    (and (<= (rcfn (rcfn-min-x a b))
-		     (/ (int-rcfn a b)
+	    (and (<= (rcfn context (rcfn-min-x context a b))
+		     (/ (int-rcfn context a b)
 			(- b a)))
-		 (<= (/ (int-rcfn a b)
+		 (<= (/ (int-rcfn context a b)
 			(- b a))
-		     (rcfn (rcfn-max-x a b)))))
+		     (rcfn context (rcfn-max-x context a b)))))
    :hints (("Goal"
 	    :use ((:instance differential-int-rcfn-bounded-1)
 		  (:instance differential-int-rcfn-bounded-2)
@@ -139,17 +160,17 @@
  (defthm rcfn-min-inside-interval
    (implies (and (inside-interval-p a (rcfn-domain))
 		 (inside-interval-p b (rcfn-domain)))
-	    (inside-interval-p (rcfn-min-x a b) (rcfn-domain)))
+	    (inside-interval-p (rcfn-min-x context a b) (rcfn-domain)))
    :hints (("Goal"
 	    :use ((:instance inside-interval-p-squeeze
 			     (a a)
 			     (b b)
-			     (c (rcfn-min-x a b))
+			     (c (rcfn-min-x context a b))
 			     (interval (rcfn-domain)))
 		  (:instance inside-interval-p-squeeze
 			     (a b)
 			     (b a)
-			     (c (rcfn-min-x a b))
+			     (c (rcfn-min-x context a b))
 			     (interval (rcfn-domain)))
 		  (:instance min-between-a-and-b-1)
 		  (:instance min-between-a-and-b-2))
@@ -159,40 +180,41 @@
  (defthm rcfn-max-inside-interval
    (implies (and (inside-interval-p a (rcfn-domain))
 		 (inside-interval-p b (rcfn-domain)))
-	    (inside-interval-p (rcfn-max-x a b) (rcfn-domain)))
+	    (inside-interval-p (rcfn-max-x context a b) (rcfn-domain)))
    :hints (("Goal"
 	    :use ((:instance inside-interval-p-squeeze
 			     (a a)
 			     (b b)
-			     (c (rcfn-max-x a b))
+			     (c (rcfn-max-x context a b))
 			     (interval (rcfn-domain)))
 		  (:instance inside-interval-p-squeeze
 			     (a b)
 			     (b a)
-			     (c (rcfn-max-x a b))
+			     (c (rcfn-max-x context a b))
 			     (interval (rcfn-domain)))
 		  (:instance max-between-a-and-b-1)
 		  (:instance max-between-a-and-b-2))
 	    :in-theory (disable inside-interval-p-squeeze)))))
 
 (defthm rcfn-min-close-to-x
-  (implies (and (inside-interval-p a (rcfn-domain))
+  (implies (and (standardp context)
+                (inside-interval-p a (rcfn-domain))
 		(inside-interval-p b (rcfn-domain))
 		(standardp a)
 		(i-close a b))
-	   (i-close (rcfn a)
-		    (rcfn (rcfn-min-x a b))))
+	   (i-close (rcfn context a)
+		    (rcfn context (rcfn-min-x context a b))))
   :hints (("Goal"
 	   :use ((:instance rcfn-continuous
 			    (x a)
-			    (y (rcfn-min-x a b)))
+			    (y (rcfn-min-x context a b)))
 		 (:instance close-squeeze
 			    (x a)
-			    (y (rcfn-min-x a b))
+			    (y (rcfn-min-x context a b))
 			    (z b))
 		 (:instance close-squeeze
 			    (x b)
-			    (y (rcfn-min-x a b))
+			    (y (rcfn-min-x context a b))
 			    (z a))
 		 (:instance min-between-a-and-b-1)
 		 (:instance min-between-a-and-b-2)
@@ -205,23 +227,24 @@
 	  ))
 
 (defthm rcfn-max-close-to-x
-  (implies (and (inside-interval-p a (rcfn-domain))
+  (implies (and (standardp context)
+                (inside-interval-p a (rcfn-domain))
 		(inside-interval-p b (rcfn-domain))
 		(standardp a)
 		(i-close a b))
-	   (i-close (rcfn a)
-		    (rcfn (rcfn-max-x a b))))
+	   (i-close (rcfn context a)
+		    (rcfn context (rcfn-max-x context a b))))
   :hints (("Goal"
 	   :use ((:instance rcfn-continuous
 			    (x a)
-			    (y (rcfn-max-x a b)))
+			    (y (rcfn-max-x context a b)))
 		 (:instance close-squeeze
 			    (x a)
-			    (y (rcfn-max-x a b))
+			    (y (rcfn-max-x context a b))
 			    (z b))
 		 (:instance close-squeeze
 			    (x b)
-			    (y (rcfn-max-x a b))
+			    (y (rcfn-max-x context a b))
 			    (z a))
 		 (:instance max-between-a-and-b-1)
 		 (:instance max-between-a-and-b-2)
@@ -235,42 +258,44 @@
 
 (local
  (defthmd ftc-1-lemma
-  (implies (and (inside-interval-p a (rcfn-domain))
-		(inside-interval-p b (rcfn-domain))
-		(standardp a)
-		(i-close a b)
-		(not (equal a b)))
-	   (i-close (/ (int-rcfn a b)
-		       (- b a))
-		    (rcfn a)))
-  :hints (("Goal"
-	   :use ((:instance differential-int-rcfn-bounded)
-		 (:instance close-squeeze
-			    (x (rcfn (rcfn-min-x a b)))
-			    (y (/ (int-rcfn a b)
-				  (- b a)))
-			    (z (rcfn (rcfn-max-x a b))))
-		 (:instance i-close-transitive
-			    (x (rcfn (rcfn-min-x a b)))
-			    (y (rcfn a))
-			    (z (rcfn (rcfn-max-x a b))))
-		 (:instance i-close-transitive
-			    (x (rcfn a))
-			    (y (rcfn (rcfn-min-x a b)))
-			    (z (/ (int-rcfn a b)
-				  (- b a)))))
-	   :in-theory (disable i-close-transitive)))))
+   (implies (and (standardp context)
+                 (inside-interval-p a (rcfn-domain))
+		 (inside-interval-p b (rcfn-domain))
+		 (standardp a)
+		 (i-close a b)
+		 (not (equal a b)))
+	    (i-close (/ (int-rcfn context a b)
+		        (- b a))
+		     (rcfn context a)))
+   :hints (("Goal"
+	    :use ((:instance differential-int-rcfn-bounded)
+		  (:instance close-squeeze
+			     (x (rcfn context (rcfn-min-x context a b)))
+			     (y (/ (int-rcfn context a b)
+				   (- b a)))
+			     (z (rcfn context (rcfn-max-x context a b))))
+		  (:instance i-close-transitive
+			     (x (rcfn context (rcfn-min-x context a b)))
+			     (y (rcfn context a))
+			     (z (rcfn context (rcfn-max-x context a b))))
+		  (:instance i-close-transitive
+			     (x (rcfn context a))
+			     (y (rcfn context (rcfn-min-x context a b)))
+			     (z (/ (int-rcfn context a b)
+				   (- b a)))))
+	    :in-theory (disable i-close-transitive)))))
 
 (defthmd ftc-1
-  (implies (and (inside-interval-p a (rcfn-domain))
+  (implies (and (standardp context)
+                (inside-interval-p a (rcfn-domain))
 		(inside-interval-p b (rcfn-domain))
 		(inside-interval-p c (rcfn-domain))
 		(standardp b)
 		(i-close b c)
 		(not (equal b c)))
-	   (i-close (/ (- (int-rcfn a b) (int-rcfn a c))
+	   (i-close (/ (- (int-rcfn context a b) (int-rcfn context a c))
 		       (- b c))
-		    (rcfn b)))
+		    (rcfn context b)))
   :hints (("Goal"
 	   :use ((:instance ftc-1-lemma
 			    (a b)
@@ -282,7 +307,7 @@
 		 (:instance push-sign-to-denominator
 			    (a c)
 			    (b b)
-			    (c (int-rcfn b c)))
+			    (c (int-rcfn context b c)))
 		 )
 	   :in-theory (disable split-rcfn-integral-by-subintervals
 			       |(* x (+ y z))|))))

@@ -340,9 +340,10 @@
 	    :in-theory (enable interval-definition-theory)))))
 
 (definv pos-exp
-    :domain           (interval 0 nil)
-    :range            (interval 1 nil)
-    :inverse-interval exp-interval)
+  :ignore-context   t
+  :domain           (interval 0 nil)
+  :range            (interval 1 nil)
+  :inverse-interval exp-interval)
 
 (defun acl2-ln-for-positive (y)
   (if (< y 1)

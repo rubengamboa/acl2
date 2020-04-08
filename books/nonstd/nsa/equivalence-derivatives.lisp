@@ -41,25 +41,27 @@
 
  (local
   (defthm-std derivative-is-standard
-    (implies (standardp x)
-	     (standardp (derivative-rdfn x)))))
+    (implies (and (standardp context)
+                  (standardp x))
+	     (standardp (derivative-rdfn context x)))))
 
  (local
   (defthmd derivative-rdfn-is-derivative-lemma
-    (implies (and (standardp x)
+    (implies (and (standardp context)
+                  (standardp x)
 		  (inside-interval-p x (rdfn-domain))
 		  (inside-interval-p x1 (rdfn-domain))
 		  (i-close x x1)
 		  (not (= x x1))
 		  )
-	     (i-close (/ (- (rdfn x1) (rdfn x)) (- x1 x))
-		      (derivative-rdfn x)))
+	     (i-close (/ (- (rdfn context x1) (rdfn context x)) (- x1 x))
+		      (derivative-rdfn context x)))
     :hints (("Goal"
 	     :use ((:instance differential-rdfn-close
 			      (eps (- x1 x)))
 		   (:instance standard-part-same-to-standard-is-close
-			      (x (differential-rdfn x (- x1 x)))
-			      (y (derivative-rdfn x)))
+			      (x (differential-rdfn context x (- x1 x)))
+			      (y (derivative-rdfn context x)))
 		   )
 	     :in-theory (e/d (differential-rdfn-definition)
 			     (standard-part-same-to-standard-is-close
@@ -87,21 +89,22 @@
 
  (local
   (defthm derivative-rdfn-is-derivative-1
-    (implies (and (standardp x)
+    (implies (and (standardp context)
+                  (standardp x)
 		  (inside-interval-p x (rdfn-domain))
 		  (inside-interval-p x1 (rdfn-domain))
 		  (i-close x x1)
 		  (not (= x x1)))
-	     (i-close (/ (- (rdfn x1) (rdfn x)) (- x1 x))
-		      (derivative-rdfn x)))
+	     (i-close (/ (- (rdfn context x1) (rdfn context x)) (- x1 x))
+		      (derivative-rdfn context x)))
     :hints (("Goal"
 	     :use ((:instance derivative-rdfn-is-derivative-lemma)
 		   (:instance derivative-rdfn-is-derivative-lemma-3
-			      (x (rdfn x))
+			      (x (rdfn context x))
 			      (y x1)
 			      (z x))
 		   (:instance derivative-rdfn-is-derivative-lemma-3
-			      (x (rdfn x1))
+			      (x (rdfn context x1))
 			      (y x1)
 			      (z x)))
 	     ))
@@ -125,22 +128,23 @@
 	     ))))
 
  (defthm derivative-rdfn-is-derivative
-   (implies (and (standardp x)
+   (implies (and (standardp context)
+                 (standardp x)
 		 (inside-interval-p x (rdfn-domain))
 		 (inside-interval-p x1 (rdfn-domain))
 		 (i-close x x1)
 		 (not (= x x1)))
-	    (i-close (/ (- (rdfn x) (rdfn x1)) (- x x1))
-		     (derivative-rdfn x)))
+	    (i-close (/ (- (rdfn context x) (rdfn context x1)) (- x x1))
+		     (derivative-rdfn context x)))
    :hints (("Goal"
 	    :use ((:instance derivative-rdfn-is-derivative-lemma)))
 	   ("Goal'''"
 	    :use ((:instance push-uminus-to-denom-diff
-			     (x (rdfn x))
+			     (x (rdfn context x))
 			     (y x)
 			     (z x1))
 		  (:instance push-uminus-to-denom-diff
-			     (x (rdfn x1))
+			     (x (rdfn context x1))
 			     (y x)
 			     (z x1))
 		  )
@@ -153,7 +157,7 @@
 ;; to the classical definition of derivative
 
 
-(defun-sk forall-x-eps-delta-in-range-deriv-works (x eps delta)
+(defun-sk forall-x-eps-delta-in-range-deriv-works (context x eps delta)
   (forall (x1)
 	  (implies (and (inside-interval-p x1 (rdfn-domain))
 			(inside-interval-p x (rdfn-domain))
@@ -163,20 +167,18 @@
 			(< 0 eps)
 			(not (equal x x1))
 			(< (abs (- x x1)) delta))
-		   (< (abs (- (/ (- (rdfn x) (rdfn x1)) (- x x1))
-			      (derivative-rdfn x)))
+		   (< (abs (- (/ (- (rdfn context x) (rdfn context x1)) (- x x1))
+			      (derivative-rdfn context x)))
 		      eps))))
 
-(defun-sk exists-delta-for-x-and-eps-so-deriv-works (x eps)
+(defun-sk exists-delta-for-x-and-eps-so-deriv-works (context x eps)
   (exists delta
 	  (implies (and (inside-interval-p x (rdfn-domain))
-			;(standardp x)
 			(realp eps)
-			;(standardp eps)
 			(< 0 eps))
 		   (and (realp delta)
 			(< 0 delta)
-			(forall-x-eps-delta-in-range-deriv-works x eps delta)))))
+			(forall-x-eps-delta-in-range-deriv-works context x eps delta)))))
 
 (local
  (defthm small-abs
@@ -222,7 +224,8 @@
 
 (local
  (defthmd rdfn-classical-derivative-step-1
-   (implies (and (standardp x)
+   (implies (and (standardp context)
+                 (standardp x)
 		 (inside-interval-p x (rdfn-domain))
 		 (inside-interval-p x1 (rdfn-domain))
 		 (i-close x x1)
@@ -230,13 +233,13 @@
 		 (realp eps)
 		 (standardp eps)
 		 (< 0 eps))
-	    (< (abs (- (/ (- (rdfn x) (rdfn x1)) (- x x1))
-		       (derivative-rdfn x)))
+	    (< (abs (- (/ (- (rdfn context x) (rdfn context x1)) (- x x1))
+		       (derivative-rdfn context x)))
 	       eps))
    :hints (("Goal"
 	    :use ((:instance close-abs-diff
-			     (x (/ (- (rdfn x) (rdfn x1)) (- x x1)))
-			     (y (derivative-rdfn x)))
+			     (x (/ (- (rdfn context x) (rdfn context x1)) (- x x1)))
+			     (y (derivative-rdfn context x)))
 		  (:instance derivative-rdfn-is-derivative)
 		  )
 	    :in-theory (disable close-abs-diff abs derivative-rdfn-is-derivative)))))
@@ -259,7 +262,8 @@
 
 (local
  (defthmd rdfn-classical-derivative-step-2
-   (implies (and (standardp x)
+   (implies (and (standardp context)
+                 (standardp x)
 		 (inside-interval-p x (rdfn-domain))
 		 (inside-interval-p x1 (rdfn-domain))
 		 (not (equal x x1))
@@ -270,8 +274,8 @@
 		 (i-small delta)
 		 (< (abs (- x x1))
 		    delta))
-	    (< (abs (- (/ (- (rdfn x) (rdfn x1)) (- x x1))
-		       (derivative-rdfn x)))
+	    (< (abs (- (/ (- (rdfn context x) (rdfn context x1)) (- x x1))
+		       (derivative-rdfn context x)))
 	       eps))
    :hints (("Goal"
 	    :use ((:instance rdfn-classical-derivative-step-1)
@@ -280,29 +284,31 @@
 
 (local
  (defthmd rdfn-classical-derivative-step-3
-   (implies (and (standardp x)
+   (implies (and (standardp context)
+                 (standardp x)
 		 (inside-interval-p x (rdfn-domain))
 		 (realp eps)
 		 (standardp eps)
 		 (< 0 eps)
 		 (realp delta)
 		 (i-small delta))
-	    (forall-x-eps-delta-in-range-deriv-works x eps delta))
+	    (forall-x-eps-delta-in-range-deriv-works context x eps delta))
    :hints (("Goal"
-	    :expand ((forall-x-eps-delta-in-range-deriv-works x eps delta))
+	    :expand ((forall-x-eps-delta-in-range-deriv-works context x eps delta))
 	    :use ((:instance rdfn-classical-derivative-step-2
-			     (x1 (forall-x-eps-delta-in-range-deriv-works-witness x eps delta)))
+			     (x1 (forall-x-eps-delta-in-range-deriv-works-witness context x eps delta)))
 			     )
 	    :in-theory (disable derivative-rdfn-definition abs)
 	    ))))
 
 (defthmd rdfn-classical-derivative-using-classical-criterion
-  (implies (and (standardp x)
+  (implies (and (standardp context)
+                (standardp x)
 		(inside-interval-p x (rdfn-domain))
 		(realp eps)
 		(standardp eps)
 		(< 0 eps))
-	   (exists-delta-for-x-and-eps-so-deriv-works x eps))
+	   (exists-delta-for-x-and-eps-so-deriv-works context x eps))
   :hints (("Goal"
 	   :use ((:instance exists-delta-for-x-and-eps-so-deriv-works-suff
 			    (delta (/ (i-large-integer)))
@@ -319,7 +325,7 @@
   (implies (and (inside-interval-p x (rdfn-domain))
 		(realp eps)
 		(< 0 eps))
-	   (exists-delta-for-x-and-eps-so-deriv-works x eps))
+	   (exists-delta-for-x-and-eps-so-deriv-works context x eps))
   :hints (("Goal'"
 	   :by (:instance rdfn-classical-derivative-using-classical-criterion))))
 
@@ -327,14 +333,14 @@
 ;; also satisfies the nonstd version of differentiability
 
 (encapsulate
- ((rdfn-classical (x) t)
-  (derivative-rdfn-classical (x) t)
+ ((rdfn-classical (context x) t)
+  (derivative-rdfn-classical (context x) t)
   (rdfn-classical-domain () t))
 
  ;; Our witness continuous function is the identity function.
 
- (local (defun rdfn-classical (x) (declare (ignore x)) 1))
- (local (defun derivative-rdfn-classical (x) (declare (ignore x)) 0))
+ (local (defun rdfn-classical (context x) (declare (ignore context x)) 1))
+ (local (defun derivative-rdfn-classical (context x) (declare (ignore context x)) 0))
  (local (defun rdfn-classical-domain () (interval 0 1)))
 
  ;; The interval really is an interval
@@ -362,15 +368,15 @@
  ;; The function returns real values (even for improper arguments).
 
  (defthm rdfn-classical-real
-     (realp (rdfn-classical x))
+     (realp (rdfn-classical context x))
      :rule-classes (:rewrite :type-prescription))
 
  (defthm derivative-rdfn-classical-real
-     (realp (derivative-rdfn-classical x))
+     (realp (derivative-rdfn-classical context x))
      :rule-classes (:rewrite :type-prescription))
 
 
- (defun-sk forall-x-eps-delta-in-range-deriv-classical-works (x eps delta)
+ (defun-sk forall-x-eps-delta-in-range-deriv-classical-works (context x eps delta)
    (forall (x1)
 	   (implies (and (inside-interval-p x1 (rdfn-classical-domain))
 			 (inside-interval-p x (rdfn-classical-domain))
@@ -380,27 +386,25 @@
 			 (< 0 eps)
 			 (not (equal x x1))
 			 (< (abs (- x x1)) delta))
-		    (< (abs (- (/ (- (rdfn-classical x) (rdfn-classical x1)) (- x x1))
-			       (derivative-rdfn-classical x)))
+		    (< (abs (- (/ (- (rdfn-classical context x) (rdfn-classical context x1)) (- x x1))
+			       (derivative-rdfn-classical context x)))
 		       eps)))
    :rewrite :direct)
 
- (defun-sk exists-delta-for-x-and-eps-so-deriv-classical-works (x eps)
+ (defun-sk exists-delta-for-x-and-eps-so-deriv-classical-works (context x eps)
   (exists delta
 	  (implies (and (inside-interval-p x (rdfn-classical-domain))
-			;(standardp x)
 			(realp eps)
-			;(standardp eps)
 			(< 0 eps))
 		   (and (realp delta)
 			(< 0 delta)
-			(forall-x-eps-delta-in-range-deriv-classical-works x eps delta)))))
+			(forall-x-eps-delta-in-range-deriv-classical-works context x eps delta)))))
 
  (defthm derivative-rdfn-classical-is-derivative
   (implies (and (inside-interval-p x (rdfn-classical-domain))
 		(realp eps)
 		(< 0 eps))
-	   (exists-delta-for-x-and-eps-so-deriv-classical-works x eps))
+	   (exists-delta-for-x-and-eps-so-deriv-classical-works context x eps))
   :hints (("Goal"
 	   :use ((:instance exists-delta-for-x-and-eps-so-deriv-classical-works-suff
 			    (delta 1))))
@@ -410,10 +414,11 @@
 
 (local
  (defthm-std standardp-exists-delta-for-x-and-eps-so-deriv-classical-works-witness
-   (implies (and (standardp x)
+   (implies (and (standardp context)
+                 (standardp x)
 		 (standardp eps))
 	    (standardp
-	     (exists-delta-for-x-and-eps-so-deriv-classical-works-witness x eps)))))
+	     (exists-delta-for-x-and-eps-so-deriv-classical-works-witness context x eps)))))
 
 (local
  (encapsulate
@@ -421,20 +426,21 @@
 
   (local
    (defthmd lemma-1
-     (implies (and (forall-x-eps-delta-in-range-deriv-classical-works x eps delta)
+     (implies (and (forall-x-eps-delta-in-range-deriv-classical-works context x eps delta)
 		   (realp gamma)
 		   (realp delta)
 		   (< 0 gamma)
 		   (< gamma delta))
-	      (forall-x-eps-delta-in-range-deriv-classical-works x eps gamma))
+	      (forall-x-eps-delta-in-range-deriv-classical-works context x eps gamma))
      :hints (("Goal"
 	      :use ((:instance forall-x-eps-delta-in-range-deriv-classical-works-necc
-			       (x1 (forall-x-eps-delta-in-range-deriv-classical-works-witness x eps gamma))))
+			       (x1 (forall-x-eps-delta-in-range-deriv-classical-works-witness context x eps gamma))))
 	      :in-theory (disable abs)))
      ))
 
   (defthm rdfn-classic-is-differentiable-step-1
-    (implies (and (inside-interval-p x (rdfn-classical-domain))
+    (implies (and (standardp context)
+                  (inside-interval-p x (rdfn-classical-domain))
 		  (standardp x)
 		  (realp eps)
 		  (standardp eps)
@@ -442,17 +448,17 @@
 		  (i-small delta)
 		  (realp delta)
 		  (< 0 delta))
-	     (forall-x-eps-delta-in-range-deriv-classical-works x eps delta))
+	     (forall-x-eps-delta-in-range-deriv-classical-works context x eps delta))
     :hints (("Goal"
 	     :use ((:instance derivative-rdfn-classical-is-derivative)
 		   (:instance lemma-1
-			      (delta (exists-delta-for-x-and-eps-so-deriv-classical-works-witness x eps))
+			      (delta (exists-delta-for-x-and-eps-so-deriv-classical-works-witness context x eps))
 			      (gamma delta))
 		   (:instance small-<-non-small
 			      (x delta)
-			      (y (exists-delta-for-x-and-eps-so-deriv-classical-works-witness x eps)))
+			      (y (exists-delta-for-x-and-eps-so-deriv-classical-works-witness context x eps)))
 		   (:instance standard-small-is-zero
-			      (x (exists-delta-for-x-and-eps-so-deriv-classical-works-witness x eps))))
+			      (x (exists-delta-for-x-and-eps-so-deriv-classical-works-witness context x eps))))
 	     :in-theory (disable derivative-rdfn-classical-is-derivative
 				 small-<-non-small
 				 forall-x-eps-delta-in-range-deriv-classical-works))))))
@@ -462,7 +468,8 @@
 
 (local
  (defthmd rdfn-classic-is-differentiable-step-2
-   (implies (and (inside-interval-p x (rdfn-classical-domain))
+   (implies (and (standardp context)
+                 (inside-interval-p x (rdfn-classical-domain))
 		 (standardp x)
 		 (inside-interval-p x1 (rdfn-classical-domain))
 		 (< (abs (- x1 x)) delta)
@@ -473,8 +480,8 @@
 		 (i-small delta)
 		 (realp delta)
 		 (< 0 delta))
-	    (< (abs (- (/ (- (rdfn-classical x) (rdfn-classical x1)) (- x x1))
-		       (derivative-rdfn-classical x)))
+	    (< (abs (- (/ (- (rdfn-classical context x) (rdfn-classical context x1)) (- x x1))
+		       (derivative-rdfn-classical context x)))
 	       eps))
    :hints (("Goal"
 	    :use ((:instance rdfn-classic-is-differentiable-step-1)
@@ -575,13 +582,15 @@
 
 (local
  (defthm-std standard-rdfn-classical
-   (implies (standardp x)
-	    (standardp (rdfn-classical x)))))
+   (implies (and (standardp context)
+                 (standardp x))
+	    (standardp (rdfn-classical context x)))))
 
 (local
  (defthm-std standard-derivative-rdfn-classical
-   (implies (standardp x)
-	    (standardp (derivative-rdfn-classical x)))))
+   (implies (and (standardp context)
+                 (standardp x))
+	    (standardp (derivative-rdfn-classical context x)))))
 
 (local
  (defthm large-abs
@@ -642,22 +651,23 @@
 	     (realp (abs (+ (- x) x1))))))
 
  (defthmd rdfn-classic-is-differentiable
-   (implies (and (standardp x)
+   (implies (and (standardp context)
+                 (standardp x)
 		 (inside-interval-p x (rdfn-classical-domain))
 		 (i-close x x1)
 		 (inside-interval-p x1 (rdfn-classical-domain))
 		 (not (equal x1 x)))
-	    (i-close (/ (- (rdfn-classical x) (rdfn-classical x1)) (- x x1))
-		     (derivative-rdfn-classical x)))
+	    (i-close (/ (- (rdfn-classical context x) (rdfn-classical context x1)) (- x x1))
+		     (derivative-rdfn-classical context x)))
    :hints (("Goal"
 	    :use ((:instance rdfn-classic-is-differentiable-step-2
 			     (eps (standard-lower-bound-of-diff
-				   (derivative-rdfn-classical x)
-				   (/ (- (rdfn-classical x) (rdfn-classical x1)) (- x x1))))
+				   (derivative-rdfn-classical context x)
+				   (/ (- (rdfn-classical context x) (rdfn-classical context x1)) (- x x1))))
 			     (delta (* 2 (abs (- x1 x)))))
 		  (:instance rdfn-classic-is-differentiable-step-3
-			     (x (derivative-rdfn-classical x))
-			     (y (/ (- (rdfn-classical x) (rdfn-classical x1)) (- x x1)))))
+			     (x (derivative-rdfn-classical context x))
+			     (y (/ (- (rdfn-classical context x) (rdfn-classical context x1)) (- x x1)))))
 	    :in-theory (disable standard-lower-bound-of-diff
 				abs))
 	   ("Subgoal 1"
@@ -668,25 +678,26 @@
  )
 
 (defthm rdfn-classic-is-differentiable-using-nonstd-criterion
-  (implies (and (standardp x)
+  (implies (and (standardp context)
+                (standardp x)
 		(inside-interval-p x (rdfn-classical-domain))
 		(inside-interval-p y1 (rdfn-classical-domain))
 		(inside-interval-p y2 (rdfn-classical-domain))
 		(i-close x y1) (not (= x y1))
 		(i-close x y2) (not (= x y2)))
-	   (and (i-limited (/ (- (rdfn-classical x) (rdfn-classical y1)) (- x y1)))
-		(i-close (/ (- (rdfn-classical x) (rdfn-classical y1)) (- x y1))
-			 (/ (- (rdfn-classical x) (rdfn-classical y2)) (- x y2)))))
+	   (and (i-limited (/ (- (rdfn-classical context x) (rdfn-classical context y1)) (- x y1)))
+		(i-close (/ (- (rdfn-classical context x) (rdfn-classical context y1)) (- x y1))
+			 (/ (- (rdfn-classical context x) (rdfn-classical context y2)) (- x y2)))))
   :hints (("Goal"
 	   :use ((:instance rdfn-classic-is-differentiable (x1 y1))
 		 (:instance rdfn-classic-is-differentiable (x1 y2))
 		 (:instance i-close-transitive
-			    (x (/ (- (rdfn-classical x) (rdfn-classical y1)) (- x y1)))
-			    (y (derivative-rdfn-classical x))
-			    (z (/ (- (rdfn-classical x) (rdfn-classical y2)) (- x y2))))
+			    (x (/ (- (rdfn-classical context x) (rdfn-classical context y1)) (- x y1)))
+			    (y (derivative-rdfn-classical context x))
+			    (z (/ (- (rdfn-classical context x) (rdfn-classical context y2)) (- x y2))))
 		 (:instance i-close-limited
-			    (x (derivative-rdfn-classical x))
-			    (y (/ (- (rdfn-classical x) (rdfn-classical y1)) (- x y1))))
+			    (x (derivative-rdfn-classical context x))
+			    (y (/ (- (rdfn-classical context x) (rdfn-classical context y1)) (- x y1))))
 		 (:instance standard-derivative-rdfn-classical)
 		 )
 	   :in-theory (disable i-close-transitive
@@ -705,12 +716,12 @@
   )
 
 
-(defun-sk exists-critical-point-for-rdfn-classical (a b)
+(defun-sk exists-critical-point-for-rdfn-classical (context a b)
   (exists (x)
 	  (and (realp x)
 	       (< a x)
 	       (< x b)
-	       (equal (derivative-rdfn-classical x) 0))))
+	       (equal (derivative-rdfn-classical context x) 0))))
 
 (local
  (defthmd smaller-value-inside-interval
@@ -938,9 +949,9 @@
 (defthm rolles-theorem-sk-for-rdfn-classical
   (implies (and (inside-interval-p a (rdfn-classical-domain))
 		(inside-interval-p b (rdfn-classical-domain))
-		(= (rdfn-classical a) (rdfn-classical b))
+		(= (rdfn-classical context a) (rdfn-classical context b))
 		(< a b))
-	   (exists-critical-point-for-rdfn-classical a b))
+	   (exists-critical-point-for-rdfn-classical context a b))
   :hints (("Goal"
 	   :by (:functional-instance rolles-theorem-sk
 				     (rdfn rdfn-classical)
@@ -948,9 +959,9 @@
 				     (exists-critical-point exists-critical-point-for-rdfn-classical)
 				     (exists-critical-point-witness exists-critical-point-for-rdfn-classical-witness)
 				     (differential-rdfn
-				      (lambda (x eps)
-					(/ (- (rdfn-classical (+ x eps))
-					      (rdfn-classical x))
+				      (lambda (context x eps)
+					(/ (- (rdfn-classical context (+ x eps))
+					      (rdfn-classical context x))
 					   eps)))
 				     (derivative-rdfn derivative-rdfn-classical)))
 	  ("Subgoal 4"
@@ -970,16 +981,16 @@
 			    (x x)
 			    (eps (- (/ (i-large-integer)))))
 		 (:instance close-x-y->same-standard-part
-			    (x (derivative-rdfn-classical x))
+			    (x (derivative-rdfn-classical context x))
 			    (y (+ (- (* (i-large-integer)
-					(rdfn-classical x)))
+					(rdfn-classical context x)))
 				  (* (i-large-integer)
-				     (rdfn-classical (+ (/ (i-large-integer)) x))))))
+				     (rdfn-classical context (+ (/ (i-large-integer)) x))))))
 		 (:instance close-x-y->same-standard-part
-			    (x (derivative-rdfn-classical x))
-			    (y (+ (* (i-large-integer) (rdfn-classical x))
+			    (x (derivative-rdfn-classical context x))
+			    (y (+ (* (i-large-integer) (rdfn-classical context x))
 				  (- (* (i-large-integer)
-					(rdfn-classical (+ (- (/ (i-large-integer))) x)))))))
+					(rdfn-classical context (+ (- (/ (i-large-integer))) x)))))))
 		 (:instance standard-derivative-rdfn-classical)
 		 )
 	   :in-theory (disable i-close-to-small-sum
@@ -1037,19 +1048,19 @@
    )
  )
 
-(defun-sk exists-mvt-point-for-rdfn-classical ()
+(defun-sk exists-mvt-point-for-rdfn-classical (context)
   (exists (x)
 	  (and (inside-interval-p x (rdfn-classical-subdomain))
 	       (not (equal x (interval-left-endpoint (rdfn-classical-subdomain))))
 	       (not (equal x (interval-right-endpoint (rdfn-classical-subdomain))))
-	       (equal (derivative-rdfn-classical x)
-		      (/ (- (rdfn-classical (interval-right-endpoint (rdfn-classical-subdomain)))
-			    (rdfn-classical (interval-left-endpoint (rdfn-classical-subdomain))))
+	       (equal (derivative-rdfn-classical context x)
+		      (/ (- (rdfn-classical context (interval-right-endpoint (rdfn-classical-subdomain)))
+			    (rdfn-classical context (interval-left-endpoint (rdfn-classical-subdomain))))
 			 (- (interval-right-endpoint (rdfn-classical-subdomain))
 			    (interval-left-endpoint (rdfn-classical-subdomain))))))))
 
 (defthm mvt-theorem-sk-for-rdfn-classical
-    (exists-mvt-point-for-rdfn-classical)
+    (exists-mvt-point-for-rdfn-classical context)
     :hints (("Goal"
 	     :by (:functional-instance mvt-theorem-sk
 				       (rdfn rdfn-classical)
@@ -1058,9 +1069,9 @@
 				       (exists-mvt-point exists-mvt-point-for-rdfn-classical)
 				       (exists-mvt-point-witness exists-mvt-point-for-rdfn-classical-witness)
 				       (differential-rdfn
-					(lambda (x eps)
-					  (/ (- (rdfn-classical (+ x eps))
-						(rdfn-classical x))
+					(lambda (context x eps)
+					  (/ (- (rdfn-classical context (+ x eps))
+						(rdfn-classical context x))
 					     eps)))
 				       (derivative-rdfn derivative-rdfn-classical)))
 	    ("Subgoal 2"
@@ -1068,11 +1079,12 @@
 	    ))
 
 (defthm rdfn-classical-continuous-nonstd-version
-   (implies (and (standardp x)
-		 (inside-interval-p x (rdfn-classical-domain))
-		 (i-close x y)
-		 (inside-interval-p y (rdfn-classical-domain)))
-	    (i-close (rdfn-classical x) (rdfn-classical y)))
+  (implies (and (standardp context)
+                (standardp x)
+		(inside-interval-p x (rdfn-classical-domain))
+		(i-close x y)
+		(inside-interval-p y (rdfn-classical-domain)))
+	   (i-close (rdfn-classical context x) (rdfn-classical context y)))
    :hints (("Goal"
 	    :by (:functional-instance rdfn-continuous
 				      (rdfn rdfn-classical)
@@ -1081,13 +1093,13 @@
 				      (exists-mvt-point exists-mvt-point-for-rdfn-classical)
 				      (exists-mvt-point-witness exists-mvt-point-for-rdfn-classical-witness)
 				      (differential-rdfn
-				       (lambda (x eps)
-					 (/ (- (rdfn-classical (+ x eps))
-					       (rdfn-classical x))
+				       (lambda (context x eps)
+					 (/ (- (rdfn-classical context (+ x eps))
+					       (rdfn-classical context x))
 					    eps)))
 				      (derivative-rdfn derivative-rdfn-classical)))))
 
-(defun-sk forall-x-within-delta-of-x0-f-x-within-epsilon-of-classical-rdfn (x0 eps delta)
+(defun-sk forall-x-within-delta-of-x0-f-x-within-epsilon-of-classical-rdfn (context x0 eps delta)
   (forall (x)
 	  (implies (and (inside-interval-p x (rdfn-classical-domain))
 			(inside-interval-p x0 (rdfn-classical-domain))
@@ -1097,38 +1109,40 @@
 			(< 0 eps)
 			(< (abs (- x x0)) delta)
 			(not (equal x x0)))
-		   (< (abs (- (rdfn-classical x) (rdfn-classical x0))) eps)))
+		   (< (abs (- (rdfn-classical context x) (rdfn-classical context x0))) eps)))
   :rewrite :direct)
 
- (defun-sk exists-standard-delta-for-x0-to-make-x-within-epsilon-of-classical-rdfn (x0 eps)
-   (exists (delta)
-	   (implies (and (inside-interval-p x0 (rdfn-classical-domain))
-			 (standardp x0)
-			 (realp eps)
-			 (standardp eps)
-			 (< 0 eps))
-		    (and (standardp delta)
-			 (realp delta)
-			 (< 0 delta)
-			 (forall-x-within-delta-of-x0-f-x-within-epsilon-of-classical-rdfn x0 eps delta))))
-   :classicalp nil)
+(defun-sk exists-standard-delta-for-x0-to-make-x-within-epsilon-of-classical-rdfn (context x0 eps)
+  (exists (delta)
+	  (implies (and (standardp context)
+                        (inside-interval-p x0 (rdfn-classical-domain))
+			(standardp x0)
+			(realp eps)
+			(standardp eps)
+			(< 0 eps))
+		   (and (standardp delta)
+			(realp delta)
+			(< 0 delta)
+			(forall-x-within-delta-of-x0-f-x-within-epsilon-of-classical-rdfn context x0 eps delta))))
+  :classicalp nil)
 
-(defun-sk exists-delta-for-x0-to-make-x-within-epsilon-of-classical-rdfn (x0 eps)
+(defun-sk exists-delta-for-x0-to-make-x-within-epsilon-of-classical-rdfn (context x0 eps)
   (exists (delta)
 	  (implies (and (inside-interval-p x0 (rdfn-classical-domain))
 			(realp eps)
 			(< 0 eps))
 		   (and (realp delta)
 			(< 0 delta)
-			(forall-x-within-delta-of-x0-f-x-within-epsilon-of-classical-rdfn x0 eps delta)))))
+			(forall-x-within-delta-of-x0-f-x-within-epsilon-of-classical-rdfn context x0 eps delta)))))
 
 (defthmd rdfn-classic-is-continuous-classically
-  (implies (and (inside-interval-p x0 (rdfn-classical-domain))
+  (implies (and (standardp context)
+                (inside-interval-p x0 (rdfn-classical-domain))
 		(standardp x0)
 		(realp eps)
 		(standardp eps)
 		(< 0 eps))
-	   (exists-standard-delta-for-x0-to-make-x-within-epsilon-of-classical-rdfn x0 eps))
+	   (exists-standard-delta-for-x0-to-make-x-within-epsilon-of-classical-rdfn context x0 eps))
   :hints (("Goal"
 	   :by (:functional-instance rcfn-is-continuous-using-classical-criterion
 				     (rcfn rdfn-classical)
@@ -1154,10 +1168,10 @@
   (implies (and (inside-interval-p x0 (rdfn-classical-domain))
 		(realp eps)
 		(< 0 eps))
-	   (exists-delta-for-x0-to-make-x-within-epsilon-of-classical-rdfn x0 eps))
+	   (exists-delta-for-x0-to-make-x-within-epsilon-of-classical-rdfn context x0 eps))
   :hints (("Goal"
 	   :use ((:instance rdfn-classic-is-continuous-classically)
 		 (:instance exists-delta-for-x0-to-make-x-within-epsilon-of-classical-rdfn-suff
-			    (delta (exists-standard-delta-for-x0-to-make-x-within-epsilon-of-classical-rdfn-witness x0 eps))))
+			    (delta (exists-standard-delta-for-x0-to-make-x-within-epsilon-of-classical-rdfn-witness context x0 eps))))
 	   :in-theory (disable forall-x-within-delta-of-x0-f-x-within-epsilon-of-classical-rdfn)
 	   )))

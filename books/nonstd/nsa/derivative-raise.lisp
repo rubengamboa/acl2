@@ -82,9 +82,7 @@
  (defun-sk exists-delta-for-x-and-eps-so-deriv-raise1-fn1-works (x eps)
    (exists delta
 	   (implies (and (inside-interval-p x (raise1-fn1-domain))
-					;(standardp x)
 			 (realp eps)
-					;(standardp eps)
 			 (< 0 eps))
 		    (and (realp delta)
 			 (< 0 delta)
@@ -113,18 +111,22 @@
 	    (exists-delta-for-x-and-eps-so-deriv-raise1-fn1-works x eps))
    :hints (("Goal"
 	    :by (:functional-instance rdfn-differentiable-classical-using-hyperreal-criterion
-				      (rdfn raise1-fn1)
+				      (rdfn (lambda (context x) (raise1-fn1 x)))
 				      (rdfn-domain raise1-fn1-domain)
-				      (differential-rdfn differential-raise1-fn1)
-				      (derivative-rdfn derivative-raise1-fn1)
+				      (differential-rdfn (lambda (context x eps) (differential-raise1-fn1 x eps)))
+				      (derivative-rdfn (lambda (context x) (derivative-raise1-fn1 x)))
 				      (forall-x-eps-delta-in-range-deriv-works
-				       forall-x-eps-delta-in-range-deriv-raise1-fn1-works)
+                                       (lambda (context x eps delta)
+				         (forall-x-eps-delta-in-range-deriv-raise1-fn1-works x eps delta)))
 				      (forall-x-eps-delta-in-range-deriv-works-witness
-				       forall-x-eps-delta-in-range-deriv-raise1-fn1-works-witness)
+                                       (lambda (context x eps delta)
+				         (forall-x-eps-delta-in-range-deriv-raise1-fn1-works-witness x eps delta)))
 				      (exists-delta-for-x-and-eps-so-deriv-works
-				       exists-delta-for-x-and-eps-so-deriv-raise1-fn1-works)
+                                       (lambda (context x eps)
+				         (exists-delta-for-x-and-eps-so-deriv-raise1-fn1-works x eps)))
 				      (exists-delta-for-x-and-eps-so-deriv-works-witness
-				       exists-delta-for-x-and-eps-so-deriv-raise1-fn1-works-witness)))
+                                       (lambda (context x eps)
+				         (exists-delta-for-x-and-eps-so-deriv-raise1-fn1-works-witness x eps)))))
 	   ("Subgoal 7"
 	    :use ((:instance exists-delta-for-x-and-eps-so-deriv-raise1-fn1-works-suff))
 	    :in-theory (disable forall-x-eps-delta-in-range-deriv-raise1-fn1-works))
@@ -182,7 +184,6 @@
  (defun raise1-fn2a*fn2b (x n)
    (* (realfix n)
       (acl2-ln (posfix x)))))
-
 (local
  (defun raise1-fn2 (x n)
    (* (realfix n)
@@ -311,18 +312,28 @@
 	    (exists-delta-for-x-and-eps-so-deriv-raise1-fn2b-works x eps))
    :hints (("Goal"
 	    :by (:functional-instance rdfn-differentiable-classical-using-hyperreal-criterion
-				      (rdfn raise1-fn2b)
+				      (rdfn
+                                       (lambda (context x) (raise1-fn2b x)))
 				      (rdfn-domain raise1-fn2-domain)
-				      (differential-rdfn differential-raise1-fn2b)
-				      (derivative-rdfn derivative-raise1-fn2b)
+				      (differential-rdfn
+                                       (lambda (context x eps)
+                                         (differential-raise1-fn2b x eps)))
+				      (derivative-rdfn
+                                       (lambda (context x)
+                                         (derivative-raise1-fn2b x)))
 				      (forall-x-eps-delta-in-range-deriv-works
-				       forall-x-eps-delta-in-range-deriv-raise1-fn2b-works)
+                                       (lambda (context x eps delta)
+				         (forall-x-eps-delta-in-range-deriv-raise1-fn2b-works x eps delta)))
 				      (forall-x-eps-delta-in-range-deriv-works-witness
-				       forall-x-eps-delta-in-range-deriv-raise1-fn2b-works-witness)
+                                       (lambda (context x eps delta)
+				         (forall-x-eps-delta-in-range-deriv-raise1-fn2b-works-witness x eps delta)))
 				      (exists-delta-for-x-and-eps-so-deriv-works
-				       exists-delta-for-x-and-eps-so-deriv-raise1-fn2b-works)
+                                       (lambda (context x eps)
+				         (exists-delta-for-x-and-eps-so-deriv-raise1-fn2b-works x eps)))
 				      (exists-delta-for-x-and-eps-so-deriv-works-witness
-				       exists-delta-for-x-and-eps-so-deriv-raise1-fn2b-works-witness)))
+                                       (lambda (context x eps)
+				         (exists-delta-for-x-and-eps-so-deriv-raise1-fn2b-works-witness x eps)))
+                                      ))
 	   ("Subgoal 7"
 	    :use ((:instance exists-delta-for-x-and-eps-so-deriv-raise1-fn2b-works-suff))
 	    :in-theory (disable forall-x-eps-delta-in-range-deriv-raise1-fn2b-works))
@@ -464,68 +475,84 @@
    :hints (("Goal"
 	    :by (:functional-instance
 		 dcc-fn1*fn2-differentiable-classical-using-hyperreal-criterion
-		 (dcc-fn1 (lambda (x) (raise1-fn2a x n)))
-		 (dcc-fn2 raise1-fn2b)
+		 (dcc-fn1 (lambda (n x) (raise1-fn2a x n)))
+		 (dcc-fn2 (lambda (n x) (raise1-fn2b x)))
 		 (differential-dcc-fn1
-		  (lambda (x eps) (differential-raise1-fn2a x n eps)))
-		 (differential-dcc-fn2 differential-raise1-fn2b)
-		 (differential-dcc-fn1*fn2 (lambda (x eps) (differential-raise1-fn2a*fn2b x n eps)))
+		  (lambda (n x eps) (differential-raise1-fn2a x n eps)))
+		 (differential-dcc-fn2
+                  (lambda (n x eps) (differential-raise1-fn2b x eps)))
+		 (differential-dcc-fn1*fn2 (lambda (n x eps) (differential-raise1-fn2a*fn2b x n eps)))
 		 (derivative-dcc-fn1
-		  (lambda (x) (derivative-raise1-fn2a x n)))
-		 (derivative-dcc-fn2 derivative-raise1-fn2b)
-		 (dcc-fn1*fn2 (lambda (x) (raise1-fn2a*fn2b x n)))
-		 (derivative-dcc-fn1*fn2 (lambda (x) (derivative-raise1-fn2a*fn2b x n)))
-		 (dcc-fnz raise1-fnz)
-		 (differential-dcc-fnz differential-raise1-fnz)
-		 (derivative-dcc-fnz derivative-raise1-fnz)
+		  (lambda (n x) (derivative-raise1-fn2a x n)))
+		 (derivative-dcc-fn2
+                  (lambda (n x)
+                    (derivative-raise1-fn2b x)))
+		 (dcc-fn1*fn2 (lambda (n x) (raise1-fn2a*fn2b x n)))
+		 (derivative-dcc-fn1*fn2 (lambda (n x) (derivative-raise1-fn2a*fn2b x n)))
+		 (dcc-fnz
+                  (lambda (n x) (raise1-fnz x)))
+		 (differential-dcc-fnz
+                  (lambda (n x eps) (differential-raise1-fnz x eps)))
+		 (derivative-dcc-fnz
+                  (lambda (n x) (derivative-raise1-fnz x)))
 		 (dcc-fn-domain raise1-fn2-domain)
 		 (forall-x-eps-delta-in-range-deriv-classical-works-for-dcc-fn1
-		  (lambda (x eps delta)
+		  (lambda (n x eps delta)
 		    (forall-x-eps-delta-in-range-deriv-raise1-fn2a-works x n eps delta)))
 		 (forall-x-eps-delta-in-range-deriv-classical-works-for-dcc-fn1-witness
-		  (lambda (x eps delta)
+		  (lambda (n x eps delta)
 		    (forall-x-eps-delta-in-range-deriv-raise1-fn2a-works-witness x n eps delta)))
 		 (exists-delta-for-x-and-eps-so-deriv-classical-works-for-dcc-fn1
-		  (lambda (x eps)
+		  (lambda (n x eps)
 		    (exists-delta-for-x-and-eps-so-deriv-raise1-fn2a-works x n eps)))
 		 (exists-delta-for-x-and-eps-so-deriv-classical-works-for-dcc-fn1-witness
-		  (lambda (x eps)
+		  (lambda (n x eps)
 		    (exists-delta-for-x-and-eps-so-deriv-raise1-fn2a-works-witness x n eps)))
 		 (forall-x-eps-delta-in-range-deriv-classical-works-for-dcc-fn2
-		  forall-x-eps-delta-in-range-deriv-raise1-fn2b-works)
+                  (lambda (n x eps delta)
+		    (forall-x-eps-delta-in-range-deriv-raise1-fn2b-works x eps delta)))
 		 (forall-x-eps-delta-in-range-deriv-classical-works-for-dcc-fn2-witness
-		  forall-x-eps-delta-in-range-deriv-raise1-fn2b-works-witness)
+                  (lambda (n x eps delta)
+		    (forall-x-eps-delta-in-range-deriv-raise1-fn2b-works-witness x eps delta)))
 		 (exists-delta-for-x-and-eps-so-deriv-classical-works-for-dcc-fn2
-		  exists-delta-for-x-and-eps-so-deriv-raise1-fn2b-works)
+                  (lambda (n x eps)
+		    (exists-delta-for-x-and-eps-so-deriv-raise1-fn2b-works x eps)))
 		 (exists-delta-for-x-and-eps-so-deriv-classical-works-for-dcc-fn2-witness
-		  exists-delta-for-x-and-eps-so-deriv-raise1-fn2b-works-witness)
+                  (lambda (n x eps)
+		    (exists-delta-for-x-and-eps-so-deriv-raise1-fn2b-works-witness x eps)))
 		 (forall-x-eps-delta-in-range-deriv-classical-works-for-dcc-fnz
-		  forall-x-eps-delta-in-range-deriv-raise1-fnz-works)
+                  (lambda (n x eps delta)
+		    (forall-x-eps-delta-in-range-deriv-raise1-fnz-works x eps delta)))
 		 (forall-x-eps-delta-in-range-deriv-classical-works-for-dcc-fnz-witness
-		  forall-x-eps-delta-in-range-deriv-raise1-fnz-works-witness)
+                  (lambda (n x eps delta)
+		    (forall-x-eps-delta-in-range-deriv-raise1-fnz-works-witness x eps delta)))
 		 (exists-delta-for-x-and-eps-so-deriv-classical-works-for-dcc-fnz
-		  exists-delta-for-x-and-eps-so-deriv-raise1-fnz-works)
+                  (lambda (n x eps)
+		    (exists-delta-for-x-and-eps-so-deriv-raise1-fnz-works x eps)))
 		 (exists-delta-for-x-and-eps-so-deriv-classical-works-for-dcc-fnz-witness
-		  exists-delta-for-x-and-eps-so-deriv-raise1-fnz-works-witness)
+                  (lambda (n x eps)
+		    (exists-delta-for-x-and-eps-so-deriv-raise1-fnz-works-witness x eps)))
 		 (forall-x-eps-delta-in-range-deriv-dcc-fn1*fn2-works
-		  (lambda (x eps delta)
+		  (lambda (n x eps delta)
 		    (forall-x-eps-delta-in-range-deriv-raise1-fn2a*fn2b-works x n eps delta)))
 		 (forall-x-eps-delta-in-range-deriv-dcc-fn1*fn2-works-witness
-		  (lambda (x eps delta)
+		  (lambda (n x eps delta)
 		    (forall-x-eps-delta-in-range-deriv-raise1-fn2a*fn2b-works-witness x n eps delta)))
 		 (exists-delta-for-x-and-eps-so-deriv-dcc-fn1*fn2-works
-		  (lambda (x eps)
+		  (lambda (n x eps)
 		    (exists-delta-for-x-and-eps-so-deriv-raise1-fn2a*fn2b-works x n eps)))
 		 (exists-delta-for-x-and-eps-so-deriv-dcc-fn1*fn2-works-witness
-		  (lambda (x eps)
+		  (lambda (n x eps)
 		    (exists-delta-for-x-and-eps-so-deriv-raise1-fn2a*fn2b-works-witness x n eps)))
 		 )
 	    )
 	   ("Subgoal 21"
-	    :use ((:instance exists-delta-for-x-and-eps-so-deriv-raise1-fn2a*fn2b-works-suff))
+	    :use ((:instance exists-delta-for-x-and-eps-so-deriv-raise1-fn2a*fn2b-works-suff
+                             (n context)))
 	    :in-theory (disable forall-x-eps-delta-in-range-deriv-raise1-fn2a*fn2b-works))
 	   ("Subgoal 19"
-	    :use ((:instance forall-x-eps-delta-in-range-deriv-raise1-fn2a*fn2b-works-necc))
+	    :use ((:instance forall-x-eps-delta-in-range-deriv-raise1-fn2a*fn2b-works-necc
+                             (n context)))
 	    )
 	   ("Subgoal 17"
 	    :use ((:instance exists-delta-for-x-and-eps-so-deriv-raise1-fnz-works-suff
@@ -533,7 +560,8 @@
 	   ("Subgoal 16"
 	    :use ((:instance raise1-fn2b-differentiable-classical-using-hyperreal-criterion)))
 	   ("Subgoal 15"
-	    :use ((:instance raise1-fn2a-differentiable-classical-using-hyperreal-criterion)))
+	    :use ((:instance raise1-fn2a-differentiable-classical-using-hyperreal-criterion
+                             (n context))))
 	   ("Subgoal 13"
 	    :use ((:instance exists-delta-for-x-and-eps-so-deriv-raise1-fnz-works-suff))
 	    :in-theory (disable forall-x-eps-delta-in-range-deriv-raise1-fnz-works))
@@ -541,7 +569,8 @@
 	    :use ((:instance exists-delta-for-x-and-eps-so-deriv-raise1-fn2b-works-suff))
 	    :in-theory (disable forall-x-eps-delta-in-range-deriv-raise1-fn2b-works))
 	   ("Subgoal 9"
-	    :use ((:instance exists-delta-for-x-and-eps-so-deriv-raise1-fn2a-works-suff))
+	    :use ((:instance exists-delta-for-x-and-eps-so-deriv-raise1-fn2a-works-suff
+                             (n context)))
 	    :in-theory (disable forall-x-eps-delta-in-range-deriv-raise1-fn2a-works))
 	   ("Subgoal 6"
 	    :use ((:instance forall-x-eps-delta-in-range-deriv-raise1-fn2b-works-necc)))
@@ -568,49 +597,65 @@
 		   (differential-raise1-fn2 x n eps)))
    :hints (("Goal"
 	    :use ((:functional-instance expand-differential-dcc-fn1*fn2
-					(dcc-fn1 (lambda (x) (raise1-fn2a x n)))
-					(dcc-fn2 raise1-fn2b)
+					(dcc-fn1 (lambda (n x) (raise1-fn2a x n)))
+					(dcc-fn2
+                                         (lambda (n x) (raise1-fn2b x)))
 					(differential-dcc-fn1
-					 (lambda (x eps) (differential-raise1-fn2a x n eps)))
-					(differential-dcc-fn2 differential-raise1-fn2b)
-					(differential-dcc-fn1*fn2 (lambda (x eps) (differential-raise1-fn2a*fn2b x n eps)))
+					 (lambda (n x eps) (differential-raise1-fn2a x n eps)))
+					(differential-dcc-fn2
+                                         (lambda (n x eps) (differential-raise1-fn2b x eps)))
+					(differential-dcc-fn1*fn2
+                                         (lambda (n x eps) (differential-raise1-fn2a*fn2b x n eps)))
 					(derivative-dcc-fn1
-					 (lambda (x) (derivative-raise1-fn2a x n)))
-					(derivative-dcc-fn2 derivative-raise1-fn2b)
-					(dcc-fn1*fn2 (lambda (x) (raise1-fn2a*fn2b x n)))
-					(derivative-dcc-fn1*fn2 (lambda (x) (derivative-raise1-fn2a*fn2b x n)))
-					(dcc-fnz raise1-fnz)
-					(differential-dcc-fnz differential-raise1-fnz)
-					(derivative-dcc-fnz derivative-raise1-fnz)
+					 (lambda (n x) (derivative-raise1-fn2a x n)))
+					(derivative-dcc-fn2
+                                         (lambda (n x) (derivative-raise1-fn2b x)))
+					(dcc-fn1*fn2 (lambda (n x) (raise1-fn2a*fn2b x n)))
+					(derivative-dcc-fn1*fn2 (lambda (n x) (derivative-raise1-fn2a*fn2b x n)))
+					(dcc-fnz
+                                         (lambda (n x) (raise1-fnz x)))
+					(differential-dcc-fnz
+                                         (lambda (n x eps) (differential-raise1-fnz x eps)))
+					(derivative-dcc-fnz
+                                         (lambda (n x) (derivative-raise1-fnz x)))
 					(dcc-fn-domain raise1-fn2-domain)
 					(forall-x-eps-delta-in-range-deriv-classical-works-for-dcc-fn1
-					 (lambda (x eps delta)
+					 (lambda (n x eps delta)
 					   (forall-x-eps-delta-in-range-deriv-raise1-fn2a-works x n eps delta)))
 					(forall-x-eps-delta-in-range-deriv-classical-works-for-dcc-fn1-witness
-					 (lambda (x eps delta)
+					 (lambda (n x eps delta)
 					   (forall-x-eps-delta-in-range-deriv-raise1-fn2a-works-witness x n eps delta)))
 					(exists-delta-for-x-and-eps-so-deriv-classical-works-for-dcc-fn1
-					 (lambda (x eps)
+					 (lambda (n x eps)
 					   (exists-delta-for-x-and-eps-so-deriv-raise1-fn2a-works x n eps)))
 					(exists-delta-for-x-and-eps-so-deriv-classical-works-for-dcc-fn1-witness
-					 (lambda (x eps)
+					 (lambda (n x eps)
 					   (exists-delta-for-x-and-eps-so-deriv-raise1-fn2a-works-witness x n eps)))
 					(forall-x-eps-delta-in-range-deriv-classical-works-for-dcc-fn2
-					 forall-x-eps-delta-in-range-deriv-raise1-fn2b-works)
+                                         (lambda (n x eps delta)
+		                           (forall-x-eps-delta-in-range-deriv-raise1-fn2b-works x eps delta)))
 					(forall-x-eps-delta-in-range-deriv-classical-works-for-dcc-fn2-witness
-					 forall-x-eps-delta-in-range-deriv-raise1-fn2b-works-witness)
+                                         (lambda (n x eps delta)
+		                           (forall-x-eps-delta-in-range-deriv-raise1-fn2b-works-witness x eps delta)))
 					(exists-delta-for-x-and-eps-so-deriv-classical-works-for-dcc-fn2
-					 exists-delta-for-x-and-eps-so-deriv-raise1-fn2b-works)
+					 (lambda (n x eps)
+                                           (exists-delta-for-x-and-eps-so-deriv-raise1-fn2b-works x eps)))
 					(exists-delta-for-x-and-eps-so-deriv-classical-works-for-dcc-fn2-witness
-					 exists-delta-for-x-and-eps-so-deriv-raise1-fn2b-works-witness)
+                                         (lambda (n x eps)
+					   (exists-delta-for-x-and-eps-so-deriv-raise1-fn2b-works-witness x eps)))
 					(forall-x-eps-delta-in-range-deriv-classical-works-for-dcc-fnz
-					 forall-x-eps-delta-in-range-deriv-raise1-fnz-works)
+                                         (lambda (n x eps delta)
+					   (forall-x-eps-delta-in-range-deriv-raise1-fnz-works x eps delta)))
 					(forall-x-eps-delta-in-range-deriv-classical-works-for-dcc-fnz-witness
-					 forall-x-eps-delta-in-range-deriv-raise1-fnz-works-witness)
+                                         (lambda (n x eps delta)
+					   (forall-x-eps-delta-in-range-deriv-raise1-fnz-works-witness x eps delta)))
 					(exists-delta-for-x-and-eps-so-deriv-classical-works-for-dcc-fnz
-					 exists-delta-for-x-and-eps-so-deriv-raise1-fnz-works)
+                                         (lambda (n x eps)
+					   (exists-delta-for-x-and-eps-so-deriv-raise1-fnz-works x eps)))
 					(exists-delta-for-x-and-eps-so-deriv-classical-works-for-dcc-fnz-witness
-					 exists-delta-for-x-and-eps-so-deriv-raise1-fnz-works-witness)					)))
+                                         (lambda (n x eps)
+					   (exists-delta-for-x-and-eps-so-deriv-raise1-fnz-works-witness x eps)))
+                                        )))
 	   )
    ))
 
@@ -669,9 +714,7 @@
  (defun-sk exists-delta-for-x-and-eps-so-deriv-raise1-fn2-works (x n eps)
    (exists delta
 	   (implies (and (inside-interval-p x (raise1-fn2-domain))
-					;(standardp x)
 			 (realp eps)
-					;(standardp eps)
 			 (< 0 eps))
 		    (and (realp delta)
 			 (< 0 delta)
@@ -729,9 +772,7 @@
  (defun-sk exists-delta-for-x-and-eps-so-deriv-raise1-fn1-o-fn2-works (x n eps)
    (exists delta
 	   (implies (and (inside-interval-p x (raise1-fn2-domain))
-					;(standardp x)
 			 (realp eps)
-					;(standardp eps)
 			 (< 0 eps))
 		    (and (realp delta)
 			 (< 0 delta)
@@ -746,74 +787,87 @@
 	    (exists-delta-for-x-and-eps-so-deriv-raise1-fn1-o-fn2-works x n eps))
    :hints (("Goal"
 	    :by (:functional-instance ccr-fn1-o-fn2-differentiable-classical-using-hyperreal-criterion
-				      (ccr-fn1 raise1-fn1)
-				      (derivative-ccr-fn1 derivative-raise1-fn1)
-				      (differential-ccr-fn1 differential-raise1-fn1)
+				      (ccr-fn1
+                                       (lambda (n x) (raise1-fn1 x)))
+				      (derivative-ccr-fn1
+                                       (lambda (n x) (derivative-raise1-fn1 x)))
+				      (differential-ccr-fn1
+                                       (lambda (n x eps) (differential-raise1-fn1 x eps)))
 				      (ccr-fn2
-				       (lambda (x) (raise1-fn2 x n)))
+				       (lambda (n x) (raise1-fn2 x n)))
 				      (derivative-ccr-fn2
-				       (lambda (x) (derivative-raise1-fn2 x n)))
+				       (lambda (n x) (derivative-raise1-fn2 x n)))
 				      (differential-ccr-fn2
-				       (lambda (x eps) (differential-raise1-fn2 x n eps)))
+				       (lambda (n x eps) (differential-raise1-fn2 x n eps)))
 				      (ccr-fn1-o-fn2
-				       (lambda (x) (raise1-fn1-o-fn2 x n)))
+				       (lambda (n x) (raise1-fn1-o-fn2 x n)))
 				      (derivative-ccr-fn1-o-fn2
-				       (lambda (x) (derivative-raise1-fn1-o-fn2 x n)))
+				       (lambda (n x) (derivative-raise1-fn1-o-fn2 x n)))
 				      (differential-ccr-fn1-o-fn2
-				       (lambda (x eps) (differential-raise1-fn1-o-fn2 x n eps)))
+				       (lambda (n x eps) (differential-raise1-fn1-o-fn2 x n eps)))
 				      (ccr-fn2-domain raise1-fn2-domain)
 				      (ccr-fn2-range raise1-fn2-range)
 				      (forall-x-eps-delta-in-range-deriv-classical-works-for-ccr-fn1
-				       forall-x-eps-delta-in-range-deriv-raise1-fn1-works)
+                                       (lambda (n x eps delta)
+				         (forall-x-eps-delta-in-range-deriv-raise1-fn1-works x eps delta)))
 				      (forall-x-eps-delta-in-range-deriv-classical-works-for-ccr-fn1-witness
-				       forall-x-eps-delta-in-range-deriv-raise1-fn1-works-witness)
+                                       (lambda (n x eps delta)
+				         (forall-x-eps-delta-in-range-deriv-raise1-fn1-works-witness x eps delta)))
 				      (exists-delta-for-x-and-eps-so-deriv-classical-works-for-ccr-fn1
-				       exists-delta-for-x-and-eps-so-deriv-raise1-fn1-works)
+                                       (lambda (n x eps)
+				         (exists-delta-for-x-and-eps-so-deriv-raise1-fn1-works x eps)))
 				      (exists-delta-for-x-and-eps-so-deriv-classical-works-for-ccr-fn1-witness
-				       exists-delta-for-x-and-eps-so-deriv-raise1-fn1-works-witness)
+                                       (lambda (n x eps)
+				         (exists-delta-for-x-and-eps-so-deriv-raise1-fn1-works-witness x eps)))
 				      (forall-x-eps-delta-in-range-deriv-classical-works-for-ccr-fn2
-				       (lambda (x eps delta)
+				       (lambda (n x eps delta)
 					 (forall-x-eps-delta-in-range-deriv-raise1-fn2-works x n eps delta)))
 				      (forall-x-eps-delta-in-range-deriv-classical-works-for-ccr-fn2-witness
-				       (lambda (x eps delta)
+				       (lambda (n x eps delta)
 					 (forall-x-eps-delta-in-range-deriv-raise1-fn2-works-witness x n eps delta)))
 				      (exists-delta-for-x-and-eps-so-deriv-classical-works-for-ccr-fn2
-				       (lambda (x eps) (exists-delta-for-x-and-eps-so-deriv-raise1-fn2-works x n eps)))
+				       (lambda (n x eps) (exists-delta-for-x-and-eps-so-deriv-raise1-fn2-works x n eps)))
 				      (exists-delta-for-x-and-eps-so-deriv-classical-works-for-ccr-fn2-witness
-				       (lambda (x eps) (exists-delta-for-x-and-eps-so-deriv-raise1-fn2-works-witness x n eps)))
+				       (lambda (n x eps) (exists-delta-for-x-and-eps-so-deriv-raise1-fn2-works-witness x n eps)))
 				      (forall-x-eps-delta-in-range-deriv-ccr-fn1-o-fn2-works
-				       (lambda (x eps delta)
+				       (lambda (n x eps delta)
 					 (forall-x-eps-delta-in-range-deriv-raise1-fn1-o-fn2-works x n eps delta)))
 				      (forall-x-eps-delta-in-range-deriv-ccr-fn1-o-fn2-works-witness
-				       (lambda (x eps delta)
+				       (lambda (n x eps delta)
 					 (forall-x-eps-delta-in-range-deriv-raise1-fn1-o-fn2-works-witness x n eps delta)))
 				      (exists-delta-for-x-and-eps-so-deriv-ccr-fn1-o-fn2-works
-				       (lambda (x eps)
+				       (lambda (n x eps)
 					 (exists-delta-for-x-and-eps-so-deriv-raise1-fn1-o-fn2-works x n eps)))
 				      (exists-delta-for-x-and-eps-so-deriv-ccr-fn1-o-fn2-works-witness
-				       (lambda (x eps)
+				       (lambda (n x eps)
 					 (exists-delta-for-x-and-eps-so-deriv-raise1-fn1-o-fn2-works-witness x n eps)))
 				      ))
 	   ("Subgoal 16"
-	    :use ((:instance exists-delta-for-x-and-eps-so-deriv-raise1-fn1-o-fn2-works-suff))
+	    :use ((:instance exists-delta-for-x-and-eps-so-deriv-raise1-fn1-o-fn2-works-suff
+                             (n context)))
 	    :in-theory (disable forall-x-eps-delta-in-range-deriv-raise1-fn1-o-fn2-works))
 	   ("Subgoal 14"
-	    :use ((:instance forall-x-eps-delta-in-range-deriv-raise1-fn1-o-fn2-works-necc))
+	    :use ((:instance forall-x-eps-delta-in-range-deriv-raise1-fn1-o-fn2-works-necc
+                             (n context)))
 	    :in-theory (enable raise1-fn1-o-fn2
 			       raise1-fn1
 			       raise1-fn2))
 	   ("Subgoal 11"
-	    :use ((:instance exists-fn2a*fn2b->exists-fn2)
-		  (:instance raise1-fn2a*fn2b-differentiable-classical-using-hyperreal-criterion))
+	    :use ((:instance exists-fn2a*fn2b->exists-fn2
+                             (n context))
+		  (:instance raise1-fn2a*fn2b-differentiable-classical-using-hyperreal-criterion
+                             (n context)))
 	    :in-theory (disable exists-delta-for-x-and-eps-so-deriv-raise1-fn2a*fn2b-works
 				exists-delta-for-x-and-eps-so-deriv-raise1-fn2-works))
 	   ("Subgoal 10"
 	    :use ((:instance raise1-fn1-differentiable-classical-using-hyperreal-criterion)))
 	   ("Subgoal 8"
-	    :use ((:instance exists-delta-for-x-and-eps-so-deriv-raise1-fn2-works-suff))
+	    :use ((:instance exists-delta-for-x-and-eps-so-deriv-raise1-fn2-works-suff
+                             (n context)))
 	    :in-theory (disable forall-x-eps-delta-in-range-deriv-raise1-fn2-works))
 	   ("Subgoal 6"
-	    :use ((:instance forall-x-eps-delta-in-range-deriv-raise1-fn2-works-necc))
+	    :use ((:instance forall-x-eps-delta-in-range-deriv-raise1-fn2-works-necc
+                             (n context)))
 	    :in-theory (enable raise1-fn2))
 	   ("Subgoal 4"
 	    :use ((:instance raise1-fn1-differentiable-classical-using-hyperreal-criterion)))
@@ -834,52 +888,59 @@
                    (/ (- (raise1-fn1-o-fn2 (+ x eps) n) (raise1-fn1-o-fn2 x n)) eps)))
    :hints (("Goal"
 	    :by (:functional-instance expand-differential-ccr-fn1-o-fn2
-				      (ccr-fn1 raise1-fn1)
-				      (derivative-ccr-fn1 derivative-raise1-fn1)
-				      (differential-ccr-fn1 differential-raise1-fn1)
+				      (ccr-fn1 
+                                       (lambda (n x) (raise1-fn1 x)))
+				      (derivative-ccr-fn1
+                                       (lambda (n x) (derivative-raise1-fn1 x)))
+				      (differential-ccr-fn1
+                                       (lambda (n x eps) (differential-raise1-fn1 x eps)))
 				      (ccr-fn2
-				       (lambda (x) (raise1-fn2 x n)))
+				       (lambda (n x) (raise1-fn2 x n)))
 				      (derivative-ccr-fn2
-				       (lambda (x) (derivative-raise1-fn2 x n)))
+				       (lambda (n x) (derivative-raise1-fn2 x n)))
 				      (differential-ccr-fn2
-				       (lambda (x eps) (differential-raise1-fn2 x n eps)))
+				       (lambda (n x eps) (differential-raise1-fn2 x n eps)))
 				      (ccr-fn1-o-fn2
-				       (lambda (x) (raise1-fn1-o-fn2 x n)))
+				       (lambda (n x) (raise1-fn1-o-fn2 x n)))
 				      (derivative-ccr-fn1-o-fn2
-				       (lambda (x) (derivative-raise1-fn1-o-fn2 x n)))
+				       (lambda (n x) (derivative-raise1-fn1-o-fn2 x n)))
 				      (differential-ccr-fn1-o-fn2
-				       (lambda (x eps) (differential-raise1-fn1-o-fn2 x n eps)))
+				       (lambda (n x eps) (differential-raise1-fn1-o-fn2 x n eps)))
 				      (ccr-fn2-domain raise1-fn2-domain)
 				      (ccr-fn2-range raise1-fn2-range)
 				      (forall-x-eps-delta-in-range-deriv-classical-works-for-ccr-fn1
-				       forall-x-eps-delta-in-range-deriv-raise1-fn1-works)
+                                       (lambda (n x eps delta)
+				         (forall-x-eps-delta-in-range-deriv-raise1-fn1-works x eps delta)))
 				      (forall-x-eps-delta-in-range-deriv-classical-works-for-ccr-fn1-witness
-				       forall-x-eps-delta-in-range-deriv-raise1-fn1-works-witness)
+                                       (lambda (n x eps delta)
+				         (forall-x-eps-delta-in-range-deriv-raise1-fn1-works-witness x eps delta)))
 				      (exists-delta-for-x-and-eps-so-deriv-classical-works-for-ccr-fn1
-				       exists-delta-for-x-and-eps-so-deriv-raise1-fn1-works)
+                                       (lambda (n x eps)
+				         (exists-delta-for-x-and-eps-so-deriv-raise1-fn1-works x eps)))
 				      (exists-delta-for-x-and-eps-so-deriv-classical-works-for-ccr-fn1-witness
-				       exists-delta-for-x-and-eps-so-deriv-raise1-fn1-works-witness)
+                                       (lambda (n x eps)
+				         (exists-delta-for-x-and-eps-so-deriv-raise1-fn1-works-witness x eps)))
 				      (forall-x-eps-delta-in-range-deriv-classical-works-for-ccr-fn2
-				       (lambda (x eps delta)
+				       (lambda (n x eps delta)
 					 (forall-x-eps-delta-in-range-deriv-raise1-fn2-works x n eps delta)))
 				      (forall-x-eps-delta-in-range-deriv-classical-works-for-ccr-fn2-witness
-				       (lambda (x eps delta)
+				       (lambda (n x eps delta)
 					 (forall-x-eps-delta-in-range-deriv-raise1-fn2-works-witness x n eps delta)))
 				      (exists-delta-for-x-and-eps-so-deriv-classical-works-for-ccr-fn2
-				       (lambda (x eps) (exists-delta-for-x-and-eps-so-deriv-raise1-fn2-works x n eps)))
+				       (lambda (n x eps) (exists-delta-for-x-and-eps-so-deriv-raise1-fn2-works x n eps)))
 				      (exists-delta-for-x-and-eps-so-deriv-classical-works-for-ccr-fn2-witness
-				       (lambda (x eps) (exists-delta-for-x-and-eps-so-deriv-raise1-fn2-works-witness x n eps)))
+				       (lambda (n x eps) (exists-delta-for-x-and-eps-so-deriv-raise1-fn2-works-witness x n eps)))
 				      (forall-x-eps-delta-in-range-deriv-ccr-fn1-o-fn2-works
-				       (lambda (x eps delta)
+				       (lambda (n x eps delta)
 					 (forall-x-eps-delta-in-range-deriv-raise1-fn1-o-fn2-works x n eps delta)))
 				      (forall-x-eps-delta-in-range-deriv-ccr-fn1-o-fn2-works-witness
-				       (lambda (x eps delta)
+				       (lambda (n x eps delta)
 					 (forall-x-eps-delta-in-range-deriv-raise1-fn1-o-fn2-works-witness x n eps delta)))
 				      (exists-delta-for-x-and-eps-so-deriv-ccr-fn1-o-fn2-works
-				       (lambda (x eps)
+				       (lambda (n x eps)
 					 (exists-delta-for-x-and-eps-so-deriv-raise1-fn1-o-fn2-works x n eps)))
 				      (exists-delta-for-x-and-eps-so-deriv-ccr-fn1-o-fn2-works-witness
-				       (lambda (x eps)
+				       (lambda (n x eps)
 					 (exists-delta-for-x-and-eps-so-deriv-raise1-fn1-o-fn2-works-witness x n eps)))
 				      ))
 	   )))
@@ -949,9 +1010,7 @@
 (defun-sk exists-delta-for-x-and-eps-so-deriv-raise-posp-x-works (x n eps)
   (exists delta
 	  (implies (and (inside-interval-p x (positive-domain))
-			;(standardp x)
 			(realp eps)
-			;(standardp eps)
 			(< 0 eps))
 		   (and (realp delta)
 			(< 0 delta)
@@ -1019,9 +1078,7 @@
 (defun-sk exists-delta-for-x-and-eps-so-deriv-raise-works (x n eps)
   (exists delta
 	  (implies (and (inside-interval-p x (real-domain))
-			;(standardp x)
 			(realp eps)
-			;(standardp eps)
 			(< 0 eps))
 		   (and (realp delta)
 			(< 0 delta)
@@ -1940,9 +1997,7 @@
 (defun-sk exists-delta-for-x-and-eps-so-deriv-expt-works (x n eps)
   (exists delta
 	  (implies (and (inside-interval-p x (real-domain))
-			;(standardp x)
 			(realp eps)
-			;(standardp eps)
 			(< 0 eps))
 		   (and (realp delta)
 			(< 0 delta)

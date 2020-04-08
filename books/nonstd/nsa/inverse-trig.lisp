@@ -385,14 +385,16 @@
   (acl2-sine (realfix x)))
 
 (definv real-cosine
-    :f-inverse        acl2-acos
-    :domain           (interval 0 (acl2-pi))
-    :range            (interval -1 1)
-    :inverse-interval cosine-interval)
+  :ignore-context   t
+  :f-inverse        acl2-acos
+  :domain           (interval 0 (acl2-pi))
+  :range            (interval -1 1)
+  :inverse-interval cosine-interval)
 
 (definv real-sine
-    :f-inverse        acl2-asin
-    :domain           (interval (* -1/2 (acl2-pi)) (* 1/2 (acl2-pi)))
-    :range            (interval -1 1)
-    :inverse-interval sine-interval)
+  :ignore-context   t
+  :f-inverse        acl2-asin
+  :domain           (interval (* -1/2 (acl2-pi)) (* 1/2 (acl2-pi)))
+  :range            (interval -1 1)
+  :inverse-interval sine-interval)
 

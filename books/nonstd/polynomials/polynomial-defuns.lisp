@@ -2,6 +2,12 @@
 
 ; cert_param: (uses-acl2r)
 
+(defun polynomial-p (poly)
+  (if (consp poly)
+      (and (acl2-numberp (car poly))
+           (polynomial-p (cdr poly)))
+    (null poly)))
+
 (defun real-polynomial-p (poly)
   (if (consp poly)
       (and (realp (car poly))
@@ -21,23 +27,18 @@
     (null poly)))
 
 (defun non-trivial-polynomial-p (poly)
-  (and (real-polynomial-p poly)
+  (and (polynomial-p poly)
        (< 1 (len poly))
        (not (equal 0 (car (last poly))))))
 
 (defun eval-polynomial (poly x)
-  (if (and (real-polynomial-p poly)
-	   (realp x)
-	   (consp poly))
+  (if (consp poly)
       (+ (* x (eval-polynomial (cdr poly) x))
          (car poly))
     0))
 
 (defun eval-polynomial-expt-aux (poly x n)
-  (if (and (real-polynomial-p poly)
-	   (realp x)
-	   (natp n)
-	   (consp poly))
+  (if (consp poly)
       (+ (* (car poly) (expt x n))
 	 (eval-polynomial-expt-aux (cdr poly) x (1+ n)))
     0))

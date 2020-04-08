@@ -10,13 +10,13 @@
 (include-book "integrable-functions")
 
 (encapsulate
- ( ((rcdfn-classical *) => *)
-   ((rcdfn-classical-prime *) => *)
+ ( ((rcdfn-classical * *) => *)
+   ((rcdfn-classical-prime * *) => *)
    ((rcdfn-classical-domain) => *)
    )
 
-   (local (defun rcdfn-classical (x) (declare (ignore x)) 0))
-   (local (defun rcdfn-classical-prime (x) (declare (ignore x)) 0))
+   (local (defun rcdfn-classical (context x) (declare (ignore context x)) 0))
+   (local (defun rcdfn-classical-prime (context x) (declare (ignore context x)) 0))
    (local (defun rcdfn-classical-domain () (interval 0 1)))
 
    (defthm intervalp-rcdfn-classical-domain
@@ -36,14 +36,14 @@
      :rule-classes nil)
 
    (defthm rcdfn-classical-real
-     (realp (rcdfn-classical x))
+     (realp (rcdfn-classical context x))
    :rule-classes (:rewrite :type-prescription))
 
    (defthm rcdfn-classical-prime-real
-     (realp (rcdfn-classical-prime x))
+     (realp (rcdfn-classical-prime context x))
    :rule-classes (:rewrite :type-prescription))
 
-   (defun-sk forall-x-eps-delta-in-range-deriv-rcdfn-classical-works (x eps delta)
+   (defun-sk forall-x-eps-delta-in-range-deriv-rcdfn-classical-works (context x eps delta)
      (forall (x1)
 	     (implies (and (inside-interval-p x1 (rcdfn-classical-domain))
 			   (inside-interval-p x (rcdfn-classical-domain))
@@ -53,25 +53,25 @@
 			   (< 0 eps)
 			   (not (equal x x1))
 			   (< (abs (- x x1)) delta))
-		      (< (abs (- (/ (- (rcdfn-classical x) (rcdfn-classical x1))
+		      (< (abs (- (/ (- (rcdfn-classical context x) (rcdfn-classical context x1))
 				    (- x x1))
-				 (rcdfn-classical-prime x)))
+				 (rcdfn-classical-prime context x)))
 			 eps))))
 
-   (defun-sk exists-delta-for-x-and-eps-so-deriv-rcdfn-classical-works (x eps)
+   (defun-sk exists-delta-for-x-and-eps-so-deriv-rcdfn-classical-works (context x eps)
      (exists delta
 	     (implies (and (inside-interval-p x (rcdfn-classical-domain))
 			   (realp eps)
 			   (< 0 eps))
 		      (and (realp delta)
 			   (< 0 delta)
-			   (forall-x-eps-delta-in-range-deriv-rcdfn-classical-works x eps delta)))))
+			   (forall-x-eps-delta-in-range-deriv-rcdfn-classical-works context x eps delta)))))
 
    (defthm rcdfn-classical-prime-is-derivative
      (implies (and (inside-interval-p x (rcdfn-classical-domain))
 		   (realp eps)
 		   (< 0 eps))
-	      (exists-delta-for-x-and-eps-so-deriv-rcdfn-classical-works x eps))
+	      (exists-delta-for-x-and-eps-so-deriv-rcdfn-classical-works context x eps))
      :hints (("Goal"
 	      :use ((:instance exists-delta-for-x-and-eps-so-deriv-rcdfn-classical-works-suff
 			       (delta 1))
@@ -81,7 +81,7 @@
 			       (delta 1)))
 	      :in-theory (disable abs))))
 
-   (defun-sk forall-x-within-delta-of-x0-f-x-within-epsilon-of-rcdfn-classical-prime (x0 eps delta)
+   (defun-sk forall-x-within-delta-of-x0-f-x-within-epsilon-of-rcdfn-classical-prime (context x0 eps delta)
      (forall (x)
 	     (implies (and (inside-interval-p x (rcdfn-classical-domain))
 			   (inside-interval-p x0 (rcdfn-classical-domain))
@@ -91,29 +91,24 @@
 			   (< 0 eps)
 			   (< (abs (- x x0)) delta)
 			   (not (equal x x0)))
-		      (< (abs (- (rcdfn-classical-prime x) (rcdfn-classical-prime x0)))
+		      (< (abs (- (rcdfn-classical-prime context x) (rcdfn-classical-prime context x0)))
 			 eps)))
      :rewrite :direct)
 
-   (defun-sk exists-delta-for-x0-to-make-x-within-epsilon-of-rcdfn-classical-prime (x0 eps)
+   (defun-sk exists-delta-for-x0-to-make-x-within-epsilon-of-rcdfn-classical-prime (context x0 eps)
      (exists (delta)
 	     (implies (and (inside-interval-p x0 (rcdfn-classical-domain))
-			   ;(standardp x0)
 			   (realp eps)
-			   ;(standardp eps)
 			   (< 0 eps))
-		      (and ;(standardp delta)
-			   (realp delta)
+		      (and (realp delta)
 			   (< 0 delta)
-			   (forall-x-within-delta-of-x0-f-x-within-epsilon-of-rcdfn-classical-prime x0 eps delta)))))
+			   (forall-x-within-delta-of-x0-f-x-within-epsilon-of-rcdfn-classical-prime context x0 eps delta)))))
 
    (defthmd rcdfn-classical-prime-is-continuous
      (implies (and (inside-interval-p x0 (rcdfn-classical-domain))
-		   ;(standardp x0)
 		   (realp eps)
-		   ;(standardp eps)
 		   (< 0 eps))
-	      (exists-delta-for-x0-to-make-x-within-epsilon-of-rcdfn-classical-prime x0 eps))
+	      (exists-delta-for-x0-to-make-x-within-epsilon-of-rcdfn-classical-prime context x0 eps))
      :hints (("Goal"
 	      :use ((:instance exists-delta-for-x0-to-make-x-within-epsilon-of-rcdfn-classical-prime-suff
 			       (delta 1))
@@ -125,9 +120,10 @@
 
    )
 
-(defun-sk exists-standard-delta-for-x0-to-make-x-within-epsilon-of-rcdfn-classical-prime (x0 eps)
+(defun-sk exists-standard-delta-for-x0-to-make-x-within-epsilon-of-rcdfn-classical-prime (context x0 eps)
   (exists (delta)
-	  (implies (and (inside-interval-p x0 (rcdfn-classical-domain))
+	  (implies (and (standardp context)
+                        (inside-interval-p x0 (rcdfn-classical-domain))
 			(standardp x0)
 			(realp eps)
 			(standardp eps)
@@ -135,7 +131,7 @@
 		   (and (standardp delta)
 			(realp delta)
 			(< 0 delta)
-			(forall-x-within-delta-of-x0-f-x-within-epsilon-of-rcdfn-classical-prime x0 eps delta))))
+			(forall-x-within-delta-of-x0-f-x-within-epsilon-of-rcdfn-classical-prime context x0 eps delta))))
      :classicalp nil)
 
 (encapsulate
@@ -143,31 +139,34 @@
 
  (local
   (defthm-std lemma-1
-    (implies (and (standardp x0)
+    (implies (and (standardp context)
+                  (standardp x0)
 		  (standardp eps))
-	     (standardp (exists-delta-for-x0-to-make-x-within-epsilon-of-rcdfn-classical-prime-witness x0 eps)))))
+	     (standardp (exists-delta-for-x0-to-make-x-within-epsilon-of-rcdfn-classical-prime-witness context x0 eps)))))
 
  (defthmd rcdfn-classical-prime-is-continuous-classically
-   (implies (and (inside-interval-p x0 (rcdfn-classical-domain))
+   (implies (and (standardp context)
+                 (inside-interval-p x0 (rcdfn-classical-domain))
 		 (standardp x0)
 		 (realp eps)
 		 (standardp eps)
 		 (< 0 eps))
-	    (exists-standard-delta-for-x0-to-make-x-within-epsilon-of-rcdfn-classical-prime x0 eps))
+	    (exists-standard-delta-for-x0-to-make-x-within-epsilon-of-rcdfn-classical-prime context x0 eps))
    :hints (("Goal"
 	    :use ((:instance exists-standard-delta-for-x0-to-make-x-within-epsilon-of-rcdfn-classical-prime-suff
-			     (delta (exists-delta-for-x0-to-make-x-within-epsilon-of-rcdfn-classical-prime-witness x0 eps)))
+			     (delta (exists-delta-for-x0-to-make-x-within-epsilon-of-rcdfn-classical-prime-witness context x0 eps)))
 		  (:instance rcdfn-classical-prime-is-continuous))
 	    :in-theory (disable abs))))
  )
 
 (defthm rcdfn-classical-prime-is-derivative-nonstd
-  (implies (and (standardp x)
+  (implies (and (standardp context)
+                (standardp x)
 		(inside-interval-p x (rcdfn-classical-domain))
 		(inside-interval-p x1 (rcdfn-classical-domain))
 		(i-close x x1) (not (= x x1)))
-	   (i-close (/ (- (rcdfn-classical x) (rcdfn-classical x1)) (- x x1))
-		    (rcdfn-classical-prime x)))
+	   (i-close (/ (- (rcdfn-classical context x) (rcdfn-classical context x1)) (- x x1))
+		    (rcdfn-classical-prime context x)))
   :hints (("Goal"
 	   :use ((:functional-instance rdfn-classic-is-differentiable
 				       (rdfn-classical-domain rcdfn-classical-domain)
@@ -192,12 +191,13 @@
   )
 
 (defthm rcdfn-classical-prime-continuous-nonstd
-  (implies (and (standardp x)
+  (implies (and (standardp context)
+                (standardp x)
 		(inside-interval-p x (rcdfn-classical-domain))
 		(i-close x x1)
 		(inside-interval-p x1 (rcdfn-classical-domain)))
-	   (i-close (rcdfn-classical-prime x)
-		    (rcdfn-classical-prime x1)))
+	   (i-close (rcdfn-classical-prime context x)
+		    (rcdfn-classical-prime context x1)))
   :hints (("Goal"
 	   :use ((:instance
 		  (:functional-instance rcfn-classical-is-continuous-using-nonstandard-criterion
@@ -224,31 +224,32 @@
 	   :use ((:instance rcdfn-classical-domain-non-trivial)))
 	  ))
 
-(defun map-rcdfn-classical-prime (p)
+(defun map-rcdfn-classical-prime (context p)
   (if (consp p)
-      (cons (rcdfn-classical-prime (car p))
-	    (map-rcdfn-classical-prime (cdr p)))
+      (cons (rcdfn-classical-prime context (car p))
+	    (map-rcdfn-classical-prime context (cdr p)))
     nil))
 
-(defun riemann-rcdfn-classical-prime (p)
+(defun riemann-rcdfn-classical-prime (context p)
   (dotprod (deltas p)
-	   (map-rcdfn-classical-prime (cdr p))))
+	   (map-rcdfn-classical-prime context (cdr p))))
 
 (defthm realp-riemann-rcdfn-classical-prime
   (implies (partitionp p)
-	   (realp (riemann-rcdfn-classical-prime p))))
+	   (realp (riemann-rcdfn-classical-prime context p))))
 
 (encapsulate
  nil
 
  (local
   (defthm limited-riemann-rcdfn-classical-prime-small-partition
-    (implies (and (realp a) (standardp a)
+    (implies (and (standardp context)
+                  (realp a) (standardp a)
 		  (realp b) (standardp b)
 		  (inside-interval-p a (rcdfn-classical-domain))
 		  (inside-interval-p b (rcdfn-classical-domain))
 		  (< a b))
-	     (i-limited (riemann-rcdfn-classical-prime (make-small-partition a b))))
+	     (i-limited (riemann-rcdfn-classical-prime context (make-small-partition a b))))
     :hints (("Goal"
 	     :by (:functional-instance limited-riemann-rcfn-small-partition
 				       (rcfn-domain rcdfn-classical-domain)
@@ -262,24 +263,24 @@
 
 
 
- (defun-std strict-int-rcdfn-classical-prime (a b)
+ (defun-std strict-int-rcdfn-classical-prime (context a b)
    (if (and (realp a)
 	    (realp b)
 	    (inside-interval-p a (rcdfn-classical-domain))
 	    (inside-interval-p b (rcdfn-classical-domain))
 	    (< a b))
-       (standard-part (riemann-rcdfn-classical-prime (make-small-partition a b)))
+       (standard-part (riemann-rcdfn-classical-prime context (make-small-partition a b)))
      0))
  )
 
-(defun int-rcdfn-classical-prime (a b)
+(defun int-rcdfn-classical-prime (context a b)
   (if (<= a b)
-      (strict-int-rcdfn-classical-prime a b)
-    (- (strict-int-rcdfn-classical-prime b a))))
+      (strict-int-rcdfn-classical-prime context a b)
+    (- (strict-int-rcdfn-classical-prime context b a))))
 
 (defthm-std realp-strict-int-rcdfn-classical-prime
   (IMPLIES (AND (REALP A) (REALP B))
-         (REALP (STRICT-INT-RCDFN-CLASSICAL-PRIME A B)))
+           (REALP (STRICT-INT-RCDFN-CLASSICAL-PRIME context A B)))
 ; Matt K. v7-1 mod for ACL2 mod on 2/13/2015: "Goal'" changed to "Goal".
   :hints (("Goal"
 	   :use ((:instance realp-riemann-rcdfn-classical-prime
@@ -288,19 +289,19 @@
 			       riemann-rcdfn-classical-prime)))
   )
 
-(defun-sk forall-partitions-riemann-sum-is-close-to-int-rcdfn-classical-prime (a b eps delta)
+(defun-sk forall-partitions-riemann-sum-is-close-to-int-rcdfn-classical-prime (context a b eps delta)
    (forall (p)
 	   (implies (and (<= a b)
 			 (partitionp p)
 			 (equal (car p) a)
 			 (equal (car (last p)) b)
 			 (< (mesh p) delta))
-		    (< (abs (- (riemann-rcdfn-classical-prime p)
-			       (strict-int-rcdfn-classical-prime a b)))
+		    (< (abs (- (riemann-rcdfn-classical-prime context p)
+			       (strict-int-rcdfn-classical-prime context a b)))
 		       eps)))
    :rewrite :direct)
 
- (defun-sk exists-delta-so-that-riemann-sum-is-close-to-int-rcdfn-classical-prime (a b eps)
+ (defun-sk exists-delta-so-that-riemann-sum-is-close-to-int-rcdfn-classical-prime (context a b eps)
    (exists (delta)
 	   (implies (and (inside-interval-p a (rcdfn-classical-domain))
 			 (inside-interval-p b (rcdfn-classical-domain))
@@ -309,10 +310,11 @@
 			 (< 0 eps))
 		    (and (realp delta)
 			 (< 0 delta)
-			 (forall-partitions-riemann-sum-is-close-to-int-rcdfn-classical-prime a b eps delta)))))
+			 (forall-partitions-riemann-sum-is-close-to-int-rcdfn-classical-prime context a b eps delta)))))
 
 (defthm strict-int-rcdfn-classical-prime-is-integral-of-rcdfn-classical-prime
-  (implies (and (standardp a)
+  (implies (and (standardp context)
+                (standardp a)
 		(standardp b)
 		(<= a b)
 		(inside-interval-p a (rcdfn-classical-domain))
@@ -321,8 +323,8 @@
 		(equal (car p) a)
 		(equal (car (last p)) b)
 		(i-small (mesh p)))
-	   (i-close (riemann-rcdfn-classical-prime p)
-		    (strict-int-rcdfn-classical-prime a b)))
+	   (i-close (riemann-rcdfn-classical-prime context p)
+		    (strict-int-rcdfn-classical-prime context a b)))
   :hints (("Goal"
 	   :do-not-induct t
 	   :by (:functional-instance strict-int-rcdfn-prime-is-integral-of-rcdfn-prime
@@ -345,7 +347,7 @@
 		(inside-interval-p b (rcdfn-classical-domain))
 		(realp eps)
 		(< 0 eps))
-	   (exists-delta-so-that-riemann-sum-is-close-to-int-rcdfn-classical-prime a b eps))
+	   (exists-delta-so-that-riemann-sum-is-close-to-int-rcdfn-classical-prime context a b eps))
   :hints (("Goal" :do-not-induct t
 	   :by (:functional-instance rifn-is-integrable-hyperreal
 				     (rifn rcdfn-classical-prime)
@@ -375,9 +377,9 @@
 (defthm ftc-2-for-rcdfn-classical
   (implies (and (inside-interval-p a (rcdfn-classical-domain))
 		(inside-interval-p b (rcdfn-classical-domain)))
-	   (equal (int-rcdfn-classical-prime a b)
-		  (- (rcdfn-classical b)
-		     (rcdfn-classical a))))
+	   (equal (int-rcdfn-classical-prime context a b)
+		  (- (rcdfn-classical context b)
+		     (rcdfn-classical context a))))
    :hints (("Goal"
 	    :by (:functional-instance ftc-2
 				      (rcdfn rcdfn-classical)
